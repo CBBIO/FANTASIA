@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "python-poetry-template"
+version = "1.0.0"
+description = "Plantilla para desarrollo fluido en Python"
+authors = ["frapercan <frapercan1@alum.us.es>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+docopt = "^0.6.2"
+
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.2.2"
+coverage = {extras = ["toml"], version = "^7.2.1"}
+flake8 = "^6.0.0"
+flake8-bugbear = "^23.2.13"
+taskipy = "^1.10.3"
+sphinx = "^7.2.6"
+sphinx-rtd-theme = "^1.2.0"
+
+
+[tool.coverage.run]
+omit = ["*/site-packages/*"]
+
+[tool.coverage.report]
+fail_under = 100
+
+[tool.taskipy.tasks]
+html_docs = "make html -C docs"
+lint = "poetry run flake8 python_poetry_template"
+coverage = "poetry run coverage run -m --source=python_poetry_template pytest tests && poetry run coverage report -m"
+
+
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+

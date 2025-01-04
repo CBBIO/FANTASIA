@@ -1,0 +1,36 @@
+name: Test Coverage
+on: push
+
+jobs:
+  ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.10"]
+        poetry-version: ["1.4.0"]
+        os: [ubuntu-22.04 ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run image
+        uses: abatilo/actions-poetry@v2
+        with:
+          poetry-version: ${{ matrix.poetry-version }}
+      - name: install dependecies
+        run: | 
+              poetry install 
+              pip3 install coverage
+              pip3 install pytest
+
+      - name: test
+        run: poetry run task coverage
+        
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repo
+          fail_ci_if_error: true # optional (default = false)
+          verbose: true
