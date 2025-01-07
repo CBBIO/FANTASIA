@@ -1,0 +1,43 @@
+#System
+max_workers: 3 # Embedding search parallelism over PGVector seems broken (Auto set to 1 for that proccess).
+
+# DB CONFIGURATION
+DB_USERNAME: usuario
+DB_PASSWORD: clave
+DB_HOST: localhost
+DB_PORT: 5432
+DB_NAME: BioData
+
+rabbitmq_host: localhost
+rabbitmq_user: guest
+rabbitmq_password: guest
+
+# Execution
+embeddings_url: "https://zenodo.org/records/14546346/files/embeddings.tar?download=1"
+embeddings_path: ~/fantasia/dumps/
+
+
+# FANTASIA
+fantasia_input_fasta: ~/fantasia/input/zinc.fasta
+fantasia_output_h5: ~/fantasia/embeddings/
+fantasia_output_csv: ~/fantasia/results/
+fantasia_prefix: finger_zinc
+max_distance: 1.1
+length_filter: 5000
+redundancy_filter: 0.65
+redundancy_file: ~/fantasia/redundancy/output.fasta
+
+topgo?: True
+
+embedding:
+  types:
+    - 1 # ESM
+    - 2 # Prost
+    - 3 # Prot
+  batch_size: 50 # Queue
+
+  embedding_batch_size: 10 # Model input size
+
+constants: "./constants.yaml"
+
+

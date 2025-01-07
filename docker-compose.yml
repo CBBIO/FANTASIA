@@ -1,0 +1,32 @@
+services:
+  app:
+    build:
+      dockerfile: Dockerfile
+    container_name: protein-metamorphisms
+    depends_on:
+      - pgvectorsql
+      - rabbitmq
+    environment:
+      POSTGRES_USER: usuario
+      POSTGRES_PASSWORD: clave
+      POSTGRES_DB: BioData
+    ports:
+      - "8000:8000"  # Cambia el puerto según sea necesario
+
+  pgvectorsql:
+    image: pgvector/pgvector:pg16
+    container_name: pgvectorsql
+    environment:
+      POSTGRES_USER: usuario
+      POSTGRES_PASSWORD: clave
+      POSTGRES_DB: BioData
+    ports:
+      - "5432:5432"
+    command: postgres
+
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq
+    ports:
+      - "15672:15672"
+      - "5672:5672"

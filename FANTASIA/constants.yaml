@@ -1,0 +1,16 @@
+
+sequence_embedding_types:
+  - name: "ESM"
+    description: "Evolutionary Scale Modeling (ESM) embeddings are designed to capture the evolutionary information of protein sequences, utilizing deep learning to generate representations that enhance sequence analysis and prediction tasks."
+    task_name: "esm"
+    model_name: facebook/esm2_t6_8M_UR50D
+  - name: "Prost-T5"
+    description: "Prot-T5 embeddings leverage the capabilities of the T5 (Text-to-Text Transfer Transformer) model adapted for protein sequences, offering advanced sequence representation by considering both local and global sequence features."
+    task_name:  prost_t5
+    model_name: Rostlab/ProstT5
+  - name: "Prot-T5"
+    description: "Prot-T5 embeddings leverage the capabilities of the T5 (Text-to-Text Transfer Transformer) model adapted for protein sequences, offering advanced sequence representation by considering both local and global sequence features."
+    task_name: prot_t5
+    model_name: Rostlab/prot_t5_xl_uniref50
+
+
