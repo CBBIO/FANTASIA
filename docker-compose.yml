@@ -6,7 +6,7 @@ services:
   app:
     build:
       dockerfile: Dockerfile
-    container_name: FANTASIA
+    container_name: fantasia
     depends_on:
       pgvectorsql:
         condition: service_healthy
