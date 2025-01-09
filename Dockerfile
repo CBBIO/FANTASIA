@@ -1,25 +1,30 @@
-# Usa la imagen más reciente de NVIDIA CUDA con Ubuntu 22.04
-FROM nvidia/cuda:12.3.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.6.1-base-ubuntu24.04
 
-# Establece el directorio de trabajo
-
+# Update and install required system packages
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
-    && rm -rf /var/lib/apt/lists/*
+    python3-venv \
+    cd-hit \
+    postgresql-client-16 \
+    postgresql-contrib \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Set up a virtual environment for Python
+RUN python3 -m venv /opt/venv
+
+# Activate the virtual environment and install Python packages
+RUN /opt/venv/bin/pip install --upgrade pip \
+    && /opt/venv/bin/pip install protein-metamorphisms-is --no-cache-dir
 
 
-RUN pip3 install --upgrade pip
-RUN pip3 install  protein-metamorphisms-is
+# Add the virtual environment to the PATH
+ENV PATH="/opt/venv/bin:$PATH"
 
-RUN apt-get update && apt-get install -y cd-hit
-RUN apt-get update && apt-get install -y postgresql-client
-
-
+# Copy application files and set the working directory
 COPY . /app
 WORKDIR /app
 
+# Default command to keep the container running
+ENTRYPOINT ["python3", "-m", "FANTASIA.main"]
 
-
-# Configura el comando predeterminado para ejecutar tu paquete
-CMD ["python3", "-m", "FANTASIA.initialize"]

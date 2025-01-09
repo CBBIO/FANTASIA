@@ -1,8 +1,8 @@
 [tool.poetry]
 name = "FANTASIA"
-version = "1.0.0"
-description = "Plantilla para desarrollo fluido en Python"
-authors = ["frapercan <frapercan1@alum.us.es>"]
+version = "0.0.1"
+description = "Functional ANnoTAtion based on embedding space SImilArity"
+authors = ["Francisco Miguel Pérez Canales <frapercan1@alum.us.es>","Gemma Martínez Redondo <gemma.martinez@ibe.upf-csic.es>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
@@ -29,8 +29,8 @@ fail_under = 100
 
 [tool.taskipy.tasks]
 html_docs = "make html -C docs"
-lint = "poetry run flake8 python_poetry_template"
-coverage = "poetry run coverage run -m --source=python_poetry_template pytest tests && poetry run coverage report -m"
+lint = "poetry run flake8 FANTASIA"
+coverage = "poetry run coverage run -m --source=FANTASIA pytest tests && poetry run coverage report -m"
 
 
 

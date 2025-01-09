@@ -1,222 +1,78 @@
-[![codecov](https://codecov.io/gh/frapercan/FANTASIA/graph/badge.svg?token=hqzrADVeRy)](https://codecov.io/gh/frapercan/FANTASIA)
-[![PyPI version](https://badge.fury.io/py/FANTASIA.svg)](https://badge.fury.io/py/FANTASIA)
-[![Documentation Status](https://readthedocs.org/projects/FANTASIA/badge/?version=latest)](https://FANTASIA.readthedocs.io/en/latest/?badge=latest)
-![Linting Status](https://github.com/frapercan/FANTASIA/actions/workflows/test-lint.yml/badge.svg?branch=main)
 
-# Python Poetry Template
+---
 
-Este proyecto, "Python Poetry Template", es una plantilla versátil para proyectos de Python, diseñada para facilitar la gestión de dependencias, la publicación de módulos, el análisis estático de código, las pruebas y la generación de documentación. Utilizando herramientas modernas como Poetry, PyPI, Flake8, Pytest, Coverage y Sphinx con tema Read The Docs, esta plantilla está orientada a maximizar la eficiencia y calidad en el desarrollo de software en Python.
+# FANTASIA
 
-## Herramientas Utilizadas
+![FANTASIA Logo](docs/source/_static/FANTASIA.png)
 
-- **Poetry:** Gestión de dependencias y empaquetado en Python.
-- **PyPI:** Plataforma para la publicación de paquetes Python.
-- **Flake8:** Análisis estático de código para cumplimiento de estilo.
-- **Pytest y Coverage:** Framework de pruebas y medición de cobertura de código.
-- **Sphinx (Tema RTD):** Generación de documentación del proyecto.
+FANTASIA (Functional ANnoTAtion based on embedding space SImilArity) is a pipeline for annotating Gene Ontology (GO) terms for protein sequences using advanced protein language models like **ProtT5**, **ProstT5**, and **ESM2**. This system automates complex workflows, from sequence processing to functional annotation, providing a scalable and efficient solution for protein structure and functionality analysis.
 
-## Configuración del Proyecto
+---
 
-Para configurar el entorno de desarrollo:
+## Key Features
 
-1. Clone el repositorio: `git clone [URL del repositorio]`.
-2. Instale Poetry si aún no está instalado en su sistema.
-3. Ejecute `poetry install` para instalar las dependencias del proyecto.
+- **Redundancy Filtering**: Removes identical sequences with **CD-HIT** and optionally excludes sequences based on length constraints.
+- **Embedding Generation**: Utilizes state-of-the-art models for protein sequence embeddings.
+- **GO Term Lookup**: Matches embeddings with a vector database to retrieve associated GO terms.
+- **Results**: Outputs annotations in timestamped CSV files for reproducibility.
 
-## Renombrar el contenedor principal de código
-El código se encuentra por defecto bajo el directorio **`python_poetry_template`**, debemos renombrarla, al nombre deseado.
+---
 
-## Configuración de *pyproject.toml* 
-Asegúrate de que tu archivo **`pyproject.toml`** esté correctamente configurado. Esto incluye especificar el nombre del paquete, la versión, la descripción, los autores y cualquier otra información relevante que PyPI necesite para mostrar tu paquete correctamente.
+## Installation
 
-Por ejemplo:
-```toml
-[tool.poetry]
-name = "nombre-de-tu-paquete"
-version = "0.1.0"
-description = "Una breve descripción de tu paquete"
-authors = ["Tu Nombre <tu_email@example.com>"]
-
-...
-
-[tool.taskipy.tasks]
-html_docs = "make html -C docs"
-lint = "poetry run flake8 <ruta-directorio-principal>"
-coverage = "poetry run coverage run -m --source=<ruta-directorio-principal> pytest tests && poetry run coverage report -m"
-
-```
-
-## Configuración del la documentación
-
-En el fichero de configuración de sphinx **`docs/source/conf.py`** debemos configurar con los valores de nuestro proyecto.
-
-```python
-project = 'FANTASIA'
-copyright = '2023, frapercan'
-author = 'frapercan'
-```
-
-también debemos configurar `docs/source/index.rst` haciendo referencia a los ficheros .rst que gestionan nuestros módulos de programación , teniendo `docs/source/template.rst` cómo ejemplo de muestra.
-
-En caso de dudas atender a la documentación oficial de sphinx.
-
-
-
-
-
-## Comandos
-
-### Generar Documentación
+To install FANTASIA, ensure you have Python 3.8+ installed and use the following commands:
 
 ```bash
-poetry run task html_docs
-```
-Este comando construye la documentación del proyecto con Sphinx y el tema RTD, ubicándola en **docs/build**.
-
-### Análisis Estático de Código (Linting)
-```bash
-poetry run task lint
-```
-Ejecuta Flake8 para análisis estático del código, ayudando a identificar problemas de estilo y errores.
-
-### Cobertura de Pruebas
-```bash
-poetry run task coverage
-```
-Realiza pruebas con Pytest y genera un informe de cobertura con Coverage.
-
-## Publicación del Paquete
-Para compilar y publicar tu paquete Python utilizando Poetry, sigue estos pasos:
-
-### Compilación del Paquete
-Antes de publicar, es una buena práctica compilar el paquete para asegurarse de que todo esté configurado correctamente. Para compilar tu paquete, ejecuta:
-```bash
-poetry build
-```
-Este comando generará los archivos de distribución en los formatos de archivo Wheel y Source. Los archivos se crearán en el directorio **`dist/`** de tu proyecto.
-
-### Publicación en PyPI
-Una vez que hayas compilado tu paquete, puedes publicarlo en [PyPI](https://pypi.org) para que otros puedan instalarlo fácilmente. Asegúrate de tener una cuenta en PyPI y haber configurado tus credenciales de autenticación.
-```bash
-poetry publish
-```
-Este comando te pedirá tus credenciales de PyPI (si no están ya almacenadas) y luego subirá los archivos de distribución a PyPI.
-
-# Python Poetry Template
-
-Este proyecto, "Python Poetry Template", es una plantilla versátil para proyectos de Python, diseñada para facilitar la gestión de dependencias, la publicación de módulos, el análisis estático de código, las pruebas y la generación de documentación. Utilizando herramientas modernas como Poetry, PyPI, Flake8, Pytest, Coverage y Sphinx con tema Read The Docs, esta plantilla está orientada a maximizar la eficiencia y calidad en el desarrollo de software en Python.
-
-## Herramientas Utilizadas
-
-- **Poetry:** Gestión de dependencias y empaquetado en Python.
-- **PyPI:** Plataforma para la publicación de paquetes Python.
-- **Flake8:** Análisis estático de código para cumplimiento de estilo.
-- **Pytest y Coverage:** Framework de pruebas y medición de cobertura de código.
-- **Sphinx (Tema RTD):** Generación de documentación del proyecto.
-
-## Configuración del Proyecto
-
-Para configurar el entorno de desarrollo:
-
-1. Clone el repositorio: `git clone [URL del repositorio]`.
-2. Instale Poetry si aún no está instalado en su sistema.
-3. Ejecute `poetry install` para instalar las dependencias del proyecto.
-
-## Renombrar el contenedor principal de código
-El código se encuentra por defecto bajo el directorio **`template`**, debemos renombrarla, al nombre deseado.
-
-## Configuración de *pyproject.toml* 
-Asegúrate de que tu archivo **`pyproject.toml`** esté correctamente configurado. Esto incluye especificar el nombre del paquete, la versión, la descripción, los autores y cualquier otra información relevante que PyPI necesite para mostrar tu paquete correctamente.
-
-Por ejemplo:
-```toml
-[tool.poetry]
-name = "nombre-de-tu-paquete"
-version = "0.1.0"
-description = "Una breve descripción de tu paquete"
-authors = ["Tu Nombre <tu_email@example.com>"]
-
-...
-
-[tool.taskipy.tasks]
-html_docs = "make html -C docs"
-lint = "poetry run flake8 <ruta-directorio-principal>"
-coverage = "poetry run coverage run -m --source=<ruta-directorio-principal> pytest tests && poetry run coverage report -m"
-
+pip install FANTASIA
 ```
 
-## Configuración del la documentación
+---
 
-En el fichero de configuración de sphinx **`docs/source/conf.py`** debemos configurar con los valores de nuestro proyecto.
+## Quick Start
 
-```python
-project = 'template'
-copyright = '2023, frapercan'
-author = 'frapercan'
-```
+### Prerequisites
 
-también debemos configurar `docs/source/index.rst` haciendo referencia a los ficheros .rst que gestionan nuestros módulos dep programación , teniendo `docs/source/template.rst` cómo ejemplo de muestra.
+Ensure the **Information System** is properly configured before running FANTASIA. Detailed instructions are available in the [project documentation](../../../README.md).
 
-En caso de dudas atender a la documentación oficial de sphinx.
+### Running the Pipeline
 
-
-
-
-
-## Comandos
-
-### Generar Documentación
+Execute the following command, specifying the path to the configuration file:
 
 ```bash
-poetry run task html_docs
-```
-Este comando construye la documentación del proyecto con Sphinx y el tema RTD, ubicándola en **docs/build**.
-
-### Análisis Estático de Código (Linting)
-```bash
-poetry run task lint
-```
-Ejecuta Flake8 para análisis estático del código, ayudando a identificar problemas de estilo y errores.
-
-### Cobertura de Pruebas
-```bash
-poetry run task coverage
-```
-Realiza pruebas con Pytest y genera un informe de cobertura con Coverage.
-
-## Publicación del Paquete
-Para compilar y publicar tu paquete Python utilizando Poetry, sigue estos pasos:
-
-### Aumentar la versión del proyecto.
-```bash
-poetry version minor
+python main.py --config <path_to_config.yaml>
 ```
 
-```bash
-poetry version major
-```
+### Pipeline Overview
 
-### Compilación del Paquete
-Antes de publicar, es una buena práctica compilar el paquete para asegurarse de que todo esté configurado correctamente. Para compilar tu paquete, ejecuta:
-```bash
-poetry build
-```
-Este comando generará los archivos de distribución en los formatos de archivo Wheel y Source. Los archivos se crearán en el directorio **`dist/`** de tu proyecto.
+1. **Redundancy Filtering**: Removes identical sequences and optionally filters sequences based on length.
+2. **Embedding Generation**: Computes embeddings for sequences using supported models and stores them in HDF5 format.
+3. **GO Term Lookup**: Queries a vector database to find and annotate similar proteins.
+4. **Output**: Saves annotations in a structured CSV file.
 
-### Publicación en PyPI
-Una vez que hayas compilado tu paquete, puedes publicarlo en [PyPI](https://pypi.org) para que otros puedan instalarlo fácilmente. Asegúrate de tener una cuenta en PyPI y haber configurado tus credenciales de autenticación.
-```bash
-poetry publish
-```
-Este comando te pedirá tus credenciales de PyPI (si no están ya almacenadas) y luego subirá los archivos de distribución a PyPI.
+---
 
-### Configurar credenciales de PiPy
-Para configurar la github actions, debemos de añadir la clave secreta en la configuración del repositorio bajo el nombre `PYPI_API_TOKEN`.
-Este token lo sacamos tras haber configurado nuestra cuenta de pipy.
+## Documentation
 
-## Configurar Codecov y ReadTheDocs
-A través de la página de la aplicación [CodeCov](https://app.codecov.io/) y [ReadTheDocs](https://readthedocs.org/) podemos configurar los repositorios bajo nuestro usuario de github para que sean monitorizados por estos servicios.
+For complete details on pipeline configuration, parameters, and deployment, visit the [FANTASIA Documentation](https://protein-metamorphisms-is.readthedocs.io/en/latest/pipelines/fantasia.html).
 
-## Configurar los badges:
-Tomando las primeras lineas de este README.md de muestra, podemos reemplazar los valores de nuestro template, por los de nuestro proyecto deseado de forma intuitiva.
+---
+
+## Citation
+
+If you use FANTASIA in your work, please cite the following:
+
+1. Martínez-Redondo, G. I., Barrios, I., Vázquez-Valls, M., Rojas, A. M., & Fernández, R. (2024). Illuminating the functional landscape of the dark proteome across the Animal Tree of Life.  
+   https://doi.org/10.1101/2024.02.28.582465.
+
+2. Barrios-Núñez, I., Martínez-Redondo, G. I., Medina-Burgos, P., Cases, I., Fernández, R. & Rojas, A.M. (2024). Decoding proteome functional information in model organisms using protein language models.  
+   https://doi.org/10.1101/2024.02.14.580341.
+
+---
+
+## Contact Information
+
+- Francisco Miguel Pérez Canales: fmpercan@upo.es  
+- Gemma I. Martínez-Redondo: gemma.martinez@ibe.upf-csic.es  
+- Ana M. Rojas: a.rojas.m@csic.es  
+- Rosa Fernández: rosa.fernandez@ibe.upf-csic.es  
 

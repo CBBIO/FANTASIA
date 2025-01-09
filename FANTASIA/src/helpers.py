@@ -39,6 +39,9 @@ def download_embeddings(url, tar_path):
 
 import subprocess
 
+import os
+import subprocess
+
 def load_dump_to_db(dump_path, db_config):
     """
     Load a database backup file (in TAR format) into the database.
@@ -51,6 +54,11 @@ def load_dump_to_db(dump_path, db_config):
         Database configuration dictionary containing host, port, user, password, and db name.
     """
     print("Loading dump into the database...")
+
+    # Configura las variables de entorno necesarias para pg_restore
+    env = os.environ.copy()
+    env["PGPASSWORD"] = db_config["DB_PASSWORD"]
+
     command = [
         "pg_restore",
         "--verbose",
@@ -63,16 +71,14 @@ def load_dump_to_db(dump_path, db_config):
 
     print("Executing:", " ".join(command))
     try:
-        # Use Popen to handle password input via stdin
         process = subprocess.Popen(
             command,
-            stdin=subprocess.PIPE,  # Allow sending input to the process
-            stdout=subprocess.PIPE,  # Capture standard output
-            stderr=subprocess.PIPE,  # Capture standard error
-            text=True  # Ensure strings instead of bytes
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env  # Usa las variables de entorno configuradas
         )
-        # Send the password followed by a newline
-        stdout, stderr = process.communicate(input=f"{db_config['DB_PASSWORD']}\n")
+        stdout, stderr = process.communicate()
 
         if process.returncode == 0:
             print("Database dump loaded successfully.")
@@ -84,19 +90,3 @@ def load_dump_to_db(dump_path, db_config):
 
 
 
-if __name__ == "__main__":
-    import yaml
-
-    # Read configuration
-    with open("./FANTASIA/config.yaml", "r") as config_file:
-        conf = yaml.safe_load(config_file)
-
-    embeddings_dir = os.path.expanduser(conf["embeddings_path"])
-    os.makedirs(embeddings_dir, exist_ok=True)
-    tar_path = os.path.join(embeddings_dir, "embeddings.tar")
-
-    # Step 1: Download embeddings
-    download_embeddings(conf["embeddings_url"], tar_path)
-
-    # Step 2: Load dump into database
-    load_dump_to_db(tar_path, conf)

@@ -1,10 +1,10 @@
 #System
-max_workers: 3 # Embedding search parallelism over PGVector seems broken (Auto set to 1 for that proccess).
+max_workers: 1
 
 # DB CONFIGURATION
 DB_USERNAME: usuario
 DB_PASSWORD: clave
-DB_HOST: localhost
+DB_HOST: pgvectorsql
 DB_PORT: 5432
 DB_NAME: BioData
 
@@ -21,13 +21,12 @@ embeddings_path: ~/fantasia/dumps/
 fantasia_input_fasta: ~/fantasia/input/zinc.fasta
 fantasia_output_h5: ~/fantasia/embeddings/
 fantasia_output_csv: ~/fantasia/results/
+redundancy_file: ~/fantasia/redundancy/output.fasta
+
 fantasia_prefix: finger_zinc
 max_distance: 1.1
 length_filter: 5000
 redundancy_filter: 0.65
-redundancy_file: ~/fantasia/redundancy/output.fasta
-
-topgo?: True
 
 embedding:
   types:
@@ -38,6 +37,10 @@ embedding:
 
   embedding_batch_size: 10 # Model input size
 
-constants: "./constants.yaml"
+topgo?: True
+
+
+
+constants: "./FANTASIA/constants.yaml"
 
 

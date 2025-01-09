@@ -1,17 +1,23 @@
+networks:
+  fantasia-network:
+    driver: bridge
+
 services:
   app:
     build:
       dockerfile: Dockerfile
-    container_name: protein-metamorphisms
+    container_name: FANTASIA
     depends_on:
-      - pgvectorsql
-      - rabbitmq
-    environment:
-      POSTGRES_USER: usuario
-      POSTGRES_PASSWORD: clave
-      POSTGRES_DB: BioData
+      pgvectorsql:
+        condition: service_healthy
     ports:
-      - "8000:8000"  # Cambia el puerto según sea necesario
+      - "8000:8000"
+    networks:
+      - fantasia-network
+    volumes:
+      - $HOME/fantasia:/root/fantasia  # Sincroniza /home/xaxi/fantasia con /root/fantasia en el contenedor
+
+
 
   pgvectorsql:
     image: pgvector/pgvector:pg16
@@ -22,7 +28,14 @@ services:
       POSTGRES_DB: BioData
     ports:
       - "5432:5432"
-    command: postgres
+    networks:
+      - fantasia-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U usuario -d BioData" ]
+      interval: 5s  # Intervalo entre comprobaciones
+      timeout: 5s   # Tiempo máximo para cada comprobación
+      retries: 5    # Intentos antes de marcarlo como unhealthy
+
 
   rabbitmq:
     image: rabbitmq:management
@@ -30,3 +43,5 @@ services:
     ports:
       - "15672:15672"
       - "5672:5672"
+    networks:
+      - fantasia-network
