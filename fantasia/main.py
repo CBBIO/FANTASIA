@@ -6,9 +6,9 @@ import argparse
 from datetime import datetime
 import protein_metamorphisms_is.sql.model.model  # noqa: F401
 from protein_metamorphisms_is.helpers.config.yaml import read_yaml_config
-from FANTASIA.src.helpers import download_embeddings, load_dump_to_db
-from FANTASIA.src.embedder import SequenceEmbedder
-from FANTASIA.src.lookup import EmbeddingLookUp
+from fantasia.src.helpers import download_embeddings, load_dump_to_db
+from fantasia.src.embedder import SequenceEmbedder
+from fantasia.src.lookup import EmbeddingLookUp
 
 
 def initialize(config_path):
@@ -37,7 +37,7 @@ def run_pipeline(config_path, fasta_path=None):
     if fasta_path:
         conf["fantasia_input_fasta"] = fasta_path
 
-    # Ejecutar el pipeline de FANTASIA
+    # Ejecutar el pipeline de fantasia
     current_date = datetime.now().strftime("%Y%m%d%H%M%S")
     embedder = SequenceEmbedder(conf, current_date)
     embedder.start()
@@ -57,9 +57,9 @@ def wait_forever():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="FANTASIA: Command Handler")
+    parser = argparse.ArgumentParser(description="fantasia: Command Handler")
     parser.add_argument("command", type=str, nargs="?", default=None, help="Command to execute: initialize or run")
-    parser.add_argument("--config", type=str, default="./FANTASIA/config.yaml", help="Path to the configuration YAML file.")
+    parser.add_argument("--config", type=str, default="./fantasia/config.yaml", help="Path to the configuration YAML file.")
     parser.add_argument("--fasta", type=str, help="Path to the input FASTA file.")
     args = parser.parse_args()
 
@@ -67,7 +67,7 @@ if __name__ == "__main__":
         print("Initializing embeddings and database...")
         initialize(args.config)
     elif args.command == "run":
-        print("Running the FANTASIA pipeline...")
+        print("Running the fantasia pipeline...")
         run_pipeline(config_path=args.config, fasta_path=args.fasta)
     elif args.command is None:
         wait_forever()

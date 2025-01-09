@@ -23,7 +23,7 @@ FANTASIA (Functional ANnoTAtion based on embedding space SImilArity) is a pipeli
 To install FANTASIA, ensure you have Python 3.8+ installed and use the following commands:
 
 ```bash
-pip install FANTASIA
+pip install fantasia
 ```
 
 ---

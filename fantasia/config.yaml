@@ -17,7 +17,7 @@ embeddings_url: "https://zenodo.org/records/14546346/files/embeddings.tar?downlo
 embeddings_path: ~/fantasia/dumps/
 
 
-# FANTASIA
+# fantasia
 fantasia_input_fasta: ~/fantasia/input/zinc.fasta
 fantasia_output_h5: ~/fantasia/embeddings/
 fantasia_output_csv: ~/fantasia/results/
@@ -41,6 +41,6 @@ topgo?: True
 
 
 
-constants: "./FANTASIA/constants.yaml"
+constants: "./fantasia/constants.yaml"
 
 
