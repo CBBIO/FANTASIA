@@ -1,0 +1,28 @@
+
+sequence_embedding_types:
+  - name: "ESM"
+    description: "Evolutionary Scale Modeling (ESM) embeddings are designed to capture the evolutionary information of protein sequences, utilizing deep learning to generate representations that enhance sequence analysis and prediction tasks."
+    task_name: "esm"
+    model_name: facebook/esm2_t6_8M_UR50D
+  - name: "Prost-T5"
+    description: "Prot-T5 embeddings leverage the capabilities of the T5 (Text-to-Text Transfer Transformer) model adapted for protein sequences, offering advanced sequence representation by considering both local and global sequence features."
+    task_name:  prost_t5
+    model_name: Rostlab/ProstT5
+  - name: "Prot-T5"
+    description: "Prot-T5 embeddings leverage the capabilities of the T5 (Text-to-Text Transfer Transformer) model adapted for protein sequences, offering advanced sequence representation by considering both local and global sequence features."
+    task_name: prot_t5
+    model_name: Rostlab/prot_t5_xl_uniref50
+
+
+structural_alignment_types:
+  - name: "CE-align"
+    description: "CE-align, or Combinatorial Extension, is a method for pairwise protein structure alignment. It focuses on aligning backbone atoms by identifying and extending aligned fragment pairs, offering insights into protein function and evolutionary history."
+    task_name: combinatorial_extension
+
+  - name: "US-align"
+    description: "US-align (Universal Structural alignment) is a unified protocol to compare 3D structures of different macromolecules (proteins, RNAs and DNAs) in different forms (monomers, oligomers and heterocomplexes) for both pairwise and multiple structure alignments. The core alogrithm of US-align is extended from TM-align and generates optimal structural alignments by maximizing TM-score of compared strucures through heuristic dynamic programming iterations. Large-scale benchmark tests showed that US-align can generate more accurate structural alignments with significantly reduced CPU time, compared to the state-of-the-art methods developed for specific structural alignment tasks. TM-score has values in (0,1] with 1 indicating an identical structure match, where a TM-score ≥0.5 (or 0.45) means the structures share the same global topology for proteins (or RNAs)."
+    task_name: universal
+
+  - name: "FATCAT"
+    description: "FATCAT (Flexible structure AlignmenT by Chaining Aligned fragment pairs allowing Twists), Protein structures are flexible and undergo structural rearrangements as part of their function. FATCAT (Flexible structure AlignmenT by Chaining Aligned fragment pairs allowing Twists) is an approach for flexible protein structure comparison. It simultaneously addresses the two major goals of flexible structure alignment; optimizing the alignment and minimizing the number of rigid-body movements (twists) around pivot points (hinges) introduced in the reference structure."
+    task_name: fatcat

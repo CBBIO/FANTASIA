@@ -8,8 +8,8 @@ sys.path.insert(0, os.path.abspath('../..'))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'python_poetry_template'
-copyright = '2023, frapercan'
+project = 'FANTASIA'
+copyright = '2024, frapercan'
 author = 'frapercan'
 
 # -- General configuration ---------------------------------------------------
