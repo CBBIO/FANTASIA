@@ -15,16 +15,14 @@ RUN python3 -m venv /opt/venv
 
 # Activate the virtual environment and install Python packages
 RUN /opt/venv/bin/pip install --upgrade pip \
-    && /opt/venv/bin/pip install protein-metamorphisms-is --no-cache-dir
+    && /opt/venv/bin/pip install fantasia --no-cache-dir
 
 
 # Add the virtual environment to the PATH
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application files and set the working directory
-COPY . /app
-WORKDIR /app
 
 # Default command to keep the container running
-ENTRYPOINT ["python3", "-m", "FANTASIA.main"]
+ENTRYPOINT ["python3", "-m", "fantasia.main"]
 

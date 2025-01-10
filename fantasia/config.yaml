@@ -8,7 +8,7 @@ DB_HOST: pgvectorsql
 DB_PORT: 5432
 DB_NAME: BioData
 
-rabbitmq_host: localhost
+rabbitmq_host: rabbitmq
 rabbitmq_user: guest
 rabbitmq_password: guest
 
@@ -24,7 +24,7 @@ fantasia_output_csv: ~/fantasia/results/
 redundancy_file: ~/fantasia/redundancy/output.fasta
 
 fantasia_prefix: finger_zinc
-max_distance: 1.1
+max_distance: 0.5
 length_filter: 5000
 redundancy_filter: 0.65
 
@@ -32,7 +32,7 @@ embedding:
   types:
     - 1 # ESM
     - 2 # Prost
-    - 3 # Prot
+#    - 3 # Prot
   batch_size: 50 # Queue
 
   embedding_batch_size: 10 # Model input size
@@ -41,6 +41,6 @@ topgo?: True
 
 
 
-constants: "./fantasia/constants.yaml"
+constants: "./opt/venv/lib/python3.12/site-packages/fantasia/constants.yaml"
 
 

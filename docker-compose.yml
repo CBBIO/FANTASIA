@@ -16,6 +16,8 @@ services:
       - fantasia-network
     volumes:
       - $HOME/fantasia:/root/fantasia  # Sincroniza /home/xaxi/fantasia con /root/fantasia en el contenedor
+      - $HOME/.cache/huggingface:/root/.cache/huggingface  # Monta la caché de Hugging Face en el contenedor
+
 
 
 
