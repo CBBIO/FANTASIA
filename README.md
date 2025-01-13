@@ -24,15 +24,6 @@ FANTASIA (Functional ANnoTAtion based on embedding space SImilArity) is a pipeli
 
 ---
 
-## **Key Features**
-
-- **Redundancy Filtering**: Removes identical sequences with **CD-HIT** and optionally excludes sequences based on length constraints.
-- **Embedding Generation**: Utilizes state-of-the-art models for protein sequence embeddings.
-- **GO Term Lookup**: Matches embeddings with a vector database to retrieve associated GO terms.
-- **Results**: Outputs transferred annotations with the correspondant distance matrix 
-
----
-
 ## **Prerequisites**
 
 1. **Operating System**: Updated Linux (Ubuntu recommended).
