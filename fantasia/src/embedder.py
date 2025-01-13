@@ -48,8 +48,8 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         Path to store the embedding results in CSV format.
     output_h5 : str
         Path to store the embeddings in HDF5 format.
-    batch_size : int
-        Number of sequences to process per batch.
+    batch_sizes : dict
+        Number of sequences to process per batch, specific to each model.
     length_filter : int or None
         Optional filter to exclude sequences longer than the specified length.
     """
@@ -72,7 +72,8 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         self.tokenizer_instances = {}
         self.base_module_path = 'protein_metamorphisms_is.operation.embedding.proccess.sequence'
         self.fetch_models_info()
-        self.batch_size = self.conf['embedding'].get('batch_size', 40)  # Add batch size configuration
+        self.sequence_queue_package = conf.get('sequence_queue_package')
+        self.batch_sizes = conf['embedding'].get('batch_size', {})  # Store batch sizes as a dict
         self.fasta_path = conf.get('fantasia_input_fasta')
         self.output_csv = conf.get("fantasia_output_csv")
         self.length_filter = conf.get('length_filter', None)
@@ -91,7 +92,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         Steps:
 
         - Runs CD-HIT for redundancy filtering if configured.
-        - Splits sequences into batches based on batch size.
+        - Splits sequences into batches based on batch size for each model.
         - Publishes tasks for embedding computation.
 
         Raises
@@ -122,29 +123,26 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                     continue
                 sequences.append(record)
 
-            # Dividir en lotes
-            sequence_batches = [sequences[i:i + self.batch_size] for i in range(0, len(sequences), self.batch_size)]
+            # Dividir en lotes específicos por modelo
+            for model_id in self.conf['embedding']['types']:
+                sequence_queue_package = self.sequence_queue_package  # Default batch size if not specified
+                sequence_batches = [sequences[i:i + sequence_queue_package] for i in
+                                    range(0, len(sequences), sequence_queue_package)]
 
-            for batch in sequence_batches:
-                model_batches = {}
-                for sequence in batch:
-                    for type in self.types.values():
-                        if type['id'] in self.conf['embedding']['types']:
-                            task_data = {
-                                'sequence': str(sequence.seq),
-                                'accession': sequence.id,
-                                'model_name': type['model_name'],
-                                'embedding_type_id': type['id']
-                            }
+                for batch in sequence_batches:
+                    model_batches = []
+                    for sequence in batch:
+                        task_data = {
+                            'sequence': str(sequence.seq),
+                            'accession': sequence.id,
+                            'model_name': self.types[model_id]['model_name'],
+                            'embedding_type_id': model_id
+                        }
+                        model_batches.append(task_data)
 
-                            if type['id'] not in model_batches:
-                                model_batches[type['id']] = []
-                            model_batches[type['id']].append(task_data)
-
-                for model_type, batch_data in model_batches.items():
-                    self.publish_task(batch_data, model_type)
+                    self.publish_task(model_batches, model_id)
                     self.logger.info(
-                        f"Published batch with {len(batch_data)} sequences to model type {model_type}.")
+                        f"Published batch with {len(model_batches)} sequences to model type {model_id}.")
 
         except Exception as e:
             self.logger.error(f"Error during enqueue process: {e}")
@@ -184,6 +182,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 }]
 
                 embedding_records = module.embedding_task(sequence_info, model, tokenizer,
+                                                          batch_size=self.batch_sizes[embedding_type_id],
                                                           embedding_type_id=embedding_type_id)
 
                 for record in embedding_records:

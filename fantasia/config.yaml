@@ -1,46 +1,57 @@
 #System
 max_workers: 1
+constants: "./fantasia/constants.yaml"
 
-# DB CONFIGURATION
+# Postgres CONFIGURATION
 DB_USERNAME: usuario
 DB_PASSWORD: clave
-DB_HOST: pgvectorsql
+DB_HOST: localhost
 DB_PORT: 5432
 DB_NAME: BioData
 
-rabbitmq_host: rabbitmq
+# Rabbitmq CONFIGURATION
+rabbitmq_host: localhost
 rabbitmq_user: guest
 rabbitmq_password: guest
 
-# Execution
+# Database dump source for information system
 embeddings_url: "https://zenodo.org/records/14546346/files/embeddings.tar?download=1"
+
+
 embeddings_path: ~/fantasia/dumps/
-
-
-# fantasia
-fantasia_input_fasta: ~/fantasia/input/zinc.fasta
 fantasia_output_h5: ~/fantasia/embeddings/
 fantasia_output_csv: ~/fantasia/results/
-redundancy_file: ~/fantasia/redundancy/output.fasta
+redundancy_file: ~/fantasia/redundancy/zinc_fingers.fasta
+
+
+# Configuration Parameters
+fantasia_input_fasta: ~/fantasia/input/zinc_fingers.fasta
 
 fantasia_prefix: finger_zinc
-max_distance: 0.5
 length_filter: 5000
 redundancy_filter: 0.65
+
+sequence_queue_package: 200
 
 embedding:
   types:
     - 1 # ESM
     - 2 # Prost
-#    - 3 # Prot
-  batch_size: 50 # Queue
+    - 3 # Prot
+  distance_threshold:
+    1: 1.2  # Umbral para ESM
+    2: 0.7  # Umbral para Prost
+    3: 0.7  # Umbral para Prot
+  batch_size:
+    1: 50
+    2: 60
+    3: 40
 
-  embedding_batch_size: 10 # Model input size
 
 topgo?: True
 
 
 
-constants: "./opt/venv/lib/python3.12/site-packages/fantasia/constants.yaml"
+
 
 

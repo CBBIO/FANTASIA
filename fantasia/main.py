@@ -30,6 +30,17 @@ def initialize(config_path):
 
 
 def run_pipeline(conf):
+    # Validar configuraciones específicas de modelos
+    embedding_types = conf["embedding"]["types"]
+    distance_threshold = conf["embedding"].get("distance_threshold", {})
+    batch_sizes = conf["embedding"].get("batch_size", {})
+
+    for model_id in embedding_types:
+        if model_id not in distance_threshold:
+            raise ValueError(f"Distance threshold not defined for embedding type {model_id}")
+        if model_id not in batch_sizes:
+            raise ValueError(f"Batch size not defined for embedding type {model_id}")
+
     # Ejecutar el pipeline de fantasia
     current_date = datetime.now().strftime("%Y%m%d%H%M%S")
     embedder = SequenceEmbedder(conf, current_date)
@@ -52,12 +63,20 @@ def wait_forever():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="fantasia: Command Handler")
     parser.add_argument("command", type=str, nargs="?", default=None, help="Command to execute: initialize or run")
-    parser.add_argument("--config", type=str, default="./opt/venv/lib/python3.12/site-packages/fantasia/config.yaml", help="Path to the configuration YAML file.")
+    parser.add_argument("--config", type=str, default="./fantasia/config.yaml", help="Path to the configuration YAML file.")
     parser.add_argument("--fasta", type=str, help="Path to the input FASTA file.")
     parser.add_argument("--prefix", type=str, help="Prefix for output files.")
-    parser.add_argument("--max_distance", type=float, help="Maximum distance for similarity matching.")
     parser.add_argument("--length_filter", type=int, help="Length filter threshold for sequences.")
     parser.add_argument("--redundancy_filter", type=float, help="Redundancy filter threshold.")
+
+    # CLI for embedding-specific parameters
+    parser.add_argument("--esm", action="store_true", help="Use ESM model.")
+    parser.add_argument("--prost", action="store_true", help="Use Prost model.")
+    parser.add_argument("--prot", action="store_true", help="Use Prot model.")
+    parser.add_argument("--distance_threshold", type=str, help="Comma-separated list of distance thresholds per model ID (e.g., 1:0.5,2:0.7,3:0.6).")
+    parser.add_argument("--batch_size", type=str, help="Comma-separated list of batch sizes per model ID (e.g., 1:50,2:60,3:40).")
+    parser.add_argument("--sequence_queue_package", type=int, help="Number of sequences to queue in each package.")
+
     args = parser.parse_args()
 
     if args.command == "initialize":
@@ -74,12 +93,46 @@ if __name__ == "__main__":
             conf["fantasia_input_fasta"] = args.fasta
         if args.prefix:
             conf["fantasia_prefix"] = args.prefix
-        if args.max_distance is not None:
-            conf["max_distance"] = args.max_distance
         if args.length_filter is not None:
             conf["length_filter"] = args.length_filter
         if args.redundancy_filter is not None:
             conf["redundancy_filter"] = args.redundancy_filter
+        if args.sequence_queue_package is not None:
+            conf["embedding_queue_size"] = args.sequence_queue_package
+
+        # Filtrar los modelos según las opciones del CLI
+        selected_models = []
+        if args.esm:
+            selected_models.append(1)  # ID para ESM
+        if args.prost:
+            selected_models.append(2)  # ID para Prost
+        if args.prot:
+            selected_models.append(3)  # ID para Prot
+
+        if selected_models:
+            conf["embedding"]["types"] = selected_models
+
+        # Procesar distance_threshold desde CLI
+        if args.distance_threshold:
+            try:
+                threshold_overrides = {
+                    int(k): float(v) for k, v in (pair.split(":") for pair in args.distance_threshold.split(","))
+                }
+                conf["embedding"]["distance_threshold"].update(threshold_overrides)
+            except ValueError as e:
+                print(f"Error parsing distance_threshold: {e}")
+                sys.exit(1)
+
+        # Procesar batch_size desde CLI
+        if args.batch_size:
+            try:
+                batch_size_overrides = {
+                    int(k): int(v) for k, v in (pair.split(":") for pair in args.batch_size.split(","))
+                }
+                conf["embedding"]["batch_size"].update(batch_size_overrides)
+            except ValueError as e:
+                print(f"Error parsing batch_size: {e}")
+                sys.exit(1)
 
         # Pasar la configuración modificada directamente
         run_pipeline(conf)

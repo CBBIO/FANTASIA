@@ -72,7 +72,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
             conf.get("fantasia_output_csv"),
             f"{conf.get('fantasia_prefix', 'default')}_results_{self.current_date}.csv"
         )
-        self.max_distance = conf.get('max_distance', 3)  # Distancia máxima permitida para el cálculo
+
         self.fetch_models_info()
 
     def fetch_models_info(self):
@@ -191,6 +191,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 ORDER BY
                     distance ASC;
             """)
+            max_distance = self.conf["embedding"]["distance_threshold"].get(embedding_type_id)
 
             self.logger.info(f"Executing query for accession {accession} and embedding type {embedding_type_id}.")
             # Ejecutar la consulta
@@ -198,7 +199,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 results = connection.execute(query, {
                     'vector_string': vector_string,
                     'embedding_type_id': embedding_type_id,
-                    'max_distance': float(self.max_distance)
+                    'max_distance': float(max_distance)
                 }).fetchall()
 
             if not results:
