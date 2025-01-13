@@ -179,18 +179,18 @@ redundancy_file: ~/fantasia/redundancy/output.fasta
 ## **Step 6: Run the Pipeline**
 
 
-Before running the pipeline, ensure the necessary input file is placed in the correct location. Copy the `zinc_fingers.fasta` file from the `data_sample` directory to the expected input directory:
+Before running the pipeline, ensure the necessary input file is placed in the correct location. Copy the `sample.fasta` file from the `data_sample` directory to the expected input directory:
 
 ```bash
 mkdir -p ~/fantasia/input
-cp ./data_sample/zinc_fingers.fasta ~/fantasia/input/zinc_fingers.fasta
+cp ./data_sample/sample.fasta ~/fantasia/input/sample.fasta
 ```
 
 Run the pipeline using an input FASTA file and the following command:
 
 ```bash
 python fantasia/main.py run \
-  --fasta ~/fantasia/input/zinc_fingers.fasta \
+  --fasta ~/fantasia/input/sample.fasta \
   --prefix finger_zinc \
   --length_filter 5000 \
   --redundancy_filter 0.65 \
@@ -204,7 +204,7 @@ python fantasia/main.py run \
 
 ### **Explanation of Parameters**
 
-- **`--fasta`**: Specifies the path to the input FASTA file containing protein sequences. In this case: `~/fantasia/input/zinc_fingers.fasta`.
+- **`--fasta`**: Specifies the path to the input FASTA file containing protein sequences. In this case: `~/fantasia/input/sample.fasta`.
 - **`--prefix`**: Sets the prefix for naming the output files. Here, the prefix is `finger_zinc`.
 - **`--length_filter`**: Filters out sequences longer than 5000 amino acids.
 - **`--redundancy_filter`**: Removes redundant sequences with a similarity threshold of 0.65.
