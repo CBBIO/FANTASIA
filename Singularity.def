@@ -1,0 +1,42 @@
+Bootstrap: docker
+From: python:3.10-slim
+
+%post
+    # Actualizar paquetes y herramientas del sistema
+    apt-get update && apt-get install -y \
+        wget \
+        build-essential \
+        libpq-dev \
+        libcurl4-openssl-dev \
+        git
+
+
+    apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    cd-hit \
+    postgresql-client-16 \
+    postgresql-contrib
+
+
+
+
+
+    # Instalar Poetry
+    pip install poetry
+
+    # Clonar el repositorio de FANTASIA
+    git clone https://github.com/CBBIO/FANTASIA.git /opt/FANTASIA
+    cd /opt/FANTASIA
+
+    poetry config virtualenvs.in-project true
+
+
+
+
+
+%runscript
+    echo "Running FANTASIA pipeline..."
+    exec cd /opt/FANTASIA
+    exec poetry run python fantasia/main.py "$@"

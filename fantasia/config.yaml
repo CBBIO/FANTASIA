@@ -21,31 +21,31 @@ embeddings_url: "https://zenodo.org/records/14546346/files/embeddings.tar?downlo
 embeddings_path: ~/fantasia/dumps/
 fantasia_output_h5: ~/fantasia/embeddings/
 fantasia_output_csv: ~/fantasia/results/
-redundancy_file: ~/fantasia/redundancy/sample.fasta
+redundancy_file: ~/fantasia/redundancy/UP000000625.fasta
 
 
 # Configuration Parameters
-fantasia_input_fasta: ~/fantasia/input/sample.fasta
+fantasia_input_fasta: ~/fantasia/input/UP000000625.fasta
 
-fantasia_prefix: finger_zinc
+fantasia_prefix: UP000000625
 length_filter: 5000
-redundancy_filter: 0.65
+redundancy_filter: False
 
 sequence_queue_package: 200
 
 embedding:
   types:
-    - 1 # ESM
+#    - 1 # ESM
     - 2 # Prost
-    - 3 # Prot
+#    - 3 # Prot
   distance_threshold:
     1: 1.2  # Umbral para ESM
     2: 0.7  # Umbral para Prost
     3: 0.7  # Umbral para Prot
   batch_size:
-    1: 50
-    2: 60
-    3: 40
+    1: 64
+    2: 32
+    3: 64
 
 
 topgo?: True

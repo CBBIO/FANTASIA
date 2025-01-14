@@ -168,28 +168,42 @@ class SequenceEmbedder(SequenceEmbeddingManager):
             If an error occurs during the embedding process.
         """
         try:
-            results = []
-            for data in task_data:
-                embedding_type_id = data['embedding_type_id']
-                model = self.model_instances[embedding_type_id]
-                tokenizer = self.tokenizer_instances[embedding_type_id]
-                module = self.types[embedding_type_id]['module']
+            if not task_data:
+                self.logger.warning("No task data provided for processing.")
+                return []
 
-                # Prepare input for embedding_task
-                sequence_info = [{
-                    'sequence': data['sequence'],
-                    'sequence_id': data['accession']  # Propagating accession as sequence_id
-                }]
+            # Extract embedding type and verify uniformity
+            embedding_type_id = task_data[0]['embedding_type_id']
+            if not all(data['embedding_type_id'] == embedding_type_id for data in task_data):
+                raise ValueError("All sequences in the batch must have the same embedding_type_id.")
 
-                embedding_records = module.embedding_task(sequence_info, model, tokenizer,
-                                                          batch_size=self.batch_sizes[embedding_type_id],
-                                                          embedding_type_id=embedding_type_id)
+            # Retrieve model, tokenizer, and module
+            model = self.model_instances[embedding_type_id]
+            tokenizer = self.tokenizer_instances[embedding_type_id]
+            module = self.types[embedding_type_id]['module']
 
-                for record in embedding_records:
-                    record['embedding_type_id'] = embedding_type_id
-                    record['accession'] = data['accession']  # Propagar el accession
-                    results.append(record)
-            return results
+            # Prepare batch input
+            sequence_info = [
+                {'sequence': data['sequence'], 'sequence_id': data['accession']}
+                for data in task_data
+            ]
+
+            # Call embedding_task for the entire batch
+            embedding_records = module.embedding_task(
+                sequence_info,
+                model,
+                tokenizer,
+                batch_size=self.batch_sizes[embedding_type_id],  # Use batch size as the number of sequences
+                embedding_type_id=embedding_type_id
+            )
+
+            # Add additional metadata to each record
+            for record, data in zip(embedding_records, task_data):
+                record['embedding_type_id'] = embedding_type_id
+                record['accession'] = data['accession']  # Propagate accession
+
+            return embedding_records
+
         except Exception as e:
             self.logger.error(f"Error during embedding process: {e}\n{traceback.format_exc()}")
             raise

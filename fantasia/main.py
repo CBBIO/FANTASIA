@@ -135,6 +135,7 @@ if __name__ == "__main__":
                 sys.exit(1)
 
         # Pasar la configuración modificada directamente
+        print(conf)
         run_pipeline(conf)
     elif args.command is None:
         wait_forever()
