@@ -191,7 +191,7 @@ Run the pipeline using an input FASTA file and the following command:
 ```bash
 python fantasia/main.py run \
   --fasta ~/fantasia/input/sample.fasta \
-  --prefix finger_zinc \
+  --prefix sample \
   --length_filter 5000 \
   --redundancy_filter 0.65 \
   --sequence_queue_package 200 \
