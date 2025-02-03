@@ -59,6 +59,21 @@ def wait_forever():
         print("Stopping container.")
 
 
+def setup_directories(conf):
+    """
+    Crea los directorios base sin modificar los valores en `conf`.
+    """
+    base_directory = os.path.expanduser(conf.get("base_directory", "~/fantasia/"))
+
+    for key, path in conf.get("directories", {}).items():
+        full_path = os.path.expanduser(path)
+        os.makedirs(full_path, exist_ok=True)
+
+    return conf  # Solo crea directorios, sin sobrescribir valores
+
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="fantasia: Command Handler")
     parser.add_argument("command", type=str, nargs="?", default=None, help="Command to execute: initialize or run")
@@ -87,6 +102,9 @@ if __name__ == "__main__":
 
         # Leer la configuración una sola vez
         conf = read_yaml_config(args.config)
+        conf = setup_directories(conf)
+
+        print(conf)
 
         # Sobrescribir parámetros con los valores del CLI
         if args.fasta:

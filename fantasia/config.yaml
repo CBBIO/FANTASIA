@@ -1,62 +1,118 @@
-#System
+# ==========================
+# 🌍 Global Configuration
+# ==========================
+
+# Maximum number of worker threads for parallel processing.
 max_workers: 1
+
+# Path to the system constants file.
 constants: "./fantasia/constants.yaml"
+
+# Monitoring interval in seconds (for processes that require periodic checks).
 monitor_interval: 5
 
-# Postgres CONFIGURATION
-DB_USERNAME: usuario
-DB_PASSWORD: clave
-DB_HOST: localhost
-DB_PORT: 5432
-DB_NAME: BioData
 
-# Rabbitmq CONFIGURATION
-rabbitmq_host: localhost
-rabbitmq_user: guest
-rabbitmq_password: guest
+# ==========================
+# 🗄️ Database (PostgreSQL)
+# ==========================
 
-# Database dump source for information system
+# Credentials and configuration for connecting to the PostgreSQL database.
+DB_USERNAME: usuario         # Database username.
+DB_PASSWORD: clave           # Database password.
+DB_HOST: localhost           # Host where the database server is running.
+DB_PORT: 5432                # Port used for the database connection.
+DB_NAME: BioData             # Name of the database to use.
+
+
+# ==========================
+# 📨 Message Queue (RabbitMQ)
+# ==========================
+
+# Configuration for the RabbitMQ message broker.
+rabbitmq_host: localhost     # RabbitMQ server hostname.
+rabbitmq_user: guest         # RabbitMQ username for authentication.
+rabbitmq_password: guest     # RabbitMQ password for authentication.
+
+
+# ==========================
+# 🔄 Data Source Configuration
+# ==========================
+
+# URL to download the embeddings database dump.
 embeddings_url: "https://zenodo.org/records/14546346/files/embeddings.tar?download=1"
 
 
-embeddings_path: ~/fantasia/dumps/
-fantasia_output_h5: ~/fantasia/embeddings/
-fantasia_output_csv: ~/fantasia/results/
-redundancy_temp: ~/fantasia/redundancy_temp/
+# ==========================
+# 📂 Directory Configuration
+# ==========================
+
+base_directory: ~/fantasia/
+
+directories:
+  embeddings: ~/fantasia/dumps
+  hdf5_outputs: ~/fantasia/embeddings
+  csv_outputs: ~/fantasia/results
+  redundancy_temp: ~/fantasia/redundancy_temp
 
 
-# Configuration Parameters
+# ==========================
+# 🔬 Pipeline Configuration
+# ==========================
+
+# Path to the input FASTA file for protein sequences.
 fantasia_input_fasta: data_sample/worm_test.fasta
+
+# Reference tag used for lookup operations.
 lookup_reference_tag: GOA2022
 
+# Maximum number of entries to process.
 limit_per_entry: 100
+
+# Prefix for output file names.
 fantasia_prefix: worm_test_Prot_100_1.2
+
+# Threshold for sequence length filtering.
 length_filter: 5000000
+
+# Threshold for redundancy filtering.
 redundancy_filter: 0
 
+# Number of sequences to package in each queue batch.
 sequence_queue_package: 64
 
+
+# ==========================
+# 🧬 Embedding Configuration
+# ==========================
+
 embedding:
+  # List of embedding models to use. The numbers correspond to:
+  # 1 - ESM (Evolutionary Scale Modeling)
+  # 2 - Prost (Protein Structural Transformer)
+  # 3 - Prot (Protein Language Model)
   types:
-#    - 1 # ESM
-#    - 2 # Prost
+    - 1 # ESM
+    - 2 # Prost
     - 3 # Prot
+
+  # Distance threshold values for each embedding model.
+  # This determines how close two embeddings must be to be considered similar.
   distance_threshold:
-    1: 1 # Umbral para ESM
-    2: 1 # Umbral para Prost
-    3: 1.2 # Umbral para Prot
+    1: 1.0  # Threshold for ESM
+    2: 1.0  # Threshold for Prost
+    3: 1.2  # Threshold for Prot
+
+  # Batch size for processing embeddings.
+  # Controls how many sequences are processed at once for each embedding model.
   batch_size:
-    1: 1
-    2: 1
-    3: 1
+    1: 1  # Batch size for ESM
+    2: 1  # Batch size for Prost
+    3: 1  # Batch size for Prot
 
 
+# ==========================
+# 🧠 Functional Analysis
+# ==========================
 
-
-topgo?: True
-
-
-
-
-
-
+# Enable or disable the use of TopGO for Gene Ontology enrichment analysis.
+topgo?: true

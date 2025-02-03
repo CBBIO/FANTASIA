@@ -74,14 +74,16 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         self.base_module_path = 'protein_metamorphisms_is.operation.embedding.proccess.sequence'
         self.fetch_models_info()
         self.sequence_queue_package = conf.get('sequence_queue_package')
-        self.batch_sizes = conf['embedding'].get('batch_size', {})  # Store batch sizes as a dict
-        self.fasta_path = conf.get('fantasia_input_fasta')
-        self.output_csv = conf.get("fantasia_output_csv")
+        self.batch_sizes = conf['embedding'].get('batch_size', {})  # Store batch sizes as a dict        self.fasta_path = conf.get('fantasia_input_fasta')
         self.length_filter = conf.get('length_filter', None)
+
+        self.fasta_path = conf.get('fantasia_input_fasta')
+        self.output_csv = conf["directories"]["csv_outputs"]
         self.output_h5 = os.path.join(
-            conf.get("fantasia_output_h5"),
+            conf["directories"]["hdf5_outputs"],
             f"{conf.get('fantasia_prefix', 'default')}_embeddings_{self.current_date}.h5"
         )
+
 
         self.results = []
 

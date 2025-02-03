@@ -67,12 +67,14 @@ class EmbeddingLookUp(QueueTaskInitializer):
         super().__init__(conf)
         self.current_date = current_date
         self.logger.info("EmbeddingLookUp initialized")
+
+        # Usar rutas desde conf
         self.h5_path = os.path.join(
-            conf.get("fantasia_output_h5"),
+            conf["directories"]["hdf5_outputs"],
             f"{conf.get('fantasia_prefix', 'default')}_embeddings_{self.current_date}.h5"
         )
         self.output_csv = os.path.join(
-            conf.get("fantasia_output_csv"),
+            conf["directories"]["csv_outputs"],
             f"{conf.get('fantasia_prefix', 'default')}_results_{self.current_date}.csv"
         )
         self.limit_per_entry = self.conf.get("limit_per_entry", 200)
