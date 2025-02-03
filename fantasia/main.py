@@ -45,7 +45,6 @@ def run_pipeline(conf):
     current_date = datetime.now().strftime("%Y%m%d%H%M%S")
     embedder = SequenceEmbedder(conf, current_date)
     embedder.start()
-
     lookup = EmbeddingLookUp(conf, current_date)
     lookup.start()
 
@@ -68,6 +67,7 @@ if __name__ == "__main__":
     parser.add_argument("--prefix", type=str, help="Prefix for output files.")
     parser.add_argument("--length_filter", type=int, help="Length filter threshold for sequences.")
     parser.add_argument("--redundancy_filter", type=float, help="Redundancy filter threshold.")
+    parser.add_argument("--max_workers", type=int, default=1, help="Maximum number of workers for parallel tasks.")
 
     # CLI for embedding-specific parameters
     parser.add_argument("--esm", action="store_true", help="Use ESM model.")
@@ -97,8 +97,10 @@ if __name__ == "__main__":
             conf["length_filter"] = args.length_filter
         if args.redundancy_filter is not None:
             conf["redundancy_filter"] = args.redundancy_filter
+        if args.max_workers is not None:
+            conf["max_workers"] = args.max_workers
         if args.sequence_queue_package is not None:
-            conf["embedding_queue_size"] = args.sequence_queue_package
+            conf["sequence_queue_package"] = args.sequence_queue_package
 
         # Filtrar los modelos según las opciones del CLI
         selected_models = []

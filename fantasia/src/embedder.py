@@ -27,6 +27,7 @@ from Bio import SeqIO
 import h5py
 
 from protein_metamorphisms_is.operation.embedding.sequence_embedding import SequenceEmbeddingManager
+from protein_metamorphisms_is.sql.model.entities.protein.accesion import Accession
 
 
 class SequenceEmbedder(SequenceEmbeddingManager):
@@ -84,6 +85,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
 
         self.results = []
 
+
     def enqueue(self):
         """
         Reads the input FASTA file, applies optional redundancy and length filters,
@@ -104,18 +106,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
             self.logger.info("Starting embedding enqueue process.")
             sequences = []
 
-            # Determinar el archivo FASTA de entrada dependiendo del filtro de redundancia
             input_fasta = self.fasta_path
-            if self.conf.get('redundancy_filter'):
-                self.logger.info("Running CD-HIT for redundancy filtering.")
-
-                if shutil.which("cd-hit") is None:
-                    raise EnvironmentError("CD-HIT is not installed or not found in the PATH.")
-
-                os.system(
-                    f"cd-hit -i {self.fasta_path} -o {self.conf.get('redundancy_file')} -c {self.conf.get('redundancy_filter')}"
-                )
-                input_fasta = self.conf.get('redundancy_file')  # Usar el archivo generado por CD-HIT
 
             # Leer las secuencias del archivo FASTA (filtradas o no)
             for record in SeqIO.parse(os.path.expanduser(input_fasta), "fasta"):
@@ -210,12 +201,12 @@ class SequenceEmbedder(SequenceEmbeddingManager):
 
     def store_entry(self, results):
         """
-        Stores the computed embeddings in an HDF5 file.
+        Stores the computed embeddings and sequences in an HDF5 file.
 
         Parameters
         ----------
         results : list of dict
-            A list of embedding records, each containing metadata and embedding data.
+            A list of embedding records, each containing metadata, embedding data, and the sequence.
 
         Raises
         ------
@@ -233,18 +224,62 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                     accession = record['accession']
                     embedding_type_id = record['embedding_type_id']
 
+                    # Crear grupo para el accession
                     accession_group = h5file.require_group(f"accession_{accession}")
 
+                    # Crear grupo para el tipo de embedding
                     type_group = accession_group.require_group(f"type_{embedding_type_id}")
 
-                    if "embedding" in type_group:
+                    # Almacenar el embedding
+                    if "embedding" not in type_group:
+                        type_group.create_dataset("embedding", data=record['embedding'])
+                        type_group.attrs['shape'] = record['shape']
+                        self.logger.info(f"Stored embedding for accession {accession}, type {embedding_type_id}.")
+                    else:
                         self.logger.warning(
-                            f"Embedding for type {embedding_type_id} already exists in accession {accession}. Skipping.")
-                        continue
+                            f"Embedding for type {embedding_type_id} already exists in accession {accession}. Skipping embedding storage."
+                        )
 
-                    type_group.create_dataset("embedding", data=record['embedding'])
-                    type_group.attrs['shape'] = record['shape']
-                    self.logger.info(f"Stored embedding for accession {accession}, type {embedding_type_id}.")
+                    # Almacenar la secuencia
+                    if "sequence" not in accession_group:
+                        accession_group.create_dataset("sequence", data=record['sequence'].encode('utf-8'))
+                        self.logger.info(f"Stored sequence for accession {accession}.")
+                    else:
+                        self.logger.warning(
+                            f"Sequence for accession {accession} already exists. Skipping sequence storage."
+                        )
         except Exception as e:
             self.logger.error(f"Error storing results in HDF5: {e}")
             raise
+
+    def tag_goa(self):
+        accessions = set()
+
+        # Leer el archivo FASTA y extraer los IDs de los accessions
+        for record in SeqIO.parse('/home/bioxaxi/PycharmProjects/FANTASIA/data_sample/goa_2022.fasta', "fasta"):
+            accessions.add(record.id)
+
+        # Consultar en la base de datos los accessions que existen
+        print(f"Se encontraron {len(accessions)} accessions en el archivo FASTA.")
+
+        # Consultar en la base de datos los accessions que existen
+        found_accessions = self.session.query(Accession).filter(Accession.code.in_(accessions)).all()
+
+        if not found_accessions:
+            print("No se encontraron accessions en la base de datos.")
+            return
+
+        # Actualizar las etiquetas (tag) de los accessions encontrados
+        for acc in found_accessions:
+            acc.tag = f"GOA2022"  # Modificación del tag
+
+        # Confirmar los cambios en la base de datos
+        self.session.commit()
+
+        print(f"Se actualizaron {len(found_accessions)} accessions en la base de datos.")
+
+
+
+
+
+

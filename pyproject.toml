@@ -18,7 +18,7 @@ flake8-bugbear = "^23.2.13"
 taskipy = "^1.10.3"
 sphinx = "^7.2.6"
 sphinx-rtd-theme = "^1.2.0"
-protein-metamorphisms-is = "^1.6.0"
+protein-metamorphisms-is = "^1.7.0"
 
 
 [tool.coverage.run]

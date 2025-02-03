@@ -1,6 +1,7 @@
 #System
 max_workers: 1
 constants: "./fantasia/constants.yaml"
+monitor_interval: 5
 
 # Postgres CONFIGURATION
 DB_USERNAME: usuario
@@ -21,31 +22,35 @@ embeddings_url: "https://zenodo.org/records/14546346/files/embeddings.tar?downlo
 embeddings_path: ~/fantasia/dumps/
 fantasia_output_h5: ~/fantasia/embeddings/
 fantasia_output_csv: ~/fantasia/results/
-redundancy_file: ~/fantasia/redundancy/UP000000625.fasta
+redundancy_temp: ~/fantasia/redundancy_temp/
 
 
 # Configuration Parameters
-fantasia_input_fasta: ~/fantasia/input/UP000000625.fasta
+fantasia_input_fasta: data_sample/worm_test.fasta
+lookup_reference_tag: GOA2022
 
-fantasia_prefix: UP000000625
-length_filter: 5000
-redundancy_filter: False
+limit_per_entry: 100
+fantasia_prefix: worm_test_Prot_100_1.2
+length_filter: 5000000
+redundancy_filter: 0
 
-sequence_queue_package: 200
+sequence_queue_package: 64
 
 embedding:
   types:
 #    - 1 # ESM
-    - 2 # Prost
-#    - 3 # Prot
+#    - 2 # Prost
+    - 3 # Prot
   distance_threshold:
-    1: 1.2  # Umbral para ESM
-    2: 0.7  # Umbral para Prost
-    3: 0.7  # Umbral para Prot
+    1: 1 # Umbral para ESM
+    2: 1 # Umbral para Prost
+    3: 1.2 # Umbral para Prot
   batch_size:
-    1: 64
-    2: 32
-    3: 64
+    1: 1
+    2: 1
+    3: 1
+
+
 
 
 topgo?: True
