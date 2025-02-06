@@ -3,7 +3,7 @@
 
 ## **Introduction**
 
-FANTASIA (Functional ANnoTAtion based on embedding space SImilArity) is a pipeline for annotating Gene Ontology (GO) terms for protein sequences using advanced protein language models like **ProtT5**, **ProstT5**, and **ESM2**. This system automates complex workflows, from sequence processing to functional annotation, providing a scalable and efficient solution for protein structure and functionality analysis.
+FANTASIA (Functional ANnoTAtion based on embedding space SImilArity) is a pipeline for annotating Gene Ontology (GO) terms for protein sequences using advanced protein language models like **ProtT5**, **ProstT5**, and **ESM2**. This system automates complex workflows, from sequence processing to functional annotation, providing a scalable and efficient solution.
 
 ---
 
