@@ -1,8 +1,9 @@
 [flake8]
 exclude =
-    migrations
-    __pycache__
-    manage.py
-    settings.py
-    poetryenv
-   .env
+    migrations,
+    __pycache__,
+    manage.py,
+    settings.py,
+    poetryenv,
+    .env
+max-line-length = 180
