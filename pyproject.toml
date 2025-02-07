@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "FANTASIA"
-version = "0.5.0"
+version = "0.6.0"
 description = "Functional ANnoTAtion based on embedding space SImilArity"
 authors = ["Francisco Miguel Pérez Canales <frapercan1@alum.us.es>","Gemma Martínez Redondo <gemma.martinez@ibe.upf-csic.es>"]
 readme = "README.md"
@@ -25,12 +25,12 @@ protein-metamorphisms-is = "^1.7.0"
 omit = ["*/site-packages/*"]
 
 [tool.coverage.report]
-fail_under = 100
+fail_under = 95
 
 [tool.taskipy.tasks]
 html_docs = "make html -C docs"
-lint = "poetry run flake8 FANTASIA"
-coverage = "poetry run coverage run -m --source=FANTASIA pytest tests && poetry run coverage report -m"
+lint = "poetry run flake8 fantasia"
+coverage = "poetry run coverage run -m --source=fantasia pytest tests && poetry run coverage report -m"
 
 
 

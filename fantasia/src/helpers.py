@@ -3,6 +3,7 @@ import requests
 import subprocess
 from tqdm import tqdm
 
+
 def download_embeddings(url, tar_path):
     """
     Download the embeddings TAR file from the given URL with a progress bar.
@@ -23,11 +24,11 @@ def download_embeddings(url, tar_path):
     if response.status_code == 200:
         total_size = int(response.headers.get('content-length', 0))
         with open(tar_path, "wb") as f, tqdm(
-            desc="Downloading",
-            total=total_size,
-            unit="B",
-            unit_scale=True,
-            unit_divisor=1024,
+                desc="Downloading",
+                total=total_size,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
         ) as progress_bar:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
@@ -36,11 +37,6 @@ def download_embeddings(url, tar_path):
     else:
         raise Exception(f"Failed to download embeddings. Status code: {response.status_code}")
 
-
-import subprocess
-
-import os
-import subprocess
 
 def load_dump_to_db(dump_path, db_config):
     """
@@ -86,7 +82,3 @@ def load_dump_to_db(dump_path, db_config):
             print(f"Error while loading dump: {stderr}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-
-
-
-

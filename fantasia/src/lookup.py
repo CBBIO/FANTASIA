@@ -17,16 +17,14 @@ Additionally, customizations have been made to ensure seamless integration with
 the vectorial database and HDF5-based embedding storage used in this pipeline.
 
 """
-
+import importlib
 import os
-import tempfile
 
 import pandas as pd
 from pycdhit import cd_hit, read_clstr
 from sqlalchemy import text
 import h5py
 
-import subprocess
 from protein_metamorphisms_is.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType
 from protein_metamorphisms_is.tasks.queue import QueueTaskInitializer
 
@@ -69,17 +67,14 @@ class EmbeddingLookUp(QueueTaskInitializer):
         self.logger.info("EmbeddingLookUp initialized")
 
         # Usar rutas desde conf
-        self.h5_path = os.path.join(
-            conf["directories"]["hdf5_outputs"],
-            f"{conf.get('fantasia_prefix', 'default')}_embeddings_{self.current_date}.h5"
-        )
-        self.output_csv = os.path.join(
-            conf["directories"]["csv_outputs"],
-            f"{conf.get('fantasia_prefix', 'default')}_results_{self.current_date}.csv"
-        )
+        self.experiment_path = self.conf.get("experiment_path")
+
         self.limit_per_entry = self.conf.get("limit_per_entry", 200)
 
         self.fetch_models_info()
+
+        self.embeddings_path = os.path.join(self.conf.get("experiment_path"), "embeddings.h5")
+        self.results_path = os.path.join(self.conf.get("experiment_path"), "results.csv")
 
         # Check if redundancy filter is active
         redundancy_filter = self.conf.get("redundancy_filter", 0)
@@ -93,18 +88,36 @@ class EmbeddingLookUp(QueueTaskInitializer):
         Queries the `SequenceEmbeddingType` table to fetch available embedding models.
         Modules are dynamically imported and stored in the `types` attribute.
         """
-        self.session_init()
-        embedding_types = self.session.query(SequenceEmbeddingType).all()
-        self.session.close()
+        try:
+            embedding_types = self.session.query(SequenceEmbeddingType).all()
+        except Exception as e:
+            self.logger.error(f"Error querying SequenceEmbeddingType table: {e}")
+            raise
+
         self.types = {}
 
+        enabled_models = self.conf.get('embedding', {}).get('models', {})
+
         for type_obj in embedding_types:
-            if type_obj.id in self.conf['embedding']['types']:
-                self.types[type_obj.id] = {
-                    'model_name': type_obj.model_name,
-                    'id': type_obj.id,
-                    'task_name': type_obj.task_name,
-                }
+            if type_obj.task_name in enabled_models:
+                model_config = enabled_models[type_obj.task_name]
+                if model_config.get('enabled', False):
+                    try:
+                        self.base_module_path = 'protein_metamorphisms_is.operation.embedding.proccess.sequence'
+                        module_name = f"{self.base_module_path}.{type_obj.task_name}"
+                        module = importlib.import_module(module_name)
+                        self.types[type_obj.task_name] = {
+                            'module': module,
+                            'model_name': type_obj.model_name,
+                            'id': type_obj.id,
+                            'task_name': type_obj.task_name,
+                            'distance_threshold': model_config.get('distance_threshold'),
+                            'batch_size': model_config.get('batch_size'),
+                        }
+                        self.logger.info(f"Loaded model: {type_obj.task_name} ({type_obj.model_name})")
+                    except ImportError as e:
+                        self.logger.error(f"Failed to import module {module_name}: {e}")
+                        raise
 
     def generate_clusters(self):
         """
@@ -117,20 +130,8 @@ class EmbeddingLookUp(QueueTaskInitializer):
             Si ocurre un error durante el proceso.
         """
         try:
-            # Crear directorio base para la ejecución
-            prefix = self.conf.get("fantasia_prefix", "default")
-            redundancy_dir = os.path.expanduser(
-                os.path.join(self.conf["redundancy_temp"], f"{prefix}_{self.current_date}")
-            )
-            if not os.path.exists(redundancy_dir):
-                os.makedirs(redundancy_dir, exist_ok=True)
-                self.logger.info(f"Created directory for redundancy filter: {redundancy_dir}")
-
-            # Definir rutas claras para los archivos
-            self.reference_fasta = os.path.join(redundancy_dir, "redundancy.fasta")
-            filtered_fasta = os.path.join(redundancy_dir, "redundancy_filtered.fasta")
-            cluster_file = os.path.join(redundancy_dir, "redundancy_filtered.clstr")
-
+            self.reference_fasta = os.path.join(self.experiment_path, "redundancy.fasta")
+            filtered_fasta = os.path.join(self.experiment_path, "filtered.fasta")
             # Crear el archivo FASTA combinando secuencias de la base de datos y HDF5
             with open(self.reference_fasta, "w") as ref_file:
                 self.logger.info("Adding sequences from the database and HDF5 to the reference FASTA...")
@@ -185,7 +186,6 @@ class EmbeddingLookUp(QueueTaskInitializer):
             self.clusters = read_clstr(f"{filtered_fasta}.clstr")
             self.logger.info(f"Loaded {len(self.clusters)} clusters into memory.")
 
-
         except Exception as e:
             self.logger.error(f"Error generating clusters: {e}")
             raise
@@ -200,10 +200,10 @@ class EmbeddingLookUp(QueueTaskInitializer):
             If any error occurs while reading the HDF5 file or publishing tasks.
         """
         try:
-            self.logger.info(f"Reading embeddings from HDF5: {self.h5_path}")
+            self.logger.info(f"Reading embeddings from HDF5: {self.embeddings_path}")
 
             tasks = []
-            with h5py.File(os.path.expanduser(self.h5_path), "r") as h5file:
+            with h5py.File(self.embeddings_path, "r") as h5file:
                 for accession, accession_group in h5file.items():
                     if "sequence" not in accession_group:
                         self.logger.warning(f"No sequence found for accession {accession}. Skipping.")
@@ -215,13 +215,13 @@ class EmbeddingLookUp(QueueTaskInitializer):
                             continue
 
                         embedding = type_group["embedding"][:]
-                        embedding_type_id = int(embedding_type.split("_")[1])
-
+                        embedding_type_id = embedding_type.replace("type_", "")
                         task_data = {
                             'accession': accession,
                             'sequence': sequence,
                             'embedding': embedding,
-                            'embedding_type_id': embedding_type_id
+                            'embedding_type_id': self.types[embedding_type_id].get('id'),
+                            'distance_threshold': self.types[embedding_type_id].get('distance_threshold')
                         }
                         tasks.append(task_data)
                         self.logger.info(
@@ -257,7 +257,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
         """
         try:
             accession = task_data['accession'].removeprefix('accession_')
-            embedding_type_id = int(task_data['embedding_type_id'])
+            embedding_type_id = task_data['embedding_type_id']
             embedding = task_data['embedding']
 
             # Generar vector de la secuencia
@@ -275,7 +275,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
             not_in_clause = "AND s.id NOT IN :redundant_ids" if redundant_ids else ""
 
             # Construir la cláusula opcional para lookup_reference_tag
-            tag_filter = "AND ac.tag = :lookup_reference_tag" if "lookup_reference_tag" in self.conf else ""
+            tag_filter = "AND ac.tag = :lookup_reference_tag" if self.conf.get("lookup_reference_tag", False) else ""
 
             # Construir la consulta SQL
             query = text(f"""
@@ -335,8 +335,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 ORDER BY
                     ar.distance ASC;
             """)
-
-            max_distance = self.conf["embedding"]["distance_threshold"].get(embedding_type_id)
+            max_distance = task_data['distance_threshold']
             limit_per_entry = self.conf.get("limit_per_entry", 1000)
 
             self.logger.info(f"Executing query for accession {accession} and embedding type {embedding_type_id}.")
@@ -348,7 +347,6 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     'limit_per_entry': limit_per_entry,
                     'redundant_ids': tuple(redundant_ids),
                     'lookup_reference_tag': self.conf.get("lookup_reference_tag")
-                    # Se incluye solo si está en la configuración
                 }).fetchall()
 
             if not results:
@@ -365,7 +363,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     'evidence_code': row.evidence_code,
                     'go_description': row.go_term_description,
                     'distance': row.distance,
-                    'model_name': self.types[embedding_type_id].get('model_name'),
+                    'model_name': embedding_type_id,
                     'protein_id': row.protein_id,
                     'organism': row.organism,
                 })
@@ -398,24 +396,17 @@ class EmbeddingLookUp(QueueTaskInitializer):
             return
 
         try:
-            output_csv_path = os.path.expanduser(self.output_csv)
 
-            # Verify and create the results directory if it does not exist
-            output_dir = os.path.dirname(output_csv_path)
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir, exist_ok=True)
-                self.logger.info(f"Created directory: {output_dir}")
-
-            # Convert go_terms to a DataFrame
             df = pd.DataFrame(go_terms)
 
             # Write to file
-            if os.path.exists(output_csv_path) and os.path.getsize(output_csv_path) > 0:
-                df.to_csv(output_csv_path, mode='a', index=False, header=False)
-                self.logger.info(f"Appended {len(go_terms)} entries to {output_csv_path}.")
+            results_path = self.results_path
+            if os.path.exists(results_path) and os.path.getsize(results_path) > 0:
+                df.to_csv(self.results_path, mode='a', index=False, header=False)
+                self.logger.info(f"Appended {len(go_terms)} entries to {results_path}.")
             else:
-                df.to_csv(output_csv_path, mode='w', index=False, header=True)
-                self.logger.info(f"Created new file and stored {len(go_terms)} entries in {output_csv_path}.")
+                df.to_csv(results_path, mode='w', index=False, header=True)
+                self.logger.info(f"Created new file and stored {len(go_terms)} entries in {results_path}.")
 
         except Exception as e:
             self.logger.error(f"Error storing results in CSV: {e}")

@@ -17,16 +17,16 @@ This module includes functionalities inspired by:
 Custom enhancements allow for efficient batch processing and integration with CD-HIT for redundancy filtering.
 
 """
-
+import importlib
 import os
 import traceback
-import shutil
 
 from Bio import SeqIO
 
 import h5py
 
 from protein_metamorphisms_is.operation.embedding.sequence_embedding import SequenceEmbeddingManager
+from protein_metamorphisms_is.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType
 from protein_metamorphisms_is.sql.model.entities.protein.accesion import Accession
 
 
@@ -74,19 +74,60 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         self.base_module_path = 'protein_metamorphisms_is.operation.embedding.proccess.sequence'
         self.fetch_models_info()
         self.sequence_queue_package = conf.get('sequence_queue_package')
-        self.batch_sizes = conf['embedding'].get('batch_size', {})  # Store batch sizes as a dict        self.fasta_path = conf.get('fantasia_input_fasta')
+        self.batch_sizes = conf['embedding'].get('batch_size',
+                                                 {})  # Store batch sizes as a dict        self.fasta_path = conf.get('fantasia_input_fasta')
         self.length_filter = conf.get('length_filter', None)
 
         self.fasta_path = conf.get('fantasia_input_fasta')
-        self.output_csv = conf["directories"]["csv_outputs"]
-        self.output_h5 = os.path.join(
-            conf["directories"]["hdf5_outputs"],
-            f"{conf.get('fantasia_prefix', 'default')}_embeddings_{self.current_date}.h5"
-        )
-
+        self.experiment_path = conf.get('experiment_path')
 
         self.results = []
 
+    def fetch_models_info(self):
+        """
+        Retrieves and initializes embedding models based on configuration.
+
+        Queries the `SequenceEmbeddingType` table to fetch available embedding models.
+        Modules are dynamically imported and stored in the `types` attribute.
+        """
+        self.session_init()
+        try:
+            embedding_types = self.session.query(SequenceEmbeddingType).all()
+        except Exception as e:
+            self.logger.error(f"Error querying SequenceEmbeddingType table: {e}")
+            raise
+        finally:
+            self.session.close()
+            del self.engine
+
+        self.types = {}
+
+        enabled_models = self.conf.get('embedding', {}).get('models', {})
+
+        for type_obj in embedding_types:
+            if type_obj.task_name in enabled_models:
+                model_config = enabled_models[type_obj.task_name]
+                if model_config.get('enabled', False):
+                    try:
+                        module_name = f"{self.base_module_path}.{type_obj.task_name}"
+                        module = importlib.import_module(module_name)
+                        self.types[type_obj.task_name] = {
+                            'module': module,
+                            'model_name': type_obj.model_name,
+                            'id': type_obj.id,
+                            'task_name': type_obj.task_name,
+                            'distance_threshold': model_config.get('distance_threshold'),
+                            'batch_size': model_config.get('batch_size'),
+                        }
+                        self.logger.info(f"Loaded model: {type_obj.task_name} ({type_obj.model_name})")
+                    except ImportError as e:
+                        self.logger.error(f"Failed to import module {module_name}: {e}")
+                        raise
+
+        if not self.types:
+            self.logger.warning("No matching models found between the database and the configuration.")
+        else:
+            print("Loaded model types:", self.types)
 
     def enqueue(self):
         """
@@ -180,13 +221,12 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 {'sequence': data['sequence'], 'sequence_id': data['accession']}
                 for data in task_data
             ]
-
             # Call embedding_task for the entire batch
             embedding_records = module.embedding_task(
                 sequence_info,
                 model,
                 tokenizer,
-                batch_size=self.batch_sizes[embedding_type_id],  # Use batch size as the number of sequences
+                batch_size=self.types[embedding_type_id]['batch_size'],  # Use batch size as the number of sequences
                 embedding_type_id=embedding_type_id
             )
 
@@ -216,12 +256,11 @@ class SequenceEmbedder(SequenceEmbeddingManager):
             If an error occurs during file storage.
         """
         try:
-            output_dir = os.path.dirname(self.output_h5)
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-                self.logger.info(f"Created directory: {output_dir}")
+            print(self.conf['experiment_path'])
+            output_h5 = os.path.join(self.conf['experiment_path'], "embeddings.h5")
+            print(output_h5)
 
-            with h5py.File(os.path.expanduser(self.output_h5), "a") as h5file:
+            with h5py.File(output_h5, "a") as h5file:
                 for record in results:
                     accession = record['accession']
                     embedding_type_id = record['embedding_type_id']
@@ -273,15 +312,9 @@ class SequenceEmbedder(SequenceEmbeddingManager):
 
         # Actualizar las etiquetas (tag) de los accessions encontrados
         for acc in found_accessions:
-            acc.tag = f"GOA2022"  # Modificación del tag
+            acc.tag = "GOA2022"  # Modificación del tag
 
         # Confirmar los cambios en la base de datos
         self.session.commit()
 
         print(f"Se actualizaron {len(found_accessions)} accessions en la base de datos.")
-
-
-
-
-
-

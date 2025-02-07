@@ -1,164 +1,249 @@
 import os
-import sys
-import time
+from pprint import pprint
 import yaml
 import argparse
 from datetime import datetime
-import protein_metamorphisms_is.sql.model.model  # noqa: F401
-from protein_metamorphisms_is.helpers.config.yaml import read_yaml_config
 from fantasia.src.helpers import download_embeddings, load_dump_to_db
 from fantasia.src.embedder import SequenceEmbedder
 from fantasia.src.lookup import EmbeddingLookUp
+from protein_metamorphisms_is.helpers.config.yaml import read_yaml_config
+
+import protein_metamorphisms_is.sql.model.model  # noqa: F401
 
 
-def initialize(config_path):
-    # Leer la configuración
+def initialize(config_path, embeddings_url=None):
+    """
+    Initializes the system by downloading embeddings and loading the database dump.
+    """
     with open(config_path, "r") as config_file:
         conf = yaml.safe_load(config_file)
-
-    embeddings_dir = os.path.expanduser(conf["embeddings_path"])
+    if embeddings_url:
+        conf["embeddings_url"] = embeddings_url
+    embeddings_dir = os.path.expanduser(conf["directories"]["embeddings"])
     os.makedirs(embeddings_dir, exist_ok=True)
     tar_path = os.path.join(embeddings_dir, "embeddings.tar")
-
-    # Descargar embeddings
     print("Downloading embeddings...")
     download_embeddings(conf["embeddings_url"], tar_path)
-
-    # Cargar el dump en la base de datos
     print("Loading dump into the database...")
     load_dump_to_db(tar_path, conf)
 
 
 def run_pipeline(conf):
-    # Validar configuraciones específicas de modelos
-    embedding_types = conf["embedding"]["types"]
-    distance_threshold = conf["embedding"].get("distance_threshold", {})
-    batch_sizes = conf["embedding"].get("batch_size", {})
-
-    for model_id in embedding_types:
-        if model_id not in distance_threshold:
-            raise ValueError(f"Distance threshold not defined for embedding type {model_id}")
-        if model_id not in batch_sizes:
-            raise ValueError(f"Batch size not defined for embedding type {model_id}")
-
-    # Ejecutar el pipeline de fantasia
+    """
+    Runs the main pipeline for sequence embedding and similarity lookup.
+    """
+    conf["embedding"]["types"] = [model for model, settings in conf["embedding"]["models"].items() if
+                                  settings["enabled"]]
     current_date = datetime.now().strftime("%Y%m%d%H%M%S")
+    conf = setup_experiment_directories(conf, current_date)
+    print("Displaying configuration:")
+    pprint(conf)
+
     embedder = SequenceEmbedder(conf, current_date)
     embedder.start()
     lookup = EmbeddingLookUp(conf, current_date)
     lookup.start()
 
 
-def wait_forever():
-    # Modo de espera
-    print("Container is running and waiting for commands...")
-    try:
-        while True:
-            time.sleep(3600)  # Espera indefinida
-    except KeyboardInterrupt:
-        print("Stopping container.")
-
-
-def setup_directories(conf):
+def setup_experiment_directories(conf, timestamp):
     """
-    Crea los directorios base sin modificar los valores en `conf`.
+    Set up experiment directories using the format:
+    base_dir/experiments/{prefix}_{timestamp}
     """
     base_directory = os.path.expanduser(conf.get("base_directory", "~/fantasia/"))
+    experiments_dir = os.path.join(base_directory, "experiments")
+    os.makedirs(experiments_dir, exist_ok=True)
 
-    for key, path in conf.get("directories", {}).items():
-        full_path = os.path.expanduser(path)
-        os.makedirs(full_path, exist_ok=True)
+    experiment_name = f"{conf.get('fantasia_prefix', 'experiment')}_{timestamp}"
+    experiment_path = os.path.join(experiments_dir, experiment_name)
+    os.makedirs(experiment_path, exist_ok=True)
 
-    return conf  # Solo crea directorios, sin sobrescribir valores
+    conf['experiment_path'] = experiment_path
 
+    # Guardar el YAML con los parámetros del experimento
+    yaml_path = os.path.join(experiment_path, "experiment_config.yaml")
+    with open(yaml_path, "w") as yaml_file:
+        yaml.safe_dump(conf, yaml_file, default_flow_style=False)
 
+    print(f"Configuración del experimento guardada en: {yaml_path}")
+
+    return conf
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="fantasia: Command Handler")
-    parser.add_argument("command", type=str, nargs="?", default=None, help="Command to execute: initialize or run")
-    parser.add_argument("--config", type=str, default="./fantasia/config.yaml", help="Path to the configuration YAML file.")
-    parser.add_argument("--fasta", type=str, help="Path to the input FASTA file.")
-    parser.add_argument("--prefix", type=str, help="Prefix for output files.")
-    parser.add_argument("--length_filter", type=int, help="Length filter threshold for sequences.")
-    parser.add_argument("--redundancy_filter", type=float, help="Redundancy filter threshold.")
-    parser.add_argument("--max_workers", type=int, default=1, help="Maximum number of workers for parallel tasks.")
+    parser = argparse.ArgumentParser(
+        description=(
+            "\nFANTASIA: Functional Annotation and Similarity Analysis\n"
+            "-------------------------------------------------------\n"
+            "FANTASIA is a command-line tool for computing vector similarity and generating\n"
+            "functional annotations using pre-trained language models (PLMs). It supports:\n"
+            "  • ProtT5\n"
+            "  • ProstT5\n"
+            "  • ESM2\n"
+            "\nThis system processes protein sequences by embedding them with these models,\n"
+            "storing the embeddings into an h5 Object, and performing efficient similarity searches over Vector Database.\n"
+            "\nPre-configured with UniProt 2024 data, FANTASIA integrates with an information system\n"
+            "for seamless data management. Protein data and Gene Ontology annotations (GOA) are\n"
+            "kept up to date, while proteins from the 2022 dataset remain for benchmarking (e.g., CAFA).\n"
+            "\nRequirements:\n"
+            "  • Relational Database: PostgreSQL (for storing annotations and metadata)\n"
+            "  • Vector Database: pgvector (for efficient similarity searches)\n"
+            "  • Task Queue: RabbitMQ (for parallel task execution)\n"
+            "\nFor setup instructions, refer to the documentation.\n"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter
+    )
 
-    # CLI for embedding-specific parameters
-    parser.add_argument("--esm", action="store_true", help="Use ESM model.")
-    parser.add_argument("--prost", action="store_true", help="Use Prost model.")
-    parser.add_argument("--prot", action="store_true", help="Use Prot model.")
-    parser.add_argument("--distance_threshold", type=str, help="Comma-separated list of distance thresholds per model ID (e.g., 1:0.5,2:0.7,3:0.6).")
-    parser.add_argument("--batch_size", type=str, help="Comma-separated list of batch sizes per model ID (e.g., 1:50,2:60,3:40).")
-    parser.add_argument("--sequence_queue_package", type=int, help="Number of sequences to queue in each package.")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    init_parser = subparsers.add_parser(
+        "initialize",
+        help="Set up the database and download the embeddings.",
+        description=(
+            "\nFANTASIA: Functional Annotation and Similarity Analysis\n"
+            "-------------------------------------------------------\n"
+            "The 'initialize' command prepares the system for operation by:\n"
+            "  • Reading the configuration file.\n"
+            "  • Downloading the embeddings database (if specified).\n"
+            "  • Setting up the necessary directories.\n"
+            "\n"
+            "By default, the configuration is loaded from './fantasia/config.yaml'.\n"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+
+    init_parser.add_argument(
+        "--config", type=str, default="./fantasia/config.yaml",
+        help=(
+            "Path to the configuration file (YAML format).\n"
+            "Default: './fantasia/config.yaml'."
+        )
+    )
+
+    init_parser.add_argument(
+        "--embeddings_url", type=str,
+        help=(
+            "URL to download the embeddings database dump.\n"
+            "If not provided, the system will use the URL from the config file."
+        )
+    )
+
+    init_parser.epilog = (
+        "Examples:\n"
+        "  python fantasia/main.py initialize --config my_config.yaml\n"
+        "  python fantasia/main.py initialize --config my_config.yaml --embeddings_url https://example.com/embeddings.tar\n"
+    )
+
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Execute the pipeline to process sequences, generate embeddings, and manage lookups.",
+        description=(
+            "\nFANTASIA: Functional Annotation and Similarity Analysis\n"
+            "-------------------------------------------------------\n"
+            "The 'run' command executes the main pipeline, which includes:\n"
+            "  • Loading the configuration file.\n"
+            "  • Processing protein sequences from a FASTA file.\n"
+            "  • Generating sequence embeddings using selected models.\n"
+            "  • Storing embeddings in h5 file as input for similarity search through vectorial DB.\n"
+            "  • Running functional annotation lookups based on the embeddings.\n"
+            "\n"
+            "By default, the configuration is loaded from './fantasia/config.yaml'.\n"
+            "Supported models include ProtT5, ProstT5, and ESM2.\n"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+
+    run_parser.add_argument(
+        "--config", type=str, default="./fantasia/config.yaml",
+        help="Path to the YAML configuration file. Default: './fantasia/config.yaml'."
+    )
+
+    run_parser.add_argument(
+        "--fasta", type=str,
+        help="Path to the input FASTA file containing protein sequences."
+    )
+
+    run_parser.add_argument(
+        "--prefix", type=str,
+        help="Prefix used to name the output files."
+    )
+
+    run_parser.add_argument(
+        "--length_filter", type=int,
+        help="Filter sequences by length. Sequences shorter than this value will be ignored."
+    )
+
+    run_parser.add_argument(
+        "--redundancy_filter", type=float,
+        help=(
+            "Apply sequence redundancy filtering using clustering.\n"
+            "Sequences that fall into the same cluster as reference sequences\n"
+            "will be excluded from the lookup to prevent homolog contamination.\n"
+            "Example: 0.8 filters sequences with 80 percent similarity."
+        )
+    )
+
+    run_parser.add_argument(
+        "--max_workers", type=int, default=1,
+        help="Number of parallel workers to process sequences. Default: 1 (sequential processing)."
+    )
+
+    run_parser.add_argument(
+        "--models", type=str,
+        help="Comma-separated list of embedding models to enable. Example: 'esm,prot'."
+    )
+
+    run_parser.add_argument(
+        "--distance_threshold", type=str,
+        help="Comma-separated list of model:threshold pairs. Example: 'esm:0.4,prot:0.6'."
+    )
+
+    run_parser.add_argument(
+        "--batch_size", type=str,
+        help="Comma-separated list of model:size pairs defining batch sizes. Example: 'esm:32,prot:64'."
+    )
+
+    run_parser.add_argument(
+        "--sequence_queue_package", type=int,
+        help="Number of sequences to queue per processing batch."
+    )
+
+    run_parser.add_argument(
+        "--limit_per_entry", type=int,
+        help=(
+            "Limit the number of reference proteins considered per query.\n"
+            "The closest matches based on distance will be selected.\n"
+            "Example: --limit_per_entry 5 ensures only the 5 closest references are used."
+        )
+    )
+
+    run_parser.epilog = (
+        "Example usage:\n"
+        "  python fantasia/main.py run \\\n"
+        "     --config ./fantasia/config.yaml \\\n"
+        "     --fasta ./data_sample/worm_test.fasta \\\n"
+        "     --prefix test_run \\\n"
+        "     --length_filter 300 \\\n"
+        "     --redundancy_filter 0.8 \\\n"
+        "     --max_workers 1 \\\n"
+        "     --models esm,prot \\\n"
+        "     --distance_threshold esm:0.4,prot:0.6 \\\n"
+        "     --batch_size esm:32,prot:64 \\\n"
+        "     --sequence_queue_package 100 \\\n"
+        "     --limit_per_entry 5\n"
+    )
 
     args = parser.parse_args()
 
     if args.command == "initialize":
         print("Initializing embeddings and database...")
-        initialize(args.config)
+        initialize(args.config, args.embeddings_url)
     elif args.command == "run":
-        print("Running the fantasia pipeline...")
-
-        # Leer la configuración una sola vez
+        print("Running the FANTASIA pipeline...")
         conf = read_yaml_config(args.config)
-        conf = setup_directories(conf)
-
-        print(conf)
-
-        # Sobrescribir parámetros con los valores del CLI
-        if args.fasta:
-            conf["fantasia_input_fasta"] = args.fasta
-        if args.prefix:
-            conf["fantasia_prefix"] = args.prefix
-        if args.length_filter is not None:
-            conf["length_filter"] = args.length_filter
-        if args.redundancy_filter is not None:
-            conf["redundancy_filter"] = args.redundancy_filter
-        if args.max_workers is not None:
-            conf["max_workers"] = args.max_workers
-        if args.sequence_queue_package is not None:
-            conf["sequence_queue_package"] = args.sequence_queue_package
-
-        # Filtrar los modelos según las opciones del CLI
-        selected_models = []
-        if args.esm:
-            selected_models.append(1)  # ID para ESM
-        if args.prost:
-            selected_models.append(2)  # ID para Prost
-        if args.prot:
-            selected_models.append(3)  # ID para Prot
-
-        if selected_models:
-            conf["embedding"]["types"] = selected_models
-
-        # Procesar distance_threshold desde CLI
-        if args.distance_threshold:
-            try:
-                threshold_overrides = {
-                    int(k): float(v) for k, v in (pair.split(":") for pair in args.distance_threshold.split(","))
-                }
-                conf["embedding"]["distance_threshold"].update(threshold_overrides)
-            except ValueError as e:
-                print(f"Error parsing distance_threshold: {e}")
-                sys.exit(1)
-
-        # Procesar batch_size desde CLI
-        if args.batch_size:
-            try:
-                batch_size_overrides = {
-                    int(k): int(v) for k, v in (pair.split(":") for pair in args.batch_size.split(","))
-                }
-                conf["embedding"]["batch_size"].update(batch_size_overrides)
-            except ValueError as e:
-                print(f"Error parsing batch_size: {e}")
-                sys.exit(1)
-
-        # Pasar la configuración modificada directamente
-        print(conf)
+        for key, value in vars(args).items():
+            if value is not None and key not in ["command", "config"]:
+                conf[key] = value
         run_pipeline(conf)
-    elif args.command is None:
-        wait_forever()
     else:
-        print(f"Unknown command: {args.command}")
-        sys.exit(1)
+        parser.print_help()
