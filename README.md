@@ -1,5 +1,3 @@
-# **FANTASIA**
-
 ![FANTASIA Logo](docs/source/_static/FANTASIA.png)
 
 # FANTASIA
