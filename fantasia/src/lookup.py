@@ -409,11 +409,11 @@ class EmbeddingLookUp(QueueTaskInitializer):
             # Guardar en CSV
             results_path = self.results_path
             if os.path.exists(results_path) and os.path.getsize(results_path) > 0:
-                df.to_csv(self.results_path, mode='a', index=False, header=False)
-                self.logger.info(f"Appended {len(go_terms)} entries to {results_path}.")
+                df.to_csv(results_path, mode='a', index=False, header=False)
             else:
                 df.to_csv(results_path, mode='w', index=False, header=True)
-                self.logger.info(f"Created new file and stored {len(go_terms)} entries in {results_path}.")
+
+            self.logger.info(f"Stored {len(df)} collapsed entries.")
 
         except Exception as e:
             self.logger.error(f"Error storing results in CSV: {e}")
