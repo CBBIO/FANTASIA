@@ -73,6 +73,8 @@ redundancy_filter: 0
 # Number of sequences to package in each queue batch.
 sequence_queue_package: 64
 
+delete_queues: True
+
 # ==========================
 # 🧬 Embedding Configuration
 # ==========================
