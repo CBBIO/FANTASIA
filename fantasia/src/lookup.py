@@ -380,29 +380,33 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 f"Error processing task for accession {accession} and embedding type {embedding_type_id}: {e}")
             raise
 
-    def store_entry(self, go_terms):
-        """
-        Stores the retrieved GO terms in a CSV file.
-
-        Parameters
-        ----------
-        go_terms : list of dict
-            List of dictionaries containing GO term results.
-
-        Raises
-        ------
-        Exception
-            If an error occurs while writing to the CSV file.
-        """
-        if not go_terms:
+    def store_entry(self, annotations):
+        if not annotations:
             self.logger.info("No valid GO terms to store.")
             return
 
         try:
+            df = pd.DataFrame(annotations)
 
-            df = pd.DataFrame(go_terms)
+            # Escalar distancia a similitud
+            df["reliability_index"] = 1 - df["distance"]
 
-            # Write to file
+            # Mantener solo el GO term con mayor confiabilidad por cada (accession, go_id)
+            df = df.loc[df.groupby(["accession", "go_id"])["reliability_index"].idxmax()]
+
+            # Obtener términos padres usando goatools
+            parent_terms = set()
+            for go_id in df["go_id"].unique():
+                if go_id in self.go:  # Asegurar que el GO term está en el DAG
+                    parent_terms.update(p.id for p in self.go[go_id].parents)
+
+            # Filtrar términos padres si un hijo más específico está presente
+            df = df[~df["go_id"].isin(parent_terms)]
+
+            # Ordenar por reliability_index de mayor a menor
+            df = df.sort_values(by="reliability_index", ascending=False)
+
+            # Guardar en CSV
             results_path = self.results_path
             if os.path.exists(results_path) and os.path.getsize(results_path) > 0:
                 df.to_csv(self.results_path, mode='a', index=False, header=False)
