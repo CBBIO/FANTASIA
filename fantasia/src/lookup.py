@@ -21,6 +21,7 @@ import importlib
 import os
 
 import pandas as pd
+from goatools.base import get_godag
 from pycdhit import cd_hit, read_clstr
 from sqlalchemy import text
 import h5py
@@ -285,7 +286,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 annotated_results AS (
                     SELECT
                         s.sequence,
-                        (se.embedding <-> te.embedding) AS distance,
+                        (se.embedding <=> te.embedding) AS distance,
                         p.id AS protein_id,
                         p.gene_name AS gene_name,
                         p.organism AS organism,
