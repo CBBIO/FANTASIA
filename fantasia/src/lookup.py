@@ -306,7 +306,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                         JOIN accession ac ON p.id = ac.protein_id
                     WHERE
                         se.embedding_type_id = :embedding_type_id
-                        AND (se.embedding <-> te.embedding) < :max_distance
+                        AND (se.embedding <=> te.embedding) < :max_distance
                         {not_in_clause}
                         {tag_filter}
                 ),
