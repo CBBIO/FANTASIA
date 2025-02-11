@@ -82,6 +82,8 @@ class EmbeddingLookUp(QueueTaskInitializer):
         if redundancy_filter > 0:
             self.generate_clusters()
 
+        self.go = get_godag('go-basic.obo', optional_attrs='relationship')
+
     def fetch_models_info(self):
         """
         Retrieves and initializes embedding models based on configuration.
