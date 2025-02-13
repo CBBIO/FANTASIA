@@ -9,7 +9,7 @@ max_workers: 1
 constants: "./fantasia/constants.yaml"
 
 # Monitoring interval in seconds (for processes that require periodic checks).
-monitor_interval: 5
+monitor_interval: 10
 
 
 # ==========================
