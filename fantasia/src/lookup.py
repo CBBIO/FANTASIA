@@ -21,6 +21,7 @@ import importlib
 import os
 
 import pandas as pd
+from goatools.base import get_godag
 from pycdhit import cd_hit, read_clstr
 from sqlalchemy import text
 import h5py
@@ -81,6 +82,15 @@ class EmbeddingLookUp(QueueTaskInitializer):
         if redundancy_filter > 0:
             self.generate_clusters()
 
+        self.go = get_godag('go-basic.obo', optional_attrs='relationship')
+
+        self.distance_metric = self.conf.get("embedding", {}).get("distance_metric", "<->")
+
+        valid_metrics = ["<->", "<=>"]
+        if self.distance_metric not in valid_metrics:
+            self.logger.warning(f"Invalid distance metric '{self.distance_metric}', defaulting to '<->' (Euclidean).")
+            self.distance_metric = "<->"
+
     def fetch_models_info(self):
         """
         Retrieves and initializes embedding models based on configuration.
@@ -129,6 +139,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
         Exception
             Si ocurre un error durante el proceso.
         """
+        input_h5 = os.path.join(self.conf['experiment_path'], "embeddings.h5")
         try:
             self.reference_fasta = os.path.join(self.experiment_path, "redundancy.fasta")
             filtered_fasta = os.path.join(self.experiment_path, "filtered.fasta")
@@ -141,11 +152,10 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     for row in result:
                         ref_file.write(f">{row.id}\n{row.sequence}\n")
 
-                with h5py.File(os.path.expanduser(self.h5_path), "r") as h5file:
+                with h5py.File(input_h5, "r") as h5file:
                     for accession, accession_group in h5file.items():
                         if "sequence" in accession_group:
                             sequence = accession_group["sequence"][()].decode("utf-8")
-                            # Remover el prefijo "accession_"
                             clean_accession = accession.removeprefix("accession_")
                             ref_file.write(f">{clean_accession}\n{sequence}\n")
 
@@ -285,7 +295,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 annotated_results AS (
                     SELECT
                         s.sequence,
-                        (se.embedding <-> te.embedding) AS distance,
+                        (se.embedding {self.distance_metric} te.embedding) AS distance,
                         p.id AS protein_id,
                         p.gene_name AS gene_name,
                         p.organism AS organism,
@@ -303,7 +313,6 @@ class EmbeddingLookUp(QueueTaskInitializer):
                         JOIN accession ac ON p.id = ac.protein_id
                     WHERE
                         se.embedding_type_id = :embedding_type_id
-                        AND (se.embedding <-> te.embedding) < :max_distance
                         {not_in_clause}
                         {tag_filter}
                 ),
@@ -313,6 +322,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                         MIN(distance) AS min_distance
                     FROM
                         annotated_results
+                    where distance <= :max_distance
                     GROUP BY
                         protein_id
                     ORDER BY
@@ -377,36 +387,42 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 f"Error processing task for accession {accession} and embedding type {embedding_type_id}: {e}")
             raise
 
-    def store_entry(self, go_terms):
-        """
-        Stores the retrieved GO terms in a CSV file.
-
-        Parameters
-        ----------
-        go_terms : list of dict
-            List of dictionaries containing GO term results.
-
-        Raises
-        ------
-        Exception
-            If an error occurs while writing to the CSV file.
-        """
-        if not go_terms:
+    def store_entry(self, annotations):
+        if not annotations:
             self.logger.info("No valid GO terms to store.")
             return
 
         try:
+            df = pd.DataFrame(annotations)
 
-            df = pd.DataFrame(go_terms)
+            if self.distance_metric == '<=>':
+                df["reliability_index"] = 1 - df["distance"]
+            if self.distance_metric == '<->':
+                df["reliability_index"] = 0.5 / (0.5 + df["distance"])
 
-            # Write to file
+            # Mantener solo el GO term con mayor confiabilidad por cada (accession, go_id)
+            df = df.loc[df.groupby(["accession", "go_id"])["reliability_index"].idxmax()]
+
+            # Obtener términos padres usando goatools
+            parent_terms = set()
+            for go_id in df["go_id"].unique():
+                if go_id in self.go:  # Asegurar que el GO term está en el DAG
+                    parent_terms.update(p.id for p in self.go[go_id].parents)
+
+            # Filtrar términos padres si un hijo más específico está presente
+            df = df[~df["go_id"].isin(parent_terms)]
+
+            # Ordenar por reliability_index de mayor a menor
+            df = df.sort_values(by="reliability_index", ascending=False)
+
+            # Guardar en CSV
             results_path = self.results_path
             if os.path.exists(results_path) and os.path.getsize(results_path) > 0:
-                df.to_csv(self.results_path, mode='a', index=False, header=False)
-                self.logger.info(f"Appended {len(go_terms)} entries to {results_path}.")
+                df.to_csv(results_path, mode='a', index=False, header=False)
             else:
                 df.to_csv(results_path, mode='w', index=False, header=True)
-                self.logger.info(f"Created new file and stored {len(go_terms)} entries in {results_path}.")
+
+            self.logger.info(f"Stored {len(df)} collapsed entries.")
 
         except Exception as e:
             self.logger.error(f"Error storing results in CSV: {e}")
