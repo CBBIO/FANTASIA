@@ -19,7 +19,7 @@ def initialize(config_path, embeddings_url=None):
         conf = yaml.safe_load(config_file)
     if embeddings_url:
         conf["embeddings_url"] = embeddings_url
-    embeddings_dir = os.path.join(os.path.expanduser(conf["base_directory"]),"embeddings")
+    embeddings_dir = os.path.join(os.path.expanduser(conf["base_directory"]), "embeddings")
     os.makedirs(embeddings_dir, exist_ok=True)
     tar_path = os.path.join(embeddings_dir, "embeddings.tar")
     download_embeddings(conf["embeddings_url"], tar_path)
