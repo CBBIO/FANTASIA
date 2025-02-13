@@ -84,6 +84,13 @@ class EmbeddingLookUp(QueueTaskInitializer):
 
         self.go = get_godag('go-basic.obo', optional_attrs='relationship')
 
+        self.distance_metric = self.conf.get("embedding", {}).get("distance_metric", "<->")
+
+        valid_metrics = ["<->", "<=>"]
+        if self.distance_metric not in valid_metrics:
+            self.logger.warning(f"Invalid distance metric '{self.distance_metric}', defaulting to '<->' (Euclidean).")
+            self.distance_metric = "<->"
+
     def fetch_models_info(self):
         """
         Retrieves and initializes embedding models based on configuration.
@@ -288,7 +295,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 annotated_results AS (
                     SELECT
                         s.sequence,
-                        (se.embedding <=> te.embedding) AS distance,
+                        (se.embedding {self.distance_metric} te.embedding) AS distance,
                         p.id AS protein_id,
                         p.gene_name AS gene_name,
                         p.organism AS organism,
@@ -306,7 +313,6 @@ class EmbeddingLookUp(QueueTaskInitializer):
                         JOIN accession ac ON p.id = ac.protein_id
                     WHERE
                         se.embedding_type_id = :embedding_type_id
-                        AND (se.embedding <=> te.embedding) < :max_distance
                         {not_in_clause}
                         {tag_filter}
                 ),
@@ -316,6 +322,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                         MIN(distance) AS min_distance
                     FROM
                         annotated_results
+                    where distance <= :max_distance
                     GROUP BY
                         protein_id
                     ORDER BY
@@ -388,8 +395,10 @@ class EmbeddingLookUp(QueueTaskInitializer):
         try:
             df = pd.DataFrame(annotations)
 
-            # Escalar distancia a similitud
-            df["reliability_index"] = 1 - df["distance"]
+            if self.distance_metric == '<=>':
+                df["reliability_index"] = 1 - df["distance"]
+            if self.distance_metric == '<->':
+                df["reliability_index"] = 0.5 / (0.5 + df["distance"])
 
             # Mantener solo el GO term con mayor confiabilidad por cada (accession, go_id)
             df = df.loc[df.groupby(["accession", "go_id"])["reliability_index"].idxmax()]

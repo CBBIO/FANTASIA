@@ -80,6 +80,7 @@ delete_queues: True
 # ==========================
 
 embedding:
+  distance_metric: "<=>"  # options: "<=>" (cosine) or "<->" (euclidean)
   models:
     esm:
       enabled: True           # 🔹 Enable or disable the ESM model
