@@ -139,6 +139,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
         Exception
             Si ocurre un error durante el proceso.
         """
+        input_h5 = os.path.join(self.conf['experiment_path'], "embeddings.h5")
         try:
             self.reference_fasta = os.path.join(self.experiment_path, "redundancy.fasta")
             filtered_fasta = os.path.join(self.experiment_path, "filtered.fasta")
@@ -151,11 +152,10 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     for row in result:
                         ref_file.write(f">{row.id}\n{row.sequence}\n")
 
-                with h5py.File(os.path.expanduser(self.h5_path), "r") as h5file:
+                with h5py.File(input_h5, "r") as h5file:
                     for accession, accession_group in h5file.items():
                         if "sequence" in accession_group:
                             sequence = accession_group["sequence"][()].decode("utf-8")
-                            # Remover el prefijo "accession_"
                             clean_accession = accession.removeprefix("accession_")
                             ref_file.write(f">{clean_accession}\n{sequence}\n")
 
