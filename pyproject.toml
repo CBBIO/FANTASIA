@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "FANTASIA"
-version = "0.7.0"
+version = "0.8.0"
 description = "Functional ANnoTAtion based on embedding space SImilArity"
 authors = ["Francisco Miguel Pérez Canales <frapercan1@alum.us.es>","Gemma Martínez Redondo <gemma.martinez@ibe.upf-csic.es>"]
 readme = "README.md"
@@ -8,6 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.10"
 docopt = "^0.6.2"
+protein-metamorphisms-is = "^2.0.0"
 
 
 [tool.poetry.dev-dependencies]
@@ -18,7 +19,7 @@ flake8-bugbear = "^23.2.13"
 taskipy = "^1.10.3"
 sphinx = "^7.2.6"
 sphinx-rtd-theme = "^1.2.0"
-protein-metamorphisms-is = "^2.0.0"
+
 
 
 [tool.coverage.run]
