@@ -158,7 +158,7 @@ if __name__ == "__main__":
     )
 
     run_parser.add_argument(
-        "--fasta", type=str,
+        "--input", type=str,
         help="Path to the input FASTA file containing protein sequences."
     )
 
