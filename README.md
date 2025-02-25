@@ -4,7 +4,7 @@
 
 **Functional ANnoTAtion based on embedding space SImilArity**
 
-FANTASIA is an advanced pipeline designed for functional annotation of protein sequences using state-of-the-art protein language models. It integrates deep learning embeddings and similarity searches in vector databases to associate Gene Ontology (GO) terms with proteins.
+FANTASIA is an advanced pipeline designed for automatic functional annotation of protein sequences using state-of-the-art protein language models. It integrates deep learning embeddings and similarity searches in vector databases to associate Gene Ontology (GO) terms with proteins.
 
 For full documentation, visit [FANTASIA Documentation](https://fantasia.readthedocs.io/en/latest/).
 

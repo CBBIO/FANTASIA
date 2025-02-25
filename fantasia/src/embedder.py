@@ -78,7 +78,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                                                  {})  # Store batch sizes as a dict        self.fasta_path = conf.get('fantasia_input_fasta')
         self.length_filter = conf.get('length_filter', None)
 
-        self.fasta_path = conf.get('fantasia_input_fasta')
+        self.fasta_path = conf.get('input')
         self.experiment_path = conf.get('experiment_path')
 
         self.results = []
@@ -285,10 +285,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                     if "sequence" not in accession_group:
                         accession_group.create_dataset("sequence", data=record['sequence'].encode('utf-8'))
                         self.logger.info(f"Stored sequence for accession {accession}.")
-                    else:
-                        self.logger.warning(
-                            f"Sequence for accession {accession} already exists. Skipping sequence storage."
-                        )
+
         except Exception as e:
             self.logger.error(f"Error storing results in HDF5: {e}")
             raise
