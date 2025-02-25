@@ -183,7 +183,7 @@ if __name__ == "__main__":
     )
 
     run_parser.add_argument(
-        "--max_workers", type=int, default=1,
+        "--max_workers", type=int,
         help="Number of parallel workers to process sequences. Default: 1 (sequential processing)."
     )
 
