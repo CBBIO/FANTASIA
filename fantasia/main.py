@@ -220,7 +220,7 @@ if __name__ == "__main__":
         "Example usage:\n"
         "  python fantasia/main.py run \\\n"
         "     --config ./fantasia/config.yaml \\\n"
-        "     --fasta ./data_sample/worm_test.fasta \\\n"
+        "     --input ./data_sample/worm_test.fasta \\\n"
         "     --prefix test_run \\\n"
         "     --length_filter 300 \\\n"
         "     --redundancy_filter 0.8 \\\n"
