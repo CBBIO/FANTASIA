@@ -53,7 +53,7 @@ def setup_experiment_directories(conf, timestamp):
     experiments_dir = os.path.join(base_directory, "experiments")
     os.makedirs(experiments_dir, exist_ok=True)
 
-    experiment_name = f"{conf.get('fantasia_prefix', 'experiment')}_{timestamp}"
+    experiment_name = f"{conf.get('prefix', 'experiment')}_{timestamp}"
     experiment_path = os.path.join(experiments_dir, experiment_name)
     os.makedirs(experiment_path, exist_ok=True)
 
@@ -168,8 +168,13 @@ if __name__ == "__main__":
     )
 
     run_parser.add_argument(
+        "--base_directory", type=str,
+        help="Base directory where all results, embeddings, and execution parameters will be stored."
+    )
+
+    run_parser.add_argument(
         "--length_filter", type=int,
-        help="Filter sequences by length. Sequences shorter than this value will be ignored."
+        help="Filter sequences by length. Sequences longer than this value will be ignored."
     )
 
     run_parser.add_argument(
@@ -184,7 +189,9 @@ if __name__ == "__main__":
 
     run_parser.add_argument(
         "--max_workers", type=int,
-        help="Number of parallel workers to process sequences. Default: 1 (sequential processing)."
+        help="Number of parallel workers to process sequences. Recommended value: 1 for default PostgreSQL settings. "
+             "Increasing this requires configuring PostgreSQL to allocate more resources. This parameter does not "
+             "affect embedding generation as it relies on GPU."
     )
 
     run_parser.add_argument(

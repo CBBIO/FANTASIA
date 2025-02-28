@@ -100,4 +100,4 @@ embedding:
 # ==========================
 
 # Enable or disable the use of TopGO for Gene Ontology enrichment analysis. (wIP
-topgo?: true
+topgo: true
