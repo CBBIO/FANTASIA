@@ -34,12 +34,33 @@ Clone the repository and navigate into the project directory:
 Creating and Activating the Virtual Environment
 ===============================================
 
-Use `poetry` to manage the virtual environment:
+Use `poetry` to manage the virtual environment. Follow these steps:
 
-.. code-block:: bash
+1. **Ensure Poetry is installed and up to date:**
 
-   poetry install
-   poetry shell
+   .. code-block:: bash
+
+      poetry self update
+
+2. **If using Poetry 1.5 or later, install the required shell plugin:**
+
+   .. code-block:: bash
+
+      poetry self add poetry-plugin-shell
+
+3. **Create and activate the virtual environment:**
+
+   .. code-block:: bash
+
+      poetry env use <python_version>  # Specify the desired Python version (3.12)
+      poetry install
+      poetry env activate
+
+
+.. note::
+
+   If using Conda, avoid managing environments with both Poetry and Conda simultaneously to prevent dependency conflicts.
+
 
 Starting Required Services
 ==========================
@@ -109,83 +130,7 @@ Verify that the embeddings are loaded into:
 Running the Pipeline
 ====================
 
-Prepare an input FASTA file:
-
 .. code-block:: bash
 
-   mkdir -p ~/fantasia/input
-   cp ./data_sample/worm_test.fasta ~/fantasia/input/worm_test.fasta
+   python fantasia/main.py run
 
-Run the pipeline:
-
-.. code-block:: bash
-
-   python fantasia/main.py run \
-     --config ./fantasia/config.yaml \
-     --fasta ./data_sample/worm_test.fasta \
-     --prefix test_run \
-     --length_filter 3000 \
-     --redundancy_filter 0 \
-     --max_workers 1 \
-     --models esm,prot \
-     --distance_threshold esm:1,prot:1 \
-     --batch_size esm:32,prot:64 \
-     --sequence_queue_package 100
-
-Output Files
-============
-
-The pipeline outputs results as CSV files with the following naming format:
-
-.. code-block:: bash
-
-   <prefix>_<YYYYMMDD>.csv
-
-- **prefix**: Set in ``config.yaml`` under ``fantasia_prefix``. If not provided, it defaults to ``"default"``. The ``--prefix`` argument overrides this setting.
-- **YYYYMMDD**: The execution date.
-
-
-Examples
---------
-
-- If `fantasia_prefix` in `config.yaml` is:
-
-  .. code-block:: yaml
-
-     fantasia_prefix: worm_test_Prot_100_1.2
-
-  The output file will be:
-
-  .. code-block:: bash
-
-     worm_test_Prot_100_1.2_20250206.csv  # (if executed on February 6, 2025)
-
-- If `--prefix test_run` is passed in the command, the output will be:
-
-  .. code-block:: bash
-
-     test_run_20250206.csv
-
-- If no prefix is set in `config.yaml` and `--prefix` is not provided, the default name is used:
-
-  .. code-block:: bash
-
-     default_20250206.csv
-
-Storage Location
-----------------
-
-By default, CSV files are saved in:
-
-.. code-block:: yaml
-
-   directories:
-     csv_outputs: results
-
-This means the output files are stored in:
-
-.. code-block:: bash
-
-   ~/fantasia/results/
-
-To change the output directory, modify `csv_outputs` in `config.yaml`.
