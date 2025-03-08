@@ -1,4 +1,5 @@
 import os
+import sys
 from pprint import pprint
 import yaml
 import argparse
@@ -31,17 +32,21 @@ def run_pipeline(conf):
     """
     Runs the main pipeline for sequence embedding and similarity lookup.
     """
-    conf["embedding"]["types"] = [model for model, settings in conf["embedding"]["models"].items() if
-                                  settings["enabled"]]
-    current_date = datetime.now().strftime("%Y%m%d%H%M%S")
-    conf = setup_experiment_directories(conf, current_date)
-    print("Displaying configuration:")
-    pprint(conf)
+    try:
+        conf["embedding"]["types"] = [model for model, settings in conf["embedding"]["models"].items() if
+                                      settings["enabled"]]
+        current_date = datetime.now().strftime("%Y%m%d%H%M%S")
+        conf = setup_experiment_directories(conf, current_date)
+        print("Displaying configuration:")
+        pprint(conf)
 
-    embedder = SequenceEmbedder(conf, current_date)
-    embedder.start()
-    lookup = EmbeddingLookUp(conf, current_date)
-    lookup.start()
+        embedder = SequenceEmbedder(conf, current_date)
+        embedder.start()
+        lookup = EmbeddingLookUp(conf, current_date)
+        lookup.start()
+    except Exception as ex:
+        print(f"Unexpected Error: {ex}", file=sys.stderr)
+        sys.exit(1)  # Detener el programa con código de error 1
 
 
 def setup_experiment_directories(conf, timestamp):
@@ -183,7 +188,7 @@ if __name__ == "__main__":
             "Apply sequence redundancy filtering using clustering.\n"
             "Sequences that fall into the same cluster as reference sequences\n"
             "will be excluded from the lookup to prevent homolog contamination.\n"
-            "Example: 0.8 filters sequences with 80 percent similarity."
+            "Example: 0.8 filters sequences with >80 percent similarity."
         )
     )
 

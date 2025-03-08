@@ -17,9 +17,11 @@ Ensure you have the following dependencies installed:
 
      pip install poetry
 
-- **Docker**: Installed and running. If not installed, follow the `Docker installation guide <https://docs.docker.com/get-docker/>`_.
+- **Docker**: Installed and running. If not installed, follow the `Docker installation guide <https://docs.docker.com/get-docker/>`_ and the `post-installation steps <https://docs.docker.com/engine/install/linux-postinstall/>`_ to run Docker without `sudo`.
 - **NVIDIA Driver**: Version 550.120 or newer (verify using ``nvidia-smi``).
 - **CUDA**: Version 12.4 or newer (verify using ``nvcc --version``).
+
+
 
 Cloning the Repository
 ======================
@@ -61,6 +63,8 @@ Use `poetry` to manage the virtual environment. Follow these steps:
 
    If using Conda, avoid managing environments with both Poetry and Conda simultaneously to prevent dependency conflicts.
 
+   We recommend using PyCharm for development due to its seamless integration with Poetry, making environment management and package handling more intuitive.
+
 
 Starting Required Services
 ==========================
@@ -77,6 +81,25 @@ Ensure PostgreSQL and RabbitMQ services are running.
        -e POSTGRES_DB=BioData \
        -p 5432:5432 \
        pgvector/pgvector:pg16
+
+**Optimize PostgreSQL for embedding lookups with multiple workers:**
+
+By default, PostgreSQL uses very conservative memory settings, which may limit performance when performing embedding lookups with multiple workers. To improve efficiency, update the following configuration parameters:
+
+.. code-block:: sql
+
+   ALTER SYSTEM SET shared_buffers = '16GB';
+   ALTER SYSTEM SET effective_cache_size = '64GB';
+   ALTER SYSTEM SET work_mem = '256MB';
+
+After applying these changes, reload the configuration:
+
+.. code-block:: sql
+
+   SELECT pg_reload_conf();
+
+For more details on PostgreSQL performance tuning, check the official guide: `<https://www.postgresql.org/docs/current/runtime-config-resource.html>`_.
+
 
 **Start RabbitMQ:**
 
