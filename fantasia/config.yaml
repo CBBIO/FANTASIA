@@ -80,6 +80,7 @@ delete_queues: True
 # ==========================
 
 embedding:
+  device: "cuda"
   distance_metric: "<=>"  # options: "<=>" (cosine) or "<->" (euclidean)
   models:
     esm:

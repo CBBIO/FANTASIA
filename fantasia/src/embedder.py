@@ -244,12 +244,14 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 for data in task_data
             ]
             # Call embedding_task for the entire batch
+            device = self.conf['embedding'].get('device', "cuda")
             embedding_records = module.embedding_task(
                 sequence_info,
                 model,
                 tokenizer,
                 batch_size=self.types[embedding_type_id]['batch_size'],  # Use batch size as the number of sequences
-                embedding_type_id=embedding_type_id
+                embedding_type_id=embedding_type_id,
+                device=device
             )
 
             # Add additional metadata to each record
