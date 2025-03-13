@@ -1,7 +1,7 @@
 .. _functional_annotation:
 
 ==========================================
-Functional Annotation Use Case
+Functional Annotation
 ==========================================
 
 Objective

@@ -14,4 +14,4 @@ Key Features
   Performs high-speed searches using **pgvector**, enabling accurate annotation based on embedding similarity.
 
 - **🔬 Functional Annotation by Similarity**
-  Assigns Gene Ontology (GO) terms to proteins based on **embedding space similarity**, leveraging pre-trained embeddings.
+  Assigns Gene Ontology (GO) terms to proteins based on **embedding space similarity**, leveraging pre-generated embeddings.

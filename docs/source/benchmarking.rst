@@ -1,13 +1,15 @@
-=========================
-Use Case 1: Benchmarking
-=========================
+.. _benchmarking:
+
+==========================================
+Benchmarking
+==========================================
 
 Objective
 ---------
 
 This use case provides a basic implementation for **benchmarking execution** in functional protein annotation. The goal is to generate annotations for proteins **NOT** present in the reference sets, allowing performance comparisons between different methods in downstream analyses.
 
-An example of this approach is published in **NARGAB** (`DOI: 10.1093/nargab/lqae078 <https://doi.org/10.1093/nargab/lqae078>`_), where annotations were evaluated using various metrics.
+An example of this approach is published in **NARGAB** [NARGAB2024]_, where annotations were evaluated using various metrics.
 
 The reference datasets consist of proteins annotated in the three **Gene Ontology (GO)** domains:
 
@@ -15,7 +17,7 @@ The reference datasets consist of proteins annotated in the three **Gene Ontolog
 - **B**: Biological Process
 - **C**: Cellular Component
 
-The evidence codes considered follow the **CAFA** standards, as defined by the [CAFA Initiative](https://biofunctionprediction.org/cafa/) and the [Gene Ontology Annotation Database (GOA)](https://www.ebi.ac.uk/GOA/downloads).
+The evidence codes considered follow the **CAFA** standards, as defined by the CAFA Initiative [CAFA]_ and the Gene Ontology Annotation Database (GOA) [GOA]_.
 
 Step-by-Step Procedure
 ----------------------
@@ -26,12 +28,12 @@ Step-by-Step Procedure
 4. **Execute the analysis pipeline** and transfer annotations based on embedding similarity (**GOA2024**).
    - **GOA2022** is available for comparison with previously published analyses.
 
-We use the default settings from **GoPredSim**, as implemented in the [GoPredSim repository](https://github.com/Rostlab/goPredSim/blob/master/file_utils.py), for consistency with the original methods, though many parameters can be adjusted.
+We use the default settings from **GoPredSim** [GoPredSim]_, as implemented in the GoPredSim repository, for consistency with the original methods, though many parameters can be adjusted.
 
 Input Data
 ----------
 
-Input data must be **protein sequences in FASTA format**, as described in the [EMBOSS documentation](http://emboss.open-bio.org/html/use/apas01.html), concatenated into a single file.
+Input data must be **protein sequences in FASTA format**, as described in the EMBOSS documentation [EMBOSS]_, concatenated into a single file.
 
 Example of **FILENAME_test.fasta**:
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -78,8 +80,8 @@ Below, copy the code to a **`benchmark_config.yaml`** file in a text editor. The
 Description of Parameters:
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-- **lookup_reference_tag**: Defines which reference database is used for annotation lookup. Allows switching between **GOA2022** and **GOA2024** (`https://www.ebi.ac.uk/GOA/downloads`) to assess differences in methods.
-- **limit_per_entry**: Determines how many similar proteins are considered for annotation transfer. `k=1` follows **GoPredSim** (`https://github.com/Rostlab/goPredSim/blob/master/file_utils.py`) but can be adjusted.
+- **lookup_reference_tag**: Defines which reference database is used for annotation lookup. Allows switching between **GOA2022** and **GOA2024** [GOA]_ to assess differences in methods.
+- **limit_per_entry**: Determines how many similar proteins are considered for annotation transfer. `k=1` follows **GoPredSim** [GoPredSim]_ but can be adjusted.
 - **length_filter**: Set to a high value to avoid sequence length filtering by default. It can be adjusted to remove abnormally long proteins if needed. Our new implementation correctly handles sequences longer than 5K amino acids.
 - **redundancy_filter**: Controls the removal of identical sequences to prevent biases in method comparisons. This is relevant to avoid biases.
 
@@ -105,10 +107,10 @@ Embedding Configuration
          batch_size: 32
 
 **Model References:**
-- **ESM2** ([Hugging Face](https://huggingface.co/facebook/esm2_t36_3B_UR50D))
-- **ProtT5** ([Hugging Face](https://huggingface.co/Rostlab/prot_t5_xl_uniref50))
-- **ProstT5** ([Hugging Face](https://huggingface.co/Rostlab/ProstT5))
-- **CD-HIT** ([Bioinformatics.org](https://www.bioinformatics.org/cd-hit/))
+- **ESM2** [ESM2]_
+- **ProtT5** [ProtT5]_
+- **ProstT5** [ProstT5]_
+- **CD-HIT** [CDHIT]_
 
 Functional Analysis
 ^^^^^^^^^^^^^^^^^^^
@@ -118,7 +120,7 @@ Functional Analysis
    # Enable or disable file formatting for TOPGO downstream analyses
    topgo: True  # "True" (enabled) | "False" (disabled)
 
-**Reference:** **TOPGO** (`https://bioconductor.org/packages/release/bioc/html/topGO.html`)
+**Reference:** **TOPGO** [TOPGO]_
 
 Results
 -------
@@ -130,4 +132,25 @@ Two main output files are generated:
 
 These results can be used to evaluate prediction accuracy and compare the performance of different methods.
 
+References
+----------
 
+.. [NARGAB2024] Example of benchmarking approach published in **NARGAB**, available at: `DOI: 10.1093/nargab/lqae078 <https://doi.org/10.1093/nargab/lqae078>`_.
+
+.. [CAFA] CAFA Initiative, available at: `https://biofunctionprediction.org/cafa/`.
+
+.. [GOA] Gene Ontology Annotation Database (GOA), available at: `https://www.ebi.ac.uk/GOA/downloads`.
+
+.. [GoPredSim] GoPredSim repository, available at: `https://github.com/Rostlab/goPredSim/blob/master/file_utils.py`.
+
+.. [EMBOSS] EMBOSS documentation, available at: `http://emboss.open-bio.org/html/use/apas01.html`.
+
+.. [ESM2] ESM2 model on Hugging Face, available at: `https://huggingface.co/facebook/esm2_t36_3B_UR50D`.
+
+.. [ProtT5] ProtT5 model on Hugging Face, available at: `https://huggingface.co/Rostlab/prot_t5_xl_uniref50`.
+
+.. [ProstT5] ProstT5 model on Hugging Face, available at: `https://huggingface.co/Rostlab/ProstT5`.
+
+.. [CDHIT] CD-HIT tool, available at: `https://www.bioinformatics.org/cd-hit/`.
+
+.. [TOPGO] TOPGO software, available at: `https://bioconductor.org/packages/release/bioc/html/topGO.html`.
