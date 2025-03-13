@@ -221,9 +221,11 @@ Run these commands directly in the PostgreSQL shell:
    CREATE DATABASE "BioData" OWNER usuario;
    GRANT ALL PRIVILEGES ON DATABASE "BioData" TO usuario;
 
-   ALTER SYSTEM SET shared_buffers = '16GB';
-   ALTER SYSTEM SET effective_cache_size = '64GB';
-   ALTER SYSTEM SET work_mem = '256MB';
+   ALTER SYSTEM SET shared_buffers = '256GB';
+   ALTER SYSTEM SET effective_cache_size = '516GB';
+   ALTER SYSTEM SET work_mem = '1GB';
+   ALTER SYSTEM SET max_worker_processes = '256'
+   ALTER SYSTEM SET max_connections = '500';
 
 - Replace ``usuario`` and ``clave`` with your desired username and password.
 - The above `ALTER SYSTEM` commands modify server parameters (for example, memory settings).
@@ -239,18 +241,11 @@ When finished, exit the PostgreSQL client:
 
 Some configuration changes require a server restart to take effect. In your ``postgres`` screen session (where the server is running), you can stop and start PostgreSQL as follows:
 
-1. **Stop the PostgreSQL Server**:
+1. **Restart the PostgreSQL Server**:
 
    .. code-block:: console
 
       singularity exec pgvector.sif pg_ctl -D /dev/shm/pgvector_data restart
-
-2. **Start the PostgreSQL Server**:
-
-   .. code-block:: console
-
-      singularity exec pgvector.sif pg_ctl -D /dev/shm/pgvector_data start -l /dev/shm/pgvector_data/pg_log.txt
-
 
 With the server restarted, your new settings and user/database configuration are now active.
 

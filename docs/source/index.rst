@@ -7,11 +7,12 @@ FANTASIA is an advanced pipeline designed for automatic functional annotation of
 
 .. toctree::
    :maxdepth: 2
-   :caption: Index
+   :caption: Contents
 
    key_features
    data_source
    method
+   performance
    acknowledgments
    citing_fantasia
    contact

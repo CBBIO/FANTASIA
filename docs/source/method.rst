@@ -41,7 +41,7 @@ Alternatively, cosine similarity (:math:`d_c`) can be selected as a parameter, u
 .. math::
    d_c(n, m) = \frac{\sum_{i=1}^{k} n_i m_i}{\sqrt{\sum_{i=1}^{k} n_i^2} \cdot \sqrt{\sum_{i=1}^{k} m_i^2}}
 
-This step is significantly accelerated by leveraging ``pgvector``, a PostgreSQL extension optimized for efficient similarity searches in high-dimensional embedding spaces [pgvector_git]_. By default, ``pgvector`` performs exact nearest neighbor search, ensuring perfect recall. However, it also supports approximate nearest neighbor search, which trades some recall for increased speed. Unlike typical indexes, adding an approximate index may yield slightly different query results. In our implementation, we use exact search to maximize accuracy, but we leave the option open for approximate search if faster retrieval is needed in future optimizations.
+This step is significantly accelerated by leveraging ``pgvector`` [pgvector_git]_, a PostgreSQL extension optimized for efficient similarity searches in high-dimensional embedding spaces [pgvector_git]_. By default, ``pgvector`` performs exact nearest neighbor search, ensuring perfect recall. However, it also supports approximate nearest neighbor search, which trades some recall for increased speed. Unlike typical indexes, adding an approximate index may yield slightly different query results. In our implementation, we use exact search to maximize accuracy, but we leave the option open for approximate search if faster retrieval is needed in future optimizations.
 
 Step 4: GO Transfer
 -------------------
@@ -63,6 +63,9 @@ The output of FANTASIA consists of a comma-separated file (CSV) with the followi
 8. ID of the reference protein bearing the closest embedding.
 9. Organism the target reference protein belongs to.
 10. Reliability index (RI).
+
+Each of these outputs is generated **once per identified GO term**, limited to the top-:math:`k` closest reference proteins, and **per protein language model used**. This ensures that the output provides a structured, model-specific view of the functional annotations while maintaining efficiency in data representation.
+
 
 Reliability Index (RI)
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -91,9 +94,9 @@ Filtering GO Terms
 ^^^^^^^^^^^^^^^^^^^^^^
 To avoid duplicates and ensure that only the most reliable annotation is kept for each combination of protein accession (``accession``) and GO term (``go_id``), FANTASIA retains only the GO term with the highest reliability index (RI) for each unique pair. This step improves the precision of functional annotations by eliminating redundancies.
 
-Identifying Parent Terms
+Identifying Leaf Terms
 ^^^^^^^^^^^^^^^^^^^^^^
-To enrich the functional analysis, FANTASIA identifies the parent GO terms associated with each annotated GO term. This is achieved using the ``goatools`` library [GOATools]_, which allows navigation through the Gene Ontology (GO) hierarchy. Parent terms provide a broader context for the biological functions, processes, or cellular components associated with the proteins, facilitating higher-level functional analyses.
+To refine the functional analysis, FANTASIA identifies the most specific GO terms (leaf nodes) associated with each annotated GO term. Instead of propagating annotations to broader parent terms, we focus on retaining only the most detailed functional descriptors. This is achieved using the ``goatools`` library [GOATools]_, which allows navigation through the Gene Ontology (GO) hierarchy. By selecting leaf terms, we ensure that the annotations reflect the most precise biological functions, processes, or cellular components associated with the proteins, enhancing the specificity of the functional analysis.
 
 TopGO Compatibility
 ^^^^^^^^^^^^^^^^^^^^^^
