@@ -294,8 +294,19 @@ This step can be done in your main terminal or in the ``fantasia`` session:
 
 - Ensure you have permissions to build containers in the HPC environment.
 
-Step 9: Run FANTASIA
-====================
+Step 9: Initialize FANTASIA
+============================
+
+The following command initialize the information system with a frozen copy through the parameter ``--embeddings_url``.
+By default, a Late 2024 UniProt mirror is provided through Zenodo.
+
+.. code-block:: console
+
+   singularity --nv exec --bind ~/fantasia:/fantasia fantasia.sif python3 -m fantasia.main initialize
+
+
+Step 10: Run FANTASIA
+=============================
 
 The following command runs the FANTASIA pipeline inside a Singularity container:
 
