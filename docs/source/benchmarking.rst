@@ -1,5 +1,5 @@
 =========================
-Benchmarking Use Case
+Use Case 1: Benchmarking
 =========================
 
 Objective
@@ -15,25 +15,23 @@ The reference datasets consist of proteins annotated in the three **Gene Ontolog
 - **B**: Biological Process
 - **C**: Cellular Component
 
-The evidence codes considered follow the **CAFA** standards:
-
-- **EXP, IDA, IPI, IMP, IGI, IEP, TAS, IC**
+The evidence codes considered follow the **CAFA** standards, as defined by the [CAFA Initiative](https://biofunctionprediction.org/cafa/) and the [Gene Ontology Annotation Database (GOA)](https://www.ebi.ac.uk/GOA/downloads).
 
 Step-by-Step Procedure
 ----------------------
 
-1. **Extract a reference proteome**, e.g., **mouse (Mus musculus)**.
+1. **Extract a reference proteome**, e.g., **mouse (*Mus musculus*)**.
 2. **Remove mouse sequences** from the reference dataset (both sequences and embeddings) to avoid model biases.
 3. **Remove identical sequences** from the reference dataset (both sequences and embeddings) to minimize the impact of closely related species.
 4. **Execute the analysis pipeline** and transfer annotations based on embedding similarity (**GOA2024**).
    - **GOA2022** is available for comparison with previously published analyses.
 
-We use the default settings from **GoPredSim** for consistency with the original methods, though many parameters can be adjusted.
+We use the default settings from **GoPredSim**, as implemented in the [GoPredSim repository](https://github.com/Rostlab/goPredSim/blob/master/file_utils.py), for consistency with the original methods, though many parameters can be adjusted.
 
 Input Data
 ----------
 
-Input data must be **protein sequences in FASTA format**, concatenated into a single file.
+Input data must be **protein sequences in FASTA format**, as described in the [EMBOSS documentation](http://emboss.open-bio.org/html/use/apas01.html), concatenated into a single file.
 
 Example of **FILENAME_test.fasta**:
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -47,13 +45,15 @@ Example of **FILENAME_test.fasta**:
    XDETDASSAVKVKRAVQKTSDLIVLGLPWKTTEQDLKDYFSTFGEVLMVQVKKDLKTGHS
    ...
 
-**Note:** A validation step should be implemented to ensure that input files contain **proteins and not DNA**, avoiding execution errors in the pipeline.
+**Note:** The validation of input files to ensure they contain **proteins and not DNA** is automatically handled within the pipeline.
 
 Configuration Parameters
 ------------------------
 
 Pipeline Configuration
 ^^^^^^^^^^^^^^^^^^^^^^
+
+Below, copy the code to a **`benchmark_config.yaml`** file in a text editor. The full configuration file, including additional essential system parameters, can be found at [`protein-metamorphisms-is/config/config.yaml`](https://github.com/CBBIO/protein-metamorphisms-is/blob/main/protein_metamorphisms_is/config/config.yaml).
 
 .. code-block:: yaml
 
@@ -70,17 +70,18 @@ Pipeline Configuration
    fantasia_prefix: FILENAME_test_Prot_100_1.2
 
    # Sequence length filtering threshold.
-   length_filter: 5000000  # A high value means no filtering.
+   length_filter: 5000000  # Refers to the length of the sequence in amino acids. A high value means no filtering.
 
    # Redundancy filtering threshold (removes identical sequences).
    redundancy_filter: 1  # "0" (no filtering) | "1-0.5" (100%-50% redundancy removal)
 
-**Parameter Justification:**
+Description of Parameters:
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-- **lookup_reference_tag:** Defines which reference database is used for annotation lookup. Allows switching between `GOA2022` and `GOA2024` to assess differences in methods.
-- **limit_per_entry:** Determines how many similar proteins are considered for annotation transfer. `k=1` follows GoPredSim but can be adjusted.
-- **length_filter:** Set to a high value to avoid sequence length filtering by default. It can be adjusted to remove abnormally long proteins if needed.
-- **redundancy_filter:** Controls the removal of identical sequences to prevent biases in method comparisons.
+- **lookup_reference_tag**: Defines which reference database is used for annotation lookup. Allows switching between **GOA2022** and **GOA2024** (`https://www.ebi.ac.uk/GOA/downloads`) to assess differences in methods.
+- **limit_per_entry**: Determines how many similar proteins are considered for annotation transfer. `k=1` follows **GoPredSim** (`https://github.com/Rostlab/goPredSim/blob/master/file_utils.py`) but can be adjusted.
+- **length_filter**: Set to a high value to avoid sequence length filtering by default. It can be adjusted to remove abnormally long proteins if needed. Our new implementation correctly handles sequences longer than 5K amino acids.
+- **redundancy_filter**: Controls the removal of identical sequences to prevent biases in method comparisons. This is relevant to avoid biases.
 
 Embedding Configuration
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -103,12 +104,11 @@ Embedding Configuration
          distance_threshold: 0
          batch_size: 32
 
-**Parameter Justification:**
-
-- **distance_metric:** Defines the distance function used to compare embeddings. Euclidean distance (`<->`) is the default, but cosine similarity (`<=>`) can be useful for normalized embeddings.
-- **models:** The selected embedding models (`esm`, `prost_t5`, `prot_t5`) are enabled to extract protein representations.
-- **distance_threshold:** This value determines the maximum allowed distance between query embeddings and reference entries. A lower threshold restricts matches to highly similar proteins, while `0` means no filtering.
-- **batch_size:** Controls the number of sequences processed in parallel to optimize memory usage and computational efficiency.
+**Model References:**
+- **ESM2** ([Hugging Face](https://huggingface.co/facebook/esm2_t36_3B_UR50D))
+- **ProtT5** ([Hugging Face](https://huggingface.co/Rostlab/prot_t5_xl_uniref50))
+- **ProstT5** ([Hugging Face](https://huggingface.co/Rostlab/ProstT5))
+- **CD-HIT** ([Bioinformatics.org](https://www.bioinformatics.org/cd-hit/))
 
 Functional Analysis
 ^^^^^^^^^^^^^^^^^^^
@@ -116,11 +116,9 @@ Functional Analysis
 .. code-block:: yaml
 
    # Enable or disable file formatting for TOPGO downstream analyses
-   topgo: true  # "true" (enabled) | "false" (disabled)
+   topgo: True  # "True" (enabled) | "False" (disabled)
 
-**Justification:**
-
-- **topgo:** Enables generating files compatible with TOPGO, a tool used for functional enrichment analysis.
+**Reference:** **TOPGO** (`https://bioconductor.org/packages/release/bioc/html/topGO.html`)
 
 Results
 -------
@@ -131,3 +129,5 @@ Two main output files are generated:
 2. **FILENAME_test.TOPGO.txt** → Contains annotations formatted for **TOPGO** software.
 
 These results can be used to evaluate prediction accuracy and compare the performance of different methods.
+
+
