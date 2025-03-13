@@ -127,29 +127,48 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         if not self.types:
             self.logger.warning("No matching models found between the database and the configuration.")
         else:
-            print("Loaded model types:", self.types)
+            self.logger.info("Loaded model types:", self.types)
+
 
     def enqueue(self):
         """
         Reads the input FASTA file, applies optional redundancy and length filters,
         and prepares batches of sequences for embedding generation.
 
-        Steps:
+        The method performs the following steps:
 
-        - Runs CD-HIT for redundancy filtering if configured.
-        - Splits sequences into batches based on batch size for each model.
-        - Publishes tasks for embedding computation.
+        1. **File existence check**: Ensures the input FASTA file exists before proceeding.
+        2. **Sequence filtering**: Reads the FASTA file and applies an optional length filter.
+        3. **Batch preparation**: Splits sequences into batches based on the configured batch size.
+        4. **Task publishing**: Sends batches to the embedding pipeline.
+
+        If the input file is missing or any critical error occurs, the program will log the error and terminate.
 
         Raises
         ------
-        Exception
-            If there is an error during the enqueue process.
+        SystemExit
+            If the input FASTA file does not exist or an unexpected error occurs during the process.
+
+        Examples
+        --------
+        >>> embedder = SequenceEmbedder(conf, current_date)
+        >>> embedder.enqueue()
+        Starting embedding enqueue process.
+        Published batch with 32 sequences to model type esm.
+        Published batch with 32 sequences to model type prot_t5.
+
+        Notes
+        -----
+        - The batch size for each model is determined by the `sequence_queue_package` parameter.
+        - The method stops execution (`sys.exit(1)`) if the input FASTA file is missing.
         """
+
         try:
             self.logger.info("Starting embedding enqueue process.")
             sequences = []
 
             input_fasta = self.fasta_path
+
 
             # Leer las secuencias del archivo FASTA (filtradas o no)
             for record in SeqIO.parse(os.path.expanduser(input_fasta), "fasta"):
@@ -178,9 +197,12 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                     self.logger.info(
                         f"Published batch with {len(model_batches)} sequences to model type {model_id}.")
 
+        except FileNotFoundError as e:
+            self.logger.error(f"File not found: {e}")
+            raise e
         except Exception as e:
-            self.logger.error(f"Error during enqueue process: {e}")
-            raise
+            self.logger.error(f"Error during enqueue process: {e}\n{traceback.format_exc()}")
+            raise e
 
     def process(self, task_data):
         """
@@ -222,12 +244,14 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 for data in task_data
             ]
             # Call embedding_task for the entire batch
+            device = self.conf['embedding'].get('device', "cuda")
             embedding_records = module.embedding_task(
                 sequence_info,
                 model,
                 tokenizer,
                 batch_size=self.types[embedding_type_id]['batch_size'],  # Use batch size as the number of sequences
-                embedding_type_id=embedding_type_id
+                embedding_type_id=embedding_type_id,
+                device=device
             )
 
             # Add additional metadata to each record
@@ -256,9 +280,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
             If an error occurs during file storage.
         """
         try:
-            print(self.conf['experiment_path'])
             output_h5 = os.path.join(self.conf['experiment_path'], "embeddings.h5")
-            print(output_h5)
 
             with h5py.File(output_h5, "a") as h5file:
                 for record in results:
@@ -298,13 +320,13 @@ class SequenceEmbedder(SequenceEmbeddingManager):
             accessions.add(record.id)
 
         # Consultar en la base de datos los accessions que existen
-        print(f"Se encontraron {len(accessions)} accessions en el archivo FASTA.")
+        self.logger.info(f"Se encontraron {len(accessions)} accessions en el archivo FASTA.")
 
         # Consultar en la base de datos los accessions que existen
         found_accessions = self.session.query(Accession).filter(Accession.code.in_(accessions)).all()
 
         if not found_accessions:
-            print("No se encontraron accessions en la base de datos.")
+            self.logger.info("No se encontraron accessions en la base de datos.")
             return
 
         # Actualizar las etiquetas (tag) de los accessions encontrados
@@ -314,4 +336,4 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         # Confirmar los cambios en la base de datos
         self.session.commit()
 
-        print(f"Se actualizaron {len(found_accessions)} accessions en la base de datos.")
+        self.logger.info(f"Se actualizaron {len(found_accessions)} accessions en la base de datos.")

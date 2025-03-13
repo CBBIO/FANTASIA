@@ -7,14 +7,23 @@ FANTASIA is an advanced pipeline designed for automatic functional annotation of
 
 .. toctree::
    :maxdepth: 2
-   :caption: Index
+   :caption: Contents
 
    key_features
-   pipeline_overview
-   results
+   data_source
+   method
+   performance
    acknowledgments
    citing_fantasia
    contact
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Use cases
+
+   benchmarking
+   functional_annotation
+
 
 .. toctree::
    :maxdepth: 2
@@ -24,31 +33,3 @@ FANTASIA is an advanced pipeline designed for automatic functional annotation of
    hpc_deployment
 
 
-
-----
-
-.. include:: key_features.rst
-
-----
-
-.. include:: pipeline_overview.rst
-
-----
-
-.. include:: results.rst
-
-----
-
-.. include:: local_deployment.rst
-
-----
-
-.. include:: acknowledgments.rst
-
-----
-
-.. include:: citing_fantasia.rst
-
-----
-
-.. include:: contact.rst

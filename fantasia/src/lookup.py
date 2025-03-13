@@ -77,6 +77,9 @@ class EmbeddingLookUp(QueueTaskInitializer):
         self.embeddings_path = os.path.join(self.conf.get("experiment_path"), "embeddings.h5")
         self.results_path = os.path.join(self.conf.get("experiment_path"), "results.csv")
 
+        self.topgo_path = os.path.join(self.conf.get("experiment_path"), "results_topgo.tsv")
+        self.topgo_enabled = self.conf.get("topgo", False)  # Comprobar si TopGO está activado
+
         # Check if redundancy filter is active
         redundancy_filter = self.conf.get("redundancy_filter", 0)
         if redundancy_filter > 0:
@@ -231,6 +234,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                             'sequence': sequence,
                             'embedding': embedding,
                             'embedding_type_id': self.types[embedding_type_id].get('id'),
+                            'model_name': embedding_type_id,
                             'distance_threshold': self.types[embedding_type_id].get('distance_threshold')
                         }
                         tasks.append(task_data)
@@ -373,7 +377,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     'evidence_code': row.evidence_code,
                     'go_description': row.go_term_description,
                     'distance': row.distance,
-                    'model_name': embedding_type_id,
+                    'model_name': task_data['model_name'],
                     'protein_id': row.protein_id,
                     'organism': row.organism,
                 })
@@ -395,37 +399,47 @@ class EmbeddingLookUp(QueueTaskInitializer):
         try:
             df = pd.DataFrame(annotations)
 
+            # Compute reliability index based on the selected distance metric
             if self.distance_metric == '<=>':
                 df["reliability_index"] = 1 - df["distance"]
             if self.distance_metric == '<->':
                 df["reliability_index"] = 0.5 / (0.5 + df["distance"])
 
-            # Mantener solo el GO term con mayor confiabilidad por cada (accession, go_id)
+            # Keep only the GO term with the highest reliability for each (accession, go_id)
             df = df.loc[df.groupby(["accession", "go_id"])["reliability_index"].idxmax()]
 
-            # Obtener términos padres usando goatools
+            # Identify parent GO terms using goatools
             parent_terms = set()
             for go_id in df["go_id"].unique():
-                if go_id in self.go:  # Asegurar que el GO term está en el DAG
+                if go_id in self.go:  # Ensure the GO term exists in the ontology
                     parent_terms.update(p.id for p in self.go[go_id].parents)
 
-            # Filtrar términos padres si un hijo más específico está presente
+            # Remove parent GO terms if a more specific child term is already present
             df = df[~df["go_id"].isin(parent_terms)]
 
-            # Ordenar por reliability_index de mayor a menor
+            # Sort results by reliability index (higher values first)
             df = df.sort_values(by="reliability_index", ascending=False)
 
-            # Guardar en CSV
+            # Save results to CSV
             results_path = self.results_path
             if os.path.exists(results_path) and os.path.getsize(results_path) > 0:
-                df.to_csv(results_path, mode='a', index=False, header=False)
+                df.to_csv(results_path, mode='a', index=False, header=False)  # Append to existing file
             else:
-                df.to_csv(results_path, mode='w', index=False, header=True)
+                df.to_csv(results_path, mode='w', index=False, header=True)  # Create new file with header
 
-            self.logger.info(f"Stored {len(df)} collapsed entries.")
+            self.logger.info(f"Stored {len(df)} collapsed entries in CSV.")
+
+            # ✅ Generate TopGO file if enabled (exact format match)
+            if self.topgo_enabled:
+                # Format the data correctly for TopGO (GENE_ID<TAB>GO:XXXXXXX, GO:XXXXXXX, ...)
+                df_topgo = df.groupby("accession")["go_id"].apply(lambda x: ", ".join(x)).reset_index()
+
+                # Append to the TopGO file without header
+                with open(self.topgo_path, "a") as f:
+                    df_topgo.to_csv(f, sep="\t", index=False, header=False)
 
         except Exception as e:
-            self.logger.error(f"Error storing results in CSV: {e}")
+            self.logger.error(f"Error storing results: {e}")
             raise
 
     def retrieve_cluster_members(self, accession):
