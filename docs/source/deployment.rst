@@ -1,30 +1,48 @@
-=======================
-Local Deployment Guide
-=======================
+.. _fantasia_local_deployment:
+
+=========================
+FANTASIA Deployment Guide
+=========================
 
 This guide provides a step-by-step process for deploying **FANTASIA** locally.
 
 Prerequisites
 =============
 
-Ensure you have the following dependencies installed:
+Before proceeding, ensure you have the following dependencies installed:
 
+System Requirements
+-------------------
 - **Operating System**: Linux (Ubuntu recommended)
 - **Python**: Version 3.10 or higher
-- **Poetry**: Installed for dependency management:
+- **Docker**: Installed and running.
+  If not installed, follow the `Docker installation guide <https://docs.docker.com/get-docker/>`_ and the `post-installation steps <https://docs.docker.com/engine/install/linux-postinstall/>`_ to run Docker without `sudo`.
+
+Machine Learning Dependencies
+-----------------------------
+- **NVIDIA Driver**: Version 550.120 or newer (verify using ``nvidia-smi``).
+- **CUDA**: Version 12.4 or newer (verify using ``nvcc --version``).
+
+Database Dependencies
+---------------------
+- **PostgreSQL Client**: Version 16 or later, required to restore database backups without compatibility issues.
+
+  .. warning:: 🚨 **Important for Ubuntu 22.04 and older** 🚨
+
+     PostgreSQL 16 is **not available** in the default repositories for Ubuntu **22.04 and earlier**.
+     If you try to restore a backup using `pg_restore`, you may encounter **incompatibility issues**.
+
+Python Environment
+------------------
+- **Poetry**: Used for dependency management.
 
   .. code-block:: bash
 
      pip install poetry
 
-- **Docker**: Installed and running. If not installed, follow the `Docker installation guide <https://docs.docker.com/get-docker/>`_ and the `post-installation steps <https://docs.docker.com/engine/install/linux-postinstall/>`_ to run Docker without `sudo`.
-- **NVIDIA Driver**: Version 550.120 or newer (verify using ``nvidia-smi``).
-- **CUDA**: Version 12.4 or newer (verify using ``nvcc --version``).
-
-
-
+------------------------------
 Cloning the Repository
-======================
+------------------------------
 
 Clone the repository and navigate into the project directory:
 
@@ -33,8 +51,9 @@ Clone the repository and navigate into the project directory:
    git clone https://github.com/CBBIO/FANTASIA.git
    cd FANTASIA
 
+----------------------------------------------
 Creating and Activating the Virtual Environment
-===============================================
+----------------------------------------------
 
 Use `poetry` to manage the virtual environment. Follow these steps:
 
@@ -54,10 +73,9 @@ Use `poetry` to manage the virtual environment. Follow these steps:
 
    .. code-block:: bash
 
-      poetry env use <python_version>  # Specify the desired Python version (3.12)
+      poetry env use <python_version>  # Specify the desired Python version (e.g., 3.12)
       poetry install
       poetry env activate
-
 
 .. note::
 
@@ -67,41 +85,59 @@ Use `poetry` to manage the virtual environment. Follow these steps:
 
 
 Starting Required Services
-==========================
+====================================
 
-Ensure PostgreSQL and RabbitMQ services are running.
+Ensure **PostgreSQL** and **RabbitMQ** services are running.
 
-**Start PostgreSQL with pgvector:**
+-----------------------------------
+Starting PostgreSQL with pgvector
+-----------------------------------
 
 .. code-block:: bash
 
-   docker run -d --name pgvectorsql \
-       -e POSTGRES_USER=usuario \
-       -e POSTGRES_PASSWORD=clave \
-       -e POSTGRES_DB=BioData \
-       -p 5432:5432 \
-       pgvector/pgvector:pg16
+    docker run -d --name pgvectorsql \
+        --shm-size=64g \
+        -e POSTGRES_USER=usuario \
+        -e POSTGRES_PASSWORD=clave \
+        -e POSTGRES_DB=BioData \
+        -p 5432:5432 \
+        pgvector/pgvector:pg16 \
+        -c shared_buffers=16GB \
+        -c effective_cache_size=32GB \
+        -c work_mem=64MB
 
-**Optimize PostgreSQL for embedding lookups with multiple workers:**
+PostgreSQL Configuration
+------------------------
 
-By default, PostgreSQL uses very conservative memory settings, which may limit performance when performing embedding lookups with multiple workers. To improve efficiency, update the following configuration parameters:
+The configuration parameters provided above have been **optimized for a machine with 128GB of RAM and 32 CPU cores**, allowing **up to 20 concurrent workers**. These settings enhance PostgreSQL's performance when handling large datasets and computationally intensive queries.
 
-.. code-block:: sql
+- ``--shm-size=64g``:
+  Allocates **64GB of shared memory** to the container, preventing PostgreSQL from running out of memory in high-performance environments.
 
-   ALTER SYSTEM SET shared_buffers = '16GB';
-   ALTER SYSTEM SET effective_cache_size = '64GB';
-   ALTER SYSTEM SET work_mem = '256MB';
+- ``-c shared_buffers=16GB``:
+  Allocates **16GB of RAM** for PostgreSQL's shared memory buffers. This should typically be **25-40% of total system memory**.
 
-After applying these changes, reload the configuration:
+- ``-c effective_cache_size=32GB``:
+  Sets PostgreSQL's **estimated available memory** for disk caching to **32GB**. This helps the query planner make better decisions.
 
-.. code-block:: sql
+- ``-c work_mem=64MB``:
+  Defines **64MB of memory per worker** for operations like sorting and hashing. This is crucial when handling **parallel query execution**.
 
-   SELECT pg_reload_conf();
+Adjusting the Configuration
+---------------------------
 
-For more details on PostgreSQL performance tuning, check the official guide: `<https://www.postgresql.org/docs/current/runtime-config-resource.html>`_.
+These parameters should be adjusted based on **available hardware** and **workload requirements**:
 
+- If running on a machine with **less RAM**, decrease ``shared_buffers`` and ``effective_cache_size`` proportionally.
+- If running on a machine with **fewer CPU cores**, reduce the number of workers accordingly.
+- For large parallel queries, increasing ``work_mem`` can improve performance, but setting it too high may exhaust memory.
 
-**Start RabbitMQ:**
+For more details on PostgreSQL performance tuning, refer to the official guide:
+`<https://www.postgresql.org/docs/current/runtime-config-resource.html>`_.
+
+---------------------------------
+Starting RabbitMQ
+---------------------------------
 
 .. code-block:: bash
 
@@ -110,10 +146,13 @@ For more details on PostgreSQL performance tuning, check the official guide: `<h
        -p 5672:5672 \
        rabbitmq:management
 
-Access the RabbitMQ management interface at `http://localhost:15672 <http://localhost:15672>`_ (default credentials: ``guest/guest``).
+You can access the RabbitMQ management interface at:
+`http://localhost:15672 <http://localhost:15672>`_
+(Default credentials: ``guest/guest``).
+
 
 Configuration
-=============
+==================================
 
 Before proceeding, create the necessary directories with proper permissions:
 
@@ -136,8 +175,9 @@ Ensure the following parameters are correctly set in `fantasia/config.yaml`:
    rabbitmq_user: guest
    rabbitmq_password: guest
 
+
 Initialization
-==============
+==================================
 
 Download embeddings and initialize the database:
 
@@ -147,13 +187,13 @@ Download embeddings and initialize the database:
 
 Verify that the embeddings are loaded into:
 
-- The directory specified in `embeddings_path`.
+- The directory specified in `base_directory`.
 - The configured PostgreSQL database.
 
+
 Running the Pipeline
-====================
+==================================
 
 .. code-block:: bash
 
    python fantasia/main.py run
-

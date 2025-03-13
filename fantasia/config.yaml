@@ -3,7 +3,7 @@
 # ==========================
 
 # Maximum number of worker threads for parallel processing.
-max_workers: 1
+max_workers: 20
 
 # Path to the system constants file.
 constants: "./fantasia/constants.yaml"
@@ -80,6 +80,7 @@ delete_queues: True
 # ==========================
 
 embedding:
+  device: "cuda"
   distance_metric: "<=>"  # options: "<=>" (cosine) or "<->" (euclidean)
   models:
     esm:
