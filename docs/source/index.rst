@@ -15,6 +15,7 @@ FANTASIA is an advanced pipeline designed for automatic functional annotation of
    acknowledgments
    citing_fantasia
    method
+   data_source
    contact
 
 .. toctree::
@@ -41,6 +42,14 @@ FANTASIA is an advanced pipeline designed for automatic functional annotation of
 ----
 
 .. include:: pipeline_overview.rst
+
+----
+
+.. include:: method.rst
+
+----
+
+.. include:: data_source.rst
 
 ----
 

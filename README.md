@@ -23,7 +23,7 @@ For full documentation, visit [FANTASIA Documentation](https://fantasia.readthed
   Performs high-speed searches using **pgvector**, enabling accurate annotation based on embedding similarity.
 
 - **🔬 Functional Annotation by Similarity**  
-  Assigns Gene Ontology (GO) terms to proteins based on **sequence and structural similarity**, leveraging pre-trained embeddings.
+  Assigns Gene Ontology (GO) terms to proteins based on **embedding space similarity**, leveraging pre-trained embeddings.
 
 ## Pipeline Overview (Simplified)
 
