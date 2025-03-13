@@ -297,41 +297,47 @@ This step can be done in your main terminal or in the ``fantasia`` session:
 Step 9: Run FANTASIA
 ====================
 
-Finally, in the ``fantasia`` screen session, run the FANTASIA pipeline:
+The following command runs the FANTASIA pipeline inside a Singularity container:
 
 .. code-block:: console
 
-   singularity exec --bind ~/fantasia:/fantasia fantasia.sif python3 -m fantasia.main run \
-      --fasta /fantasia/fantasia/input/PMET_1_tardigrade_subsample.fasta \
-      --prefix PMET_1_tardigrade_subsample.fasta \
+   singularity --nv exec --bind ~/fantasia:/fantasia fantasia.sif python3 -m fantasia.main run \
+      --input data_sample/sample.fasta \
       --length_filter 50000000 \
       --redundancy_filter 0. \
       --sequence_queue_package 1000 \
-      --esm \
-      --prost \
-      --prot \
-      --distance_threshold 1:1.2,2:0.7,3:0.7 \
+      --models esm,prot \
+      --distance_threshold esm:1.2,prot:0.7,prost:0.7 \
       --batch_size 1:32,2:32,3:32
+      --device cuda
+      --base_directory ~/fantasia
 
-**Explanation of the Command**
 
+Explanation of the Commands
+==============================
+
+- ``--nv``: allows CUDA in Singularity.
 - ``--bind ~/fantasia:/fantasia``: Mounts your local ``~/fantasia`` directory inside the container at ``/fantasia``.
 - ``python3 -m fantasia.main run``: Executes the main ``run`` function of FANTASIA.
-- **Arguments**:
-  - ``--fasta``: Specifies the input FASTA file.
-  - ``--prefix``: Sets a prefix for output files.
-  - ``--length_filter``: Filters out sequences longer than 50,000,000.
-  - ``--redundancy_filter``: Specifies the redundancy threshold (0.0).
-  - ``--sequence_queue_package``: Determines the size of sequence batches (1000 sequences per package).
-  - ``--esm``, ``--prost``, ``--prot``: Enables different processing modes or models in the pipeline.
-  - ``--distance_threshold``: Sets thresholds for distances across different embedding types.
-  - ``--batch_size``: Specifies batch sizes for different embedding types.
+
+Arguments
+---------
+
+- ``--fasta``: Specifies the input FASTA file containing protein sequences to process. The path is relative to the mounted directory inside the container.
+- ``--prefix``: Sets a prefix for output files. This helps organize results and logs for different runs.
+- ``--length_filter``: Filters out sequences longer than the specified length (in this case, 50,000,000 base pairs). Sequences exceeding this length will be ignored.
+- ``--redundancy_filter``: Specifies the redundancy threshold (0.0 in this case). Sequences with redundancy above this threshold will be excluded.
+- ``--sequence_queue_package``: Determines the size of sequence batches (1000 sequences per package). This controls how many sequences are processed in each batch.
+- ``--esm``, ``--prost``, ``--prot``: Enables different processing modes or models in the pipeline. These flags activate specific embedding models (ESM, ProstT5, and ProtT5, respectively).
+- ``--distance_threshold``: Sets thresholds for distances across different embedding types. The format is a comma-separated list of ``embedding_type:threshold`` pairs. For example, ``esm:1.2,prot:0.7,prost:0.7`` sets distance thresholds.
+- ``--batch_size``: Specifies batch sizes for different embedding types. The format is a comma-separated list of ``embedding_type:size`` pairs. For example, ``esm:32,prot:32,prost:32`` sets batch sizes.
+- ``--device``: Specifies the device to use for computation. Options are ``cuda`` (for GPU acceleration) or ``cpu`` (for CPU-only execution). Default is ``cuda`` if available.
+- ``--base_directory``: Specifies the base directory where all experiments, results, and execution parameters will be stored. This is the root location for organizing output files and logs.
+
+
+
 
 **Output**
 
-- Results will be stored in the directory mounted to ``/fantasia``.
-- You should see log messages in the terminal indicating the pipeline’s progress.
-
-----
-
-By using three separate ``screen`` sessions—one for RabbitMQ, one for PostgreSQL (in RAM), and one for FANTASIA—you keep each service isolated, simplifying monitoring and troubleshooting. Running PostgreSQL in `/dev/shm` can provide a major performance boost, but **note** that all data will be lost when the HPC job ends or the node reboots. Make sure to export or back up any results before terminating your job.
+- Results will be stored in the directory mounted to ``/fantasia`` (e.g., ``~/fantasia`` on your local system).
+- Log messages will be displayed in the terminal, indicating the pipeline’s progress.
