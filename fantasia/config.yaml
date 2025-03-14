@@ -52,7 +52,7 @@ base_directory: ~/fantasia/
 # 🔬 Pipeline Configuration
 # ==========================
 
-# Path to the input file: FASTA for full pipeline or H5 for precomputed embeddings if only_lookup is True
+# Path to the input file: FASTA for full pipeline or H5 for precomputed embeddings if only_lookup is True.
 input: data_sample/worm_test.fasta
 
 # Set to true to perform only the lookup from an embeddings file.
