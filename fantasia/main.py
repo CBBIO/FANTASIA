@@ -265,7 +265,7 @@ if __name__ == "__main__":
 
     if args.command == "initialize":
         print("Initializing embeddings and database...")
-        initialize(args.config, args.embeddings_url)
+        initialize(args.config, args.embeddings_url, args.db_port)
     elif args.command == "run":
         print("Running the FANTASIA pipeline...")
         conf = read_yaml_config(args.config)
