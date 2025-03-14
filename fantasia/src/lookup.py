@@ -74,7 +74,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
 
         self.fetch_models_info()
 
-        self.embeddings_path = os.path.join(self.conf.get("experiment_path"), "embeddings.h5")
+        self.embeddings_path = conf['embeddings_path']
         self.results_path = os.path.join(self.conf.get("experiment_path"), "results.csv")
 
         self.topgo_path = os.path.join(self.conf.get("experiment_path"), "results_topgo.tsv")

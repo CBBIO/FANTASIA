@@ -40,8 +40,14 @@ def run_pipeline(conf):
         print("Displaying configuration:")
         pprint(conf)
 
-        embedder = SequenceEmbedder(conf, current_date)
-        embedder.start()
+        if not conf['only_lookup']:
+            embedder = SequenceEmbedder(conf, current_date)
+            embedder.start()
+            conf['embeddings_path'] = os.path.join(conf["experiment_path"], "embeddings.h5")
+
+        else:
+            conf['embeddings_path'] = conf['input']
+
         lookup = EmbeddingLookUp(conf, current_date)
         lookup.start()
     except Exception as ex:
@@ -164,7 +170,11 @@ if __name__ == "__main__":
 
     run_parser.add_argument(
         "--input", type=str,
-        help="Path to the input FASTA file containing protein sequences."
+        help=(
+            "Path to the input file.\n"
+            "- Provide a FASTA file containing protein sequences for full pipeline execution.\n"
+            "- Provide an H5 file containing sequence embeddings if using --only_lookup."
+        )
     )
 
     run_parser.add_argument(
@@ -228,6 +238,11 @@ if __name__ == "__main__":
         )
     )
 
+    run_parser.add_argument(
+        "--only_lookup", action="store_true",
+        help="If set, only performs the lookup step without generating embeddings."
+    )
+
     run_parser.epilog = (
         "Example usage:\n"
         "  python fantasia/main.py run \\\n"
@@ -255,6 +270,8 @@ if __name__ == "__main__":
         for key, value in vars(args).items():
             if value is not None and key not in ["command", "config"]:
                 conf[key] = value
+        if args.only_lookup:
+            conf['only_lookup'] = True
         run_pipeline(conf)
     else:
         parser.print_help()
