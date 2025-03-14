@@ -12,7 +12,7 @@ from protein_metamorphisms_is.helpers.config.yaml import read_yaml_config
 import protein_metamorphisms_is.sql.model.model  # noqa: F401
 
 
-def initialize(config_path, embeddings_url=None):
+def initialize(config_path, embeddings_url=None, db_port=None):
     """
     Initializes the system by downloading embeddings and loading the database dump.
     """
@@ -20,6 +20,10 @@ def initialize(config_path, embeddings_url=None):
         conf = yaml.safe_load(config_file)
     if embeddings_url:
         conf["embeddings_url"] = embeddings_url
+
+    if db_port:
+        conf["DB_PORT"] = db_port  # Agregar el puerto a la configuración
+
     embeddings_dir = os.path.join(os.path.expanduser(conf["base_directory"]), "embeddings")
     os.makedirs(embeddings_dir, exist_ok=True)
     tar_path = os.path.join(embeddings_dir, "embeddings.tar")
@@ -130,6 +134,11 @@ if __name__ == "__main__":
             "URL to download the embeddings database dump.\n"
             "If not provided, the system will use the URL from the config file."
         )
+    )
+
+    init_parser.add_argument(
+        "--db_port", type=int,
+        help="Port number for the database connection."
     )
 
     init_parser.epilog = (
