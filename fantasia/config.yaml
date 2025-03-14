@@ -11,6 +11,7 @@ constants: "./fantasia/constants.yaml"
 # Monitoring interval in seconds (for processes that require periodic checks).
 monitor_interval: 10
 
+log_path: ~/fantasia/fantasia.log
 
 # ==========================
 # 🗄️ Database (PostgreSQL)
@@ -30,6 +31,7 @@ DB_NAME: BioData             # Name of the database to use.
 
 # Configuration for the RabbitMQ message broker.
 rabbitmq_host: localhost     # RabbitMQ server hostname.
+rabbitmq_port: 15672         # RabbitMQ server port.
 rabbitmq_user: guest         # RabbitMQ username for authentication.
 rabbitmq_password: guest     # RabbitMQ password for authentication.
 
