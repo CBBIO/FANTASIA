@@ -248,6 +248,8 @@ if __name__ == "__main__":
         "     --batch_size esm:32,prot:64 \\\n"
         "     --sequence_queue_package 100 \\\n"
         "     --limit_per_entry 5\n"
+        "     --device cuda \\\n"
+        "     --log_path ~/fantasia/fantasia.log"
     )
 
     args = parser.parse_args()
