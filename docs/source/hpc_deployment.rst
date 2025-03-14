@@ -224,7 +224,7 @@ Run these commands directly in the PostgreSQL shell:
    ALTER SYSTEM SET shared_buffers = '256GB';
    ALTER SYSTEM SET effective_cache_size = '516GB';
    ALTER SYSTEM SET work_mem = '1GB';
-   ALTER SYSTEM SET max_worker_processes = '256'
+   ALTER SYSTEM SET max_worker_processes = '256';
    ALTER SYSTEM SET max_connections = '500';
 
 - Replace ``usuario`` and ``clave`` with your desired username and password.
@@ -297,7 +297,7 @@ By default, a Late 2024 UniProt mirror is provided through Zenodo.
 
 .. code-block:: console
 
-   singularity --nv exec --bind ~/fantasia:/fantasia fantasia.sif python3 -m fantasia.main initialize
+   singularity exec --nv --bind ~/fantasia:/fantasia fantasia.sif python3 -m fantasia.main initialize
 
 
 Step 10: Run FANTASIA

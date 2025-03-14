@@ -228,6 +228,12 @@ if __name__ == "__main__":
         )
     )
 
+    run_parser.add_argument(
+        "--device", type=str, choices=["cuda", "cpu"],
+        help="Device to use for embeddings (cuda or cpu)."
+    )
+
+
     run_parser.epilog = (
         "Example usage:\n"
         "  python fantasia/main.py run \\\n"
@@ -242,6 +248,8 @@ if __name__ == "__main__":
         "     --batch_size esm:32,prot:64 \\\n"
         "     --sequence_queue_package 100 \\\n"
         "     --limit_per_entry 5\n"
+        "     --device cuda \\\n"
+        "     --log_path ~/fantasia/fantasia.log"
     )
 
     args = parser.parse_args()
@@ -252,6 +260,9 @@ if __name__ == "__main__":
     elif args.command == "run":
         print("Running the FANTASIA pipeline...")
         conf = read_yaml_config(args.config)
+        if args.device:
+            conf.setdefault("embedding", {})  # Asegurar que la clave embedding existe
+            conf["embedding"]["device"] = args.device
         for key, value in vars(args).items():
             if value is not None and key not in ["command", "config"]:
                 conf[key] = value
