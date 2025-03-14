@@ -297,7 +297,7 @@ By default, a Late 2024 UniProt mirror is provided through Zenodo.
 
 .. code-block:: console
 
-   singularity --nv exec --bind ~/fantasia:/fantasia fantasia.sif python3 -m fantasia.main initialize
+   singularity exec --nv --bind ~/fantasia:/fantasia fantasia.sif python3 -m fantasia.main initialize
 
 
 Step 10: Run FANTASIA
