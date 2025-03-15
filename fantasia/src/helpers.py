@@ -82,3 +82,20 @@ def load_dump_to_db(dump_path, db_config):
             print(f"Error while loading dump: {stderr}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
+
+
+def parse_unknown_args(unknown_args):
+    """Convierte una lista de argumentos desconocidos en un diccionario."""
+    result = {}
+    i = 0
+    while i < len(unknown_args):
+        arg = unknown_args[i]
+        if arg.startswith("--"):
+            key = arg[2:]  # Elimina los dos guiones
+            if i + 1 < len(unknown_args) and not unknown_args[i + 1].startswith("--"):
+                result[key] = unknown_args[i + 1]
+                i += 1
+            else:
+                result[key] = True  # Si no tiene valor, se asume un flag booleano
+        i += 1
+    return result

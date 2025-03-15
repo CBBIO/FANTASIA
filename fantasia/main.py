@@ -4,7 +4,7 @@ from pprint import pprint
 import yaml
 import argparse
 from datetime import datetime
-from fantasia.src.helpers import download_embeddings, load_dump_to_db
+from fantasia.src.helpers import download_embeddings, load_dump_to_db, parse_unknown_args
 from fantasia.src.embedder import SequenceEmbedder
 from fantasia.src.lookup import EmbeddingLookUp
 from protein_metamorphisms_is.helpers.config.yaml import read_yaml_config
@@ -12,18 +12,13 @@ from protein_metamorphisms_is.helpers.config.yaml import read_yaml_config
 import protein_metamorphisms_is.sql.model.model  # noqa: F401
 
 
-def initialize(config_path, embeddings_url=None,db_host=None, db_port=None):
+def initialize(conf):
     """
     Initializes the system by downloading embeddings and loading the database dump.
     """
-    with open(config_path, "r") as config_file:
-        conf = yaml.safe_load(config_file)
-    if embeddings_url:
-        conf["embeddings_url"] = embeddings_url
-    if db_host:
-        conf["DB_HOST"] = db_host
-    if db_port:
-        conf["DB_PORT"] = db_port  # Agregar el puerto a la configuración
+
+
+
 
     embeddings_dir = os.path.join(os.path.expanduser(conf["base_directory"]), "embeddings")
     os.makedirs(embeddings_dir, exist_ok=True)
@@ -137,16 +132,6 @@ if __name__ == "__main__":
         )
     )
 
-    init_parser.add_argument(
-        "--db_host", type=str,
-        help="Host TCP or SOCKET for for the database connection."
-    )
-
-    init_parser.add_argument(
-        "--db_port", type=int,
-        help="Port number for the database connection."
-    )
-
     init_parser.epilog = (
         "Examples:\n"
         "  python fantasia/main.py initialize --config my_config.yaml\n"
@@ -249,6 +234,9 @@ if __name__ == "__main__":
     )
 
 
+
+
+
     run_parser.epilog = (
         "Example usage:\n"
         "  python fantasia/main.py run \\\n"
@@ -267,20 +255,39 @@ if __name__ == "__main__":
         "     --log_path ~/fantasia/fantasia.log"
     )
 
-    args = parser.parse_args()
+    # Parsear los argumentos
+    args, unknown_args = parser.parse_known_args()
+
+    # Convertir unknown_args en un diccionario
+    unknown_args_dict = parse_unknown_args(unknown_args)
+
+    # Leer la configuración del archivo YAML
+    conf = read_yaml_config(args.config)
+
+    # Actualizar la configuración con los valores de args
+    for key, value in vars(args).items():
+        if value is not None and key not in ["command", "config"]:
+            conf[key] = value
+
+    # Actualizar la configuración con los valores de unknown_args
+    for key, value in unknown_args_dict.items():
+        if value is not None:  # Puedes agregar más condiciones si es necesario
+            conf[key] = value
+
+    # Imprimir la configuración actualizada
+    pprint(conf)
+
+
 
     if args.command == "initialize":
+
         print("Initializing embeddings and database...")
-        initialize(args.config, args.embeddings_url, args.db_host, args.db_port)
+        initialize(conf)
     elif args.command == "run":
         print("Running the FANTASIA pipeline...")
-        conf = read_yaml_config(args.config)
         if args.device:
             conf.setdefault("embedding", {})  # Asegurar que la clave embedding existe
             conf["embedding"]["device"] = args.device
-        for key, value in vars(args).items():
-            if value is not None and key not in ["command", "config"]:
-                conf[key] = value
         run_pipeline(conf)
     else:
         parser.print_help()
