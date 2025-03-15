@@ -105,3 +105,6 @@ embedding:
 
 # Enable or disable the use of TopGO for Gene Ontology enrichment analysis. (wIP
 topgo: true
+
+# A list of taxonomy IDs to exclude from the reference database, set it to empty if you don't want to exclude any IDs.
+taxonomy_ids_to_exclude: [40674]

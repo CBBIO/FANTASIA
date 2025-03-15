@@ -274,6 +274,9 @@ class EmbeddingLookUp(QueueTaskInitializer):
             embedding_type_id = task_data['embedding_type_id']
             embedding = task_data['embedding']
 
+            taxonomy_ids_to_exclude = self.conf.get("taxonomy_ids_to_exclude", [])
+            print(f"Taxonomy ids to exclude: {taxonomy_ids_to_exclude}")
+
             # Generar vector de la secuencia
             vector_string = "[" + ",".join(f"{float(v):.8f}" for v in embedding) + "]"
 
@@ -287,6 +290,9 @@ class EmbeddingLookUp(QueueTaskInitializer):
 
             # Construir la cláusula opcional para redundant_ids
             not_in_clause = "AND s.id NOT IN :redundant_ids" if redundant_ids else ""
+
+            # Construir la cláusula opcional para taxonomy_ids_to_exclude
+            exclude_taxonomy_clause = "AND CAST(p.taxonomy_id AS INTEGER) NOT IN :taxonomy_ids_to_exclude" if taxonomy_ids_to_exclude else ""
 
             # Construir la cláusula opcional para lookup_reference_tag
             tag_filter = "AND ac.tag = :lookup_reference_tag" if self.conf.get("lookup_reference_tag", False) else ""
@@ -318,6 +324,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     WHERE
                         se.embedding_type_id = :embedding_type_id
                         {not_in_clause}
+                        {exclude_taxonomy_clause}
                         {tag_filter}
                 ),
                 limited_proteins AS (
@@ -360,6 +367,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     'max_distance': float(max_distance),
                     'limit_per_entry': limit_per_entry,
                     'redundant_ids': tuple(redundant_ids),
+                    'taxonomy_ids_to_exclude': tuple(taxonomy_ids_to_exclude),
                     'lookup_reference_tag': self.conf.get("lookup_reference_tag")
                 }).fetchall()
 
