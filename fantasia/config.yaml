@@ -107,4 +107,7 @@ embedding:
 topgo: true
 
 # A list of taxonomy IDs to exclude from the reference database, set it to empty if you don't want to exclude any IDs.
-taxonomy_ids_to_exclude: [40674]
+taxonomy_ids_to_exclude: []
+
+# A list of taxonomy IDs to included exclusively from the reference database, set it to empty if you want to include all IDs.
+taxonomy_ids_included_exclusively: []

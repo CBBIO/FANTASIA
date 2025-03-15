@@ -277,6 +277,9 @@ class EmbeddingLookUp(QueueTaskInitializer):
             taxonomy_ids_to_exclude = self.conf.get("taxonomy_ids_to_exclude", [])
             print(f"Taxonomy ids to exclude: {taxonomy_ids_to_exclude}")
 
+            taxonomy_ids_to_include = self.conf.get("taxonomy_ids_included_exclusively", [])
+            print(f"Taxonomy ids to include: {taxonomy_ids_to_include}")
+
             # Generar vector de la secuencia
             vector_string = "[" + ",".join(f"{float(v):.8f}" for v in embedding) + "]"
 
@@ -293,6 +296,9 @@ class EmbeddingLookUp(QueueTaskInitializer):
 
             # Construir la cláusula opcional para taxonomy_ids_to_exclude
             exclude_taxonomy_clause = "AND CAST(p.taxonomy_id AS INTEGER) NOT IN :taxonomy_ids_to_exclude" if taxonomy_ids_to_exclude else ""
+
+            # Construir la cláusula opcional para taxonomy_ids_to_include
+            include_taxonomy_clause = "AND CAST(p.taxonomy_id AS INTEGER) IN :taxonomy_ids_to_include" if taxonomy_ids_to_include else ""
 
             # Construir la cláusula opcional para lookup_reference_tag
             tag_filter = "AND ac.tag = :lookup_reference_tag" if self.conf.get("lookup_reference_tag", False) else ""
@@ -325,6 +331,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                         se.embedding_type_id = :embedding_type_id
                         {not_in_clause}
                         {exclude_taxonomy_clause}
+                        {include_taxonomy_clause}
                         {tag_filter}
                 ),
                 limited_proteins AS (
@@ -368,6 +375,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     'limit_per_entry': limit_per_entry,
                     'redundant_ids': tuple(redundant_ids),
                     'taxonomy_ids_to_exclude': tuple(taxonomy_ids_to_exclude),
+                    'taxonomy_ids_to_include': tuple(taxonomy_ids_to_include),
                     'lookup_reference_tag': self.conf.get("lookup_reference_tag")
                 }).fetchall()
 
