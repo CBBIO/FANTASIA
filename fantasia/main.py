@@ -12,7 +12,7 @@ from protein_metamorphisms_is.helpers.config.yaml import read_yaml_config
 import protein_metamorphisms_is.sql.model.model  # noqa: F401
 
 
-def initialize(config_path, embeddings_url=None, db_port=None):
+def initialize(config_path, embeddings_url=None,db_host=None, db_port=None):
     """
     Initializes the system by downloading embeddings and loading the database dump.
     """
@@ -20,7 +20,8 @@ def initialize(config_path, embeddings_url=None, db_port=None):
         conf = yaml.safe_load(config_file)
     if embeddings_url:
         conf["embeddings_url"] = embeddings_url
-
+    if db_host:
+        conf["DB_HOST"] = db_host
     if db_port:
         conf["DB_PORT"] = db_port  # Agregar el puerto a la configuración
 
@@ -134,6 +135,11 @@ if __name__ == "__main__":
             "URL to download the embeddings database dump.\n"
             "If not provided, the system will use the URL from the config file."
         )
+    )
+
+    init_parser.add_argument(
+        "--db_host", type=str,
+        help="Host TCP or SOCKET for for the database connection."
     )
 
     init_parser.add_argument(
@@ -265,7 +271,7 @@ if __name__ == "__main__":
 
     if args.command == "initialize":
         print("Initializing embeddings and database...")
-        initialize(args.config, args.embeddings_url, args.db_port)
+        initialize(args.config, args.embeddings_url, args.db_host, args.db_port)
     elif args.command == "run":
         print("Running the FANTASIA pipeline...")
         conf = read_yaml_config(args.config)
