@@ -28,7 +28,7 @@ import h5py
 
 from protein_metamorphisms_is.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType
 from protein_metamorphisms_is.tasks.queue import QueueTaskInitializer
-
+from protein_metamorphisms_is.helpers.clustering.cdhit import calculate_cdhit_word_length
 
 class EmbeddingLookUp(QueueTaskInitializer):
     """
@@ -171,7 +171,8 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 "alignment_coverage": self.conf.get('alignment_coverage', 0.95),
                 "memory_usage": self.conf.get('memory_usage', 32000),
                 "threads": self.conf.get('threads', 0),
-                "most_representative_search": self.conf.get('most_representative_search', 1)
+                "most_representative_search": self.conf.get('most_representative_search', 1),
+                "word_length": calculate_cdhit_word_length(self.conf.get('redundancy_filter', 0.95),self.logger)
             }
             self.logger.info(f"CD-HIT parameters:\n"
                              f"  Input File: {cdhit_params['input_file']}\n"
@@ -191,7 +192,8 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 aL=cdhit_params["alignment_coverage"],
                 M=cdhit_params["memory_usage"],
                 T=cdhit_params["threads"],
-                g=cdhit_params["most_representative_search"]
+                g=cdhit_params["most_representative_search"],
+                n=cdhit_params["word_length"]
             )
 
             # Finalizar y cargar los clústeres
