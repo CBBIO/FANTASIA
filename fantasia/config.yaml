@@ -78,29 +78,30 @@ sequence_queue_package: 64
 delete_queues: True
 
 # ==========================
-# 🧬 Embedding Configuration
+# 🧬 Embedding Configuration:
+# this config is for run a test using only ProtT5 using euclidean distance at k=1. Modify paramenters accordingly.
 # ==========================
 
 embedding:
-  device: "cuda"
+  device: "cpu"  # options: "cuda" or "cpu"
   distance_metric: "<=>"  # options: "<=>" (cosine) or "<->" (euclidean)
   models:
     esm:
-      enabled: True           # 🔹 Enable or disable the ESM model
-      distance_threshold: 1.5  # 🔹 Distance threshold for the ESM model
+      enabled: False           # 🔹 Enable or disable  the ESM model. Options: "True" or "False".
+      distance_threshold: 0  # 🔹 Distance threshold for the ESM model
       batch_size: 32           # 🔹 Batch size for processing sequences in ESM
     prost_t5:
-      enabled: True           # 🔹 Enable or disable the Prost model
-      distance_threshold: 1.5  # 🔹 Distance threshold for the Prost model
+      enabled: False           # 🔹 Enable or disable the Prost model. Options: "True" or "False".
+      distance_threshold: 0  # 🔹 Distance threshold for the Prost model
       batch_size: 32           # 🔹 Batch size for processing sequences in Prost
     prot_t5:
-      enabled: True           # 🔹 Enable or disable the Prot model
-      distance_threshold: 1.5  # 🔹 Distance threshold for the Prot model
+      enabled: True           # 🔹 Enable or disable the Prot model. Options: "True" or "False".
+      distance_threshold: 0  # 🔹 Distance threshold for the Prot model
       batch_size: 32           # 🔹 Batch size for processing sequences in Prot
 
 # ==========================
 # 🧠 Functional Analysis
 # ==========================
 
-# Enable or disable the use of TopGO for Gene Ontology enrichment analysis. (wIP
+# Enable or disable the use of TopGO formatting output for Gene Ontology enrichment analysis. Options: "true" or "false".
 topgo: true
