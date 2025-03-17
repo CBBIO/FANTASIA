@@ -84,7 +84,7 @@ delete_queues: True
 
 embedding:
   device: "cpu"  # options: "cuda" or "cpu"
-  distance_metric: "<=>"  # options: "<=>" (cosine) or "<->" (euclidean)
+  distance_metric: "<->"  # options: "<=>" (cosine) or "<->" (euclidean)
   models:
     esm:
       enabled: False           # 🔹 Enable or disable  the ESM model. Options: "True" or "False".
