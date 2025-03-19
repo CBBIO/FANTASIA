@@ -31,7 +31,7 @@ DB_NAME: BioData             # Name of the database to use.
 
 # Configuration for the RabbitMQ message broker.
 rabbitmq_host: localhost     # RabbitMQ server hostname.
-rabbitmq_port: 15672         # RabbitMQ server port.
+rabbitmq_port: 5672         # RabbitMQ server port.
 rabbitmq_user: guest         # RabbitMQ username for authentication.
 rabbitmq_password: guest     # RabbitMQ password for authentication.
 
@@ -58,10 +58,10 @@ base_directory: ~/fantasia/
 input: data_sample/worm_test.fasta
 
 # Reference tag used for lookup operations. (None for Complete Reference table from information system)
-lookup_reference_tag: 0
+lookup_reference_tag: GOA2022
 
 # K-closest protein to consider for lookup
-limit_per_entry: 10
+limit_per_entry: 1
 
 # Prefix for output file names.
 fantasia_prefix: worm_test_Prot_100_1.2
@@ -88,20 +88,20 @@ embedding:
   models:
     esm:
       enabled: False           # 🔹 Enable or disable  the ESM model. Options: "True" or "False".
-      distance_threshold: 0  # 🔹 Distance threshold for the ESM model
+      distance_threshold: 2  # 🔹 Distance threshold for the ESM model
       batch_size: 32           # 🔹 Batch size for processing sequences in ESM
     prost_t5:
       enabled: False           # 🔹 Enable or disable the Prost model. Options: "True" or "False".
-      distance_threshold: 0  # 🔹 Distance threshold for the Prost model
+      distance_threshold: 2  # 🔹 Distance threshold for the Prost model
       batch_size: 32           # 🔹 Batch size for processing sequences in Prost
     prot_t5:
       enabled: True           # 🔹 Enable or disable the Prot model. Options: "True" or "False".
-      distance_threshold: 0  # 🔹 Distance threshold for the Prot model
+      distance_threshold: 2  # 🔹 Distance threshold for the Prot model
       batch_size: 32           # 🔹 Batch size for processing sequences in Prot
 
 # ==========================
 # 🧠 Functional Analysis
 # ==========================
 
-# Enable or disable the use of TopGO formatting output for Gene Ontology enrichment analysis. Options: "true" or "false".
-topgo: true
+# Enable or disable the use of TopGO formatting output for Gene Ontology enrichment analysis. Options: "True" or "False".
+topgo: True
