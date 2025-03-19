@@ -208,7 +208,8 @@ Arguments
 - ``--redundancy_filter``: Specifies the redundancy threshold (0.0 in this case). Sequences with redundancy above this threshold will be excluded.
 - ``--sequence_queue_package``: Determines the size of sequence batches (1000 sequences per package). This controls how many sequences are processed in each batch.
 - ``--esm``, ``--prost``, ``--prot``: Enables different processing modes or models in the pipeline. These flags activate specific embedding models (ESM, ProstT5, and ProtT5, respectively).
-- ``--distance_threshold``: Sets thresholds for distances across different embedding types. The format is a comma-separated list of ``embedding_type:threshold`` pairs. For example, ``esm:1.2,prot:0.7,prost:0.7`` sets distance thresholds.
+- ``--limit_per_entry``: It is a number and sets the max number of proteins exhibiting the closest embedding distance. It is equivalent to the "k" parameter in the original GopredSim implementation for euclidean distance. Default should be "1". 
+- ``--distance_threshold``: Sets thresholds for distances across different embedding types. IMPORTANT: this value cannot be "0" even if distance is not the selected criteria. The format is a comma-separated list of ``embedding_type:threshold`` pairs. For example, ``esm:1.2,prot:0.7,prost:0.7`` sets distance thresholds.
 - ``--batch_size``: Specifies batch sizes for different embedding types. The format is a comma-separated list of ``embedding_type:size`` pairs. For example, ``esm:32,prot:32,prost:32`` sets batch sizes.
 - ``--device``: Specifies the device to use for computation. Options are ``cuda`` (for GPU acceleration) or ``cpu`` (for CPU-only execution). Default is ``cuda`` if available.
 - ``--base_directory``: Specifies the base directory where all experiments, results, and execution parameters will be stored. This is the root location for organizing output files and logs.
