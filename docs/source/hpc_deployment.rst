@@ -307,7 +307,7 @@ The following command runs the FANTASIA pipeline inside a Singularity container:
 
 .. code-block:: console
 
-   singularity --nv exec --bind ~/fantasia:/fantasia fantasia.sif python3 -m fantasia.main run \
+   singularity exec --nv --bind ~/fantasia:/fantasia fantasia.sif python3 -m fantasia.main run \
       --input data_sample/sample.fasta \
       --length_filter 50000000 \
       --redundancy_filter 0. \
