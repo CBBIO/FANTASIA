@@ -269,6 +269,8 @@ if __name__ == "__main__":
         conf = read_yaml_config(args.config)
         for key, value in vars(args).items():
             if value is not None and key not in ["command", "config"]:
+                if key == "only_lookup" and not args.only_lookup:
+                    continue
                 conf[key] = value
         if args.only_lookup:
             conf['only_lookup'] = True
