@@ -110,11 +110,18 @@ def load_and_merge_config(args, unknown_args):
 def main():
     parser = build_parser()
     args, unknown_args = parser.parse_known_args()
+
+    if args.command is None:
+        parser.print_help()
+        sys.exit(0)
+
     conf = load_and_merge_config(args, unknown_args)
 
     logger = setup_logger("FANTASIA", conf.get("log_path", "fantasia.log"))
 
     check_services(conf,logger)
+
+
 
     if args.command == "initialize":
         logger.info("Starting initialization...")

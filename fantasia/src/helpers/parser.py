@@ -36,10 +36,9 @@ FANTASIA allows selecting between two datasets for reference annotation during t
 Use the `--embeddings_url` flag in the `initialize` command to override the default.
 
 Requirements:
-  • Relational Database: PostgreSQL (for storing annotations and metadata)
-  • Vector Database: pgvector (for efficient similarity searches)
+  • Relational Database with Vectors: PostgreSQL/PGVector (for storing annotations, embeddings and metadata)
   • Task Queue: RabbitMQ (for parallel task execution)
-
+  
 For setup instructions, refer to the documentation.
             """
         ),
