@@ -3,7 +3,7 @@
 # ==========================
 
 # Maximum number of worker threads for parallel processing.
-max_workers: 20
+max_workers: 3
 
 # Path to the system constants file.
 constants: "./fantasia/constants.yaml"
