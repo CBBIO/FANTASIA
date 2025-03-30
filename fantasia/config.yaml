@@ -124,7 +124,7 @@ embedding:
     # 🔬 ProSTT5 Model
     # ----------------------
     prost_t5:
-      enabled: True
+      enabled: False
       distance_threshold: 2
       batch_size: 32
 
@@ -132,7 +132,7 @@ embedding:
     # 🧪 ProtT5 Model
     # ----------------------
     prot_t5:
-      enabled: true
+      enabled: True
       distance_threshold: 2
       batch_size: 32
 
