@@ -119,6 +119,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
         # Redundancy filtering setup
         redundancy_filter_threshold = self.conf.get("redundancy_filter", 0)
         if redundancy_filter_threshold > 0:
+
             self.generate_clusters()
 
         # Load GO ontology
