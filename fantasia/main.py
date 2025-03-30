@@ -33,20 +33,12 @@ def run_pipeline(conf):
     try:
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
         conf = setup_experiment_directories(conf, current_date)
-        
+
         logger.info("Configuration loaded:")
         logger.debug(conf)
-        
-        if args.only_lookup:
-            conf['only_lookup'] = True
 
-        if not conf['only_lookup']:
-            embedder = SequenceEmbedder(conf, current_date)
-            embedder.start()
-            conf['embeddings_path'] = os.path.join(conf["experiment_path"], "embeddings.h5")
-
-        else:
-            conf['embeddings_path'] = conf['input']
+        embedder = SequenceEmbedder(conf, current_date)
+        embedder.start()
 
         lookup = EmbeddingLookUp(conf, current_date)
         lookup.start()
@@ -118,6 +110,21 @@ def load_and_merge_config(args, unknown_args):
 
     return conf
 
+
+def main():
+    parser = build_parser()
+    args, unknown_args = parser.parse_known_args()
+
+    if args.command is None:
+        parser.print_help()
+        sys.exit(0)
+
+    conf = load_and_merge_config(args, unknown_args)
+
+    logger = setup_logger("FANTASIA", conf.get("log_path", "fantasia.log"))
+
+    check_services(conf, logger)
+
     if args.command == "initialize":
         logger.info("Starting initialization...")
         initialize(conf)
@@ -134,7 +141,6 @@ def load_and_merge_config(args, unknown_args):
 
         if args.redundancy_filter is not None and not (0 < args.redundancy_filter <= 1):
             raise ValueError("redundancy_filter must be a decimal between 0 and 1 (e.g., 0.95 for 95%)")
-
 
         run_pipeline(conf)
     else:
