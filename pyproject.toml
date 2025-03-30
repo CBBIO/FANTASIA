@@ -1,9 +1,12 @@
 [tool.poetry]
 name = "FANTASIA"
-version = "0.13.3"
+version = "0.14.0"
 description = "Functional ANnoTAtion based on embedding space SImilArity"
 authors = ["Francisco Miguel Pérez Canales <frapercan1@alum.us.es>","Gemma Martínez Redondo <gemma.martinez@ibe.upf-csic.es>"]
 readme = "README.md"
+
+[tool.poetry.scripts]
+fantasia = "fantasia.main:main"
 
 [tool.poetry.dependencies]
 python = "^3.10"
@@ -19,6 +22,7 @@ flake8-bugbear = "^23.2.13"
 taskipy = "^1.10.3"
 sphinx = "^7.2.6"
 sphinx-rtd-theme = "^1.2.0"
+furo = "^2024.8.6"
 
 
 
