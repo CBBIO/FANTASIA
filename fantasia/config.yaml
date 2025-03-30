@@ -3,7 +3,7 @@
 # ==========================
 
 # Maximum number of worker threads for parallel processing.
-max_workers: 3
+max_workers: 1
 
 # Path to the system constants file.
 constants: "./fantasia/constants.yaml"
@@ -14,7 +14,7 @@ monitor_interval: 10
 # Debug Feature
 # Activated only when 'limit_entry' is set. Limits the number of input samples processed
 # and builds the lookup table using at most 'limit_entry' vectors.
-limit_entry: 0
+limit_entry: 500
 
 log_path: ~/fantasia/fantasia.log
 
@@ -83,7 +83,7 @@ input: data_sample/worm_test.fasta
 only_lookup: False
 
 # Batch size for Embedding Distance calculation - [batch_size,length(lookup_table)]
-batch_size: 100
+batch_size: 1
 
 # K-closest protein to consider for lookup
 limit_per_entry: 1
@@ -116,7 +116,7 @@ embedding:
     # 🧪 ESM Model
     # ----------------------
     esm:
-      enabled: True
+      enabled: False
       distance_threshold: 2
       batch_size: 32
 
