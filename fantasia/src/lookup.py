@@ -271,7 +271,10 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 self.logger.info(f"Published final batch {total_batches} with {len(batch)} tasks.")
 
             self.logger.info(f"Enqueued a total of {total_batches} batches for processing.")
-
+        except OSError as e:
+            self.logger.error(f"Failed to read HDF5 file: '{self.embeddings_path}'. "
+                              f"Make sure that to perform the only lookup, an embedding file in H5 format is required as input.")
+            raise
         except Exception as e:
             import traceback
             self.logger.error(f"Error enqueuing tasks from HDF5: {e}\n{traceback.format_exc()}")
