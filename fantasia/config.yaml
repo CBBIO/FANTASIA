@@ -84,7 +84,7 @@ input: data_sample/worm_test.fasta
 batch_size: 100
 
 # K-closest protein to consider for lookup
-limit_per_entry: 10
+limit_per_entry: 1
 
 # Prefix for output file names.
 fantasia_prefix: worm_test_Prot_100_1.2
