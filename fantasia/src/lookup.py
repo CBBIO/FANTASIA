@@ -272,7 +272,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
 
             self.logger.info(f"Enqueued a total of {total_batches} batches for processing.")
         except OSError as e:
-            self.logger.error(f"Failed to read HDF5 file '{self.embeddings_path}'. "
+            self.logger.error(f"Failed to read HDF5 file: '{self.embeddings_path}'. "
                               f"Make sure that to perform the only lookup, an embedding file in H5 format is required as input.")
             raise
         except Exception as e:
