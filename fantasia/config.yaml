@@ -105,21 +105,34 @@ delete_queues: True
 # ==========================
 
 embedding:
-  device: "cuda"  # options: "cuda" or "cpu"
-  distance_metric: "<->"  # options: "<=>" (cosine) or "<->" (euclidean)
+  device: cuda  # 🔹 Options: "cpu", "cuda" (default GPU), or "cuda:N" (e.g., "cuda:0", "cuda:1", ...)
+  distance_metric: euclidean  # 🔹 Options: [euclidean, cosine]
+
   models:
+    # ----------------------
+    # 🧪 ESM Model
+    # ----------------------
     esm:
-      enabled: False           # 🔹 Enable or disable  the ESM model. Options: "True" or "False".
-      distance_threshold: 2  # 🔹 Distance threshold for the ESM model
-      batch_size: 32           # 🔹 Batch size for processing sequences in ESM
+      enabled: True
+      distance_threshold: 2
+      batch_size: 32
+
+    # ----------------------
+    # 🔬 ProSTT5 Model
+    # ----------------------
     prost_t5:
-      enabled: False           # 🔹 Enable or disable the Prost model. Options: "True" or "False".
-      distance_threshold: 2  # 🔹 Distance threshold for the Prost model
-      batch_size: 32           # 🔹 Batch size for processing sequences in Prost
+      enabled: True
+      distance_threshold: 2
+      batch_size: 32
+
+    # ----------------------
+    # 🧪 ProtT5 Model
+    # ----------------------
     prot_t5:
-      enabled: True           # 🔹 Enable or disable the Prot model. Options: "True" or "False".
-      distance_threshold: 2  # 🔹 Distance threshold for the Prot model
-      batch_size: 32           # 🔹 Batch size for processing sequences in Prot
+      enabled: true
+      distance_threshold: 2
+      batch_size: 32
+
 
 # ==========================
 # 🧠 Functional Analysis
