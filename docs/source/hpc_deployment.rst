@@ -4,8 +4,6 @@
 HPC Deployment Guide
 =======================================
 
-.. contents:: Table of Contents
-   :depth: 2
 
 Step 1: Connect to the HPC via VPN
 ==================================

@@ -1,0 +1,323 @@
+:root {
+  --font-stack: 'Inter', sans-serif;
+  --font-stack--monospace: 'JetBrains Mono', monospace;
+}
+
+/* Cambiar encabezados */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Playfair Display', serif !important;
+}
+
+/* Texto general */
+body {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--color-foreground-primary);
+}
+
+/* Código */
+pre, code {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 0.95em;
+}
+
+.sidebar-tree .caption {
+  color: #6e0047 !important;          /* Rosa oscuro con presencia */
+  font-weight: 600 !important;        /* Más peso que el texto base */
+  text-transform: uppercase;          /* Mantiene el estilo actual */
+  letter-spacing: 0.05em;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
+
+
+.sidebar-tree .current > a {
+  font-weight: 700;
+  color: #6e0047 !important;
+}
+
+
+/* Código en línea */
+code {
+  background-color: #f4dce4 !important;  /* Rosa muy claro que armoniza */
+  color: #3c2a30 !important;             /* Mismo marrón que el texto */
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+}
+
+/* Bloques de código */
+pre {
+  background-color: #f4dce4 !important;
+  color: #3c2a30 !important;
+  padding: 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+
+/* Colores del resaltado de código (pygments) */
+.highlight .c { color: #a17888 !important; }     /* comentarios */
+.highlight .k { color: #6e0047 !important; }     /* palabras clave */
+.highlight .o { color: #a32c64 !important; }     /* operadores */
+.highlight .n { color: #3c2a30 !important; }     /* nombres comunes */
+.highlight .s { color: #6e4c59 !important; }     /* strings */
+.highlight .mi { color: #6e4c59 !important; }    /* números */
+.highlight .na { color: #a32c64 !important; }    /* nombres de atributos */
+.highlight .nv { color: #a17888 !important; }    /* valores de variables */
+.highlight .bp { color: #6e0047 !important; }    /* booleanos */
+.highlight .kc { color: #6e0047 !important; }    /* constantes */
+.highlight .l { color: #6e0047 !important; }    /* constantes */
+
+.highlight {
+  background-color: #f4dce4 !important;   /* fondo rosa suave */
+  color: #3c2a30 !important;
+  border-radius: 6px;
+  padding: 1em;
+  font-size: 0.95em;
+}
+
+
+/* YAML key names como 'input:', 'lookup_reference_tag:' */
+.highlight .nt {
+  color: #a32c64 !important;  /* Rosa fuerte que armoniza */
+  font-weight: 600;
+}
+
+.highlight .s {
+  color: #6e4c59 !important;  /* strings */
+}
+
+.highlight .mi {
+  color: #a17888 !important;  /* números */
+}
+
+
+/* Estilo general de todos los bloques de código */
+.highlight,
+.literal-block,
+div[class^="highlight"] {
+  background-color: #f4dce4 !important;
+  color: #3c2a30 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 0.95em;
+  padding: 1em;
+  border-radius: 6px;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+span.l {
+  color: #a32c64 !important;  /* o el color que prefieras */
+  font-weight: 600;
+  background-color: #f8edf2;
+}
+
+.highlight .c1 {
+  color: #a17888 !important;
+  font-style: italic;
+}
+
+
+/* TOC: Título "On this page" */
+.toc-title {
+  color: #a32c64 !important;
+}
+
+h3 {
+  color: #a32c64 !important;           /* Rosa acento armonioso */
+  font-weight: 600;
+  font-family: 'Playfair Display', serif !important;
+  margin-top: 1.5em;
+  margin-bottom: 0.6em;
+  border: none !important;             /* Por si hay bordes indeseados */
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+}
+
+
+/* Corrige <blockquote> rotos con fondo oscuro */
+blockquote {
+  background-color: #f4dce4 !important;
+  border-left: 4px solid #dba6bb;
+  padding: 1em 1.2em;
+  margin: 1.5em 0;
+  color: #3c2a30 !important;
+  border-radius: 6px;
+  font-style: normal;
+}
+
+/* Elimina estilos oscuros heredados de sphinx o pygments */
+blockquote code,
+blockquote .docutils.literal {
+  background-color: #f9eff4 !important;
+  color: #3c2a30 !important;
+  border: 1px solid #dba6bb;
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9em;
+}
+
+
+.toc-drawer {
+	background: #DBA7BC !important;
+	padding-right: 1rem;
+}
+
+
+
+.toc-drawer {
+	background: var(--color-sidebar-background);
+	padding-right: 1rem;
+}
+
+
+/* Estilo unificado para bloques con sphinx-copybutton */
+div.highlight,
+div[class^="highlight"] {
+  background-color: #f4dce4 !important;
+  color: #3c2a30 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 0.95em;
+  padding: 1em 1.5em;
+  border-radius: 6px;
+  position: relative;
+  overflow-x: auto;
+  box-shadow: none;
+}
+
+/* Eliminar fondo verde o gris en líneas de consola */
+.highlight .go {
+  color: #3c2a30 !important;
+  background: none !important;
+}
+
+/* Botón de copiar estilo limpio */
+/*.copybtn {*/
+/*  background-color: transparent !important;*/
+/*  border: none !important;*/
+/*  color: #6e0047 !important;*/
+/*  top: 0.5em !important;*/
+/*  right: 0.5em !important;*/
+/*  padding: 0.3em !important;*/
+/*  border-radius: 6px;*/
+/*  transition: background-color 0.2s ease;*/
+/*}*/
+
+.copybtn:hover {
+  background-color: #f9eff4;
+}
+
+/* Eliminar bordes o estilos oscuros residuales */
+div.highlight pre,
+div.highlight span {
+  background: none !important;
+}
+
+
+h2 {
+  color: #a32c64 !important;
+  font-weight: 700;
+  font-family: 'Playfair Display', serif !important;
+  font-size: 1.6em;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  margin-top: 2em;
+  margin-bottom: 1em;
+}
+
+
+/* Estilo general de tablas */
+table.docutils {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5em 0;
+  font-size: 0.95rem;
+  background-color: #f8edf2;
+  color: #3c2a30;
+}
+
+/* Cabeceras */
+table.docutils th {
+  background-color: #dba6bb;
+  color: #3c2a30;
+  padding: 0.6em 1em;
+  text-align: left;
+  font-weight: 700;
+  border-bottom: 2px solid #daa4ba;
+}
+
+/* Celdas normales */
+table.docutils td {
+  background-color: #f9eff4;
+  color: #3c2a30;
+  padding: 0.6em 1em;
+  border-top: 1px solid #e0b4c6;
+}
+
+/* Bordes externos sutiles */
+table.docutils th,
+table.docutils td {
+  border-left: none;
+  border-right: none;
+}
+
+/* Asegurar márgenes y bordes en modo scroll horizontal (en móviles) */
+.table-wrapper {
+  overflow-x: auto;
+}
+
+img {
+  border: 1px solid #dba6bb;
+  border-radius: 6px;
+  padding: 4px;
+  background-color: #f9eff4;
+  max-width: 100%;
+  height: auto;
+  box-shadow: 0 1px 4px rgba(220, 170, 190, 0.2);
+  margin: 1rem 0;
+}
+
+
+/* Botón de copiar: acorde a tema rosa elegante */
+.copybtn {
+  background-color: #f9eff4 !important;
+  border: 1px solid #daa4ba !important;
+  color: #6e0047 !important;
+  border-radius: 6px;
+  padding: 0.3em 0.4em;
+  top: 0.5em !important;
+  right: 0.5em !important;
+  position: absolute;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 5px rgba(218, 164, 186, 0.2);
+}
+
+/* Ícono SVG del botón */
+.copybtn svg {
+  stroke: #a32c64 !important;
+  width: 20px;
+  height: 20px;
+}
+
+/* Hover refinado */
+.copybtn:hover {
+  background-color: #f4dce4 !important;
+  border-color: #dba6bb !important;
+  box-shadow: 0 3px 6px rgba(218, 164, 186, 0.3);
+  cursor: pointer;
+}
+
+
+.theme-icon-when-dark {
+  display: none !important;
+}
+
+
+
+.sidebar-brand-text {
+  display: none !important;
+}
