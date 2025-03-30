@@ -38,7 +38,6 @@ Use the `--embeddings_url` flag in the `initialize` command to override the defa
 Requirements:
   • Relational Database with Vectors: PostgreSQL/PGVector (for storing annotations, embeddings and metadata)
   • Task Queue: RabbitMQ (for parallel task execution)
-  
 For setup instructions, refer to the documentation.
             """
         ),
@@ -111,21 +110,29 @@ Supported models include ProtT5, ProstT5, and ESM2.
         formatter_class=argparse.RawTextHelpFormatter
     )
 
-    run_parser.add_argument("--config", type=str, default="./fantasia/config.yaml", help="Path to the YAML configuration file. Default: './fantasia/config.yaml'.")
+    run_parser.add_argument("--config", type=str, default="./fantasia/config.yaml",
+                            help="Path to the YAML configuration file. Default: './fantasia/config.yaml'.")
     run_parser.add_argument("--input", type=str, help="Path to the input FASTA file containing protein sequences.")
     run_parser.add_argument("--prefix", type=str, help="Prefix used to name the output files.")
-    run_parser.add_argument("--base_directory", type=str, help="Base directory where all results and embeddings will be stored.")
-    run_parser.add_argument("--length_filter", type=int, help="Filter sequences by length. Sequences longer than this will be ignored.")
-    run_parser.add_argument("--redundancy_filter", type=float, help="Apply redundancy filtering (e.g., 0.8 removes sequences >80%% identity).")
-    run_parser.add_argument("--max_workers", type=int, help="Number of parallel workers to process sequences. Affects only the database lookup stage.")
-    run_parser.add_argument("--models", type=str, help="Comma-separated list of embedding models to enable. Example: 'esm,prot'.")
-    run_parser.add_argument("--distance_threshold", type=str, help="Comma-separated model:threshold pairs. Example: 'esm:0.4,prot:0.6'.")
-    run_parser.add_argument("--batch_size", type=str, help="Comma-separated model:batch_size pairs. Example: 'esm:32,prot:64'.")
+    run_parser.add_argument("--base_directory", type=str,
+                            help="Base directory where all results and embeddings will be stored.")
+    run_parser.add_argument("--length_filter", type=int,
+                            help="Filter sequences by length. Sequences longer than this will be ignored.")
+    run_parser.add_argument("--redundancy_filter", type=float,
+                            help="Apply redundancy filtering (e.g., 0.8 removes sequences >80%% identity).")
+    run_parser.add_argument("--max_workers", type=int,
+                            help="Number of parallel workers to process sequences. Affects only the database lookup stage.")
+    run_parser.add_argument("--models", type=str,
+                            help="Comma-separated list of embedding models to enable. Example: 'esm,prot'.")
+    run_parser.add_argument("--distance_threshold", type=str,
+                            help="Comma-separated model:threshold pairs. Example: 'esm:0.4,prot:0.6'.")
+    run_parser.add_argument("--batch_size", type=str,
+                            help="Comma-separated model:batch_size pairs. Example: 'esm:32,prot:64'.")
     run_parser.add_argument("--sequence_queue_package", type=int, help="Number of sequences to queue per batch.")
-    run_parser.add_argument("--limit_per_entry", type=int, help="Limit the number of retrieved reference entries per query.")
+    run_parser.add_argument("--limit_per_entry", type=int,
+                            help="Limit the number of retrieved reference entries per query.")
     run_parser.add_argument("--device", type=str, choices=["cuda", "cpu"], help="Device to use for embedding models.")
     run_parser.add_argument("--log_path", type=str, help="Path to the log file.")
-
 
     run_parser.epilog = (
         "Example usage:\n"

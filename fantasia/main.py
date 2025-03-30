@@ -27,6 +27,7 @@ def initialize(conf):
     logger.info("Loading embeddings into the database...")
     load_dump_to_db(tar_path, conf)
 
+
 def run_pipeline(conf):
     logger = logging.getLogger("fantasia")
     try:
@@ -41,9 +42,10 @@ def run_pipeline(conf):
 
         lookup = EmbeddingLookUp(conf, current_date)
         lookup.start()
-    except Exception as ex:
+    except Exception:
         logger.error("Pipeline execution failed.", exc_info=True)
         sys.exit(1)
+
 
 def setup_experiment_directories(conf, timestamp):
     logger = logging.getLogger("fantasia")
@@ -63,6 +65,7 @@ def setup_experiment_directories(conf, timestamp):
 
     logger.info(f"Experiment configuration saved at: {yaml_path}")
     return conf
+
 
 def load_and_merge_config(args, unknown_args):
     """
@@ -107,6 +110,7 @@ def load_and_merge_config(args, unknown_args):
 
     return conf
 
+
 def main():
     parser = build_parser()
     args, unknown_args = parser.parse_known_args()
@@ -119,9 +123,7 @@ def main():
 
     logger = setup_logger("FANTASIA", conf.get("log_path", "fantasia.log"))
 
-    check_services(conf,logger)
-
-
+    check_services(conf, logger)
 
     if args.command == "initialize":
         logger.info("Starting initialization...")
@@ -140,10 +142,10 @@ def main():
         if args.redundancy_filter is not None and not (0 < args.redundancy_filter <= 1):
             raise ValueError("redundancy_filter must be a decimal between 0 and 1 (e.g., 0.95 for 95%)")
 
-
         run_pipeline(conf)
     else:
         parser.print_help()
+
 
 if __name__ == "__main__":
     main()
