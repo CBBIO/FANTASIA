@@ -3,7 +3,6 @@ import os
 import pika
 import requests
 import subprocess
-import pika
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from protein_metamorphisms_is.sql.base.database_manager import DatabaseManager
@@ -105,10 +104,6 @@ def parse_unknown_args(unknown_args):
                 result[key] = True  # Si no tiene valor, se asume un flag booleano
         i += 1
     return result
-
-
-
-
 
 
 def check_services(conf, logger):
