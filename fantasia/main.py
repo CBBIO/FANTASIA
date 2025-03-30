@@ -37,8 +37,24 @@ def run_pipeline(conf):
         logger.info("Configuration loaded:")
         logger.debug(conf)
 
-        embedder = SequenceEmbedder(conf, current_date)
-        embedder.start()
+        if conf["only_lookup"]:
+            conf["embeddings_path"] = conf["input"]
+        else:
+            embedder = SequenceEmbedder(conf, current_date)
+            logger.info("Running embedding step to generate embeddings.h5...")
+            embedder.start()
+
+            conf["embeddings_path"] = os.path.join(conf["experiment_path"], "embeddings.h5")
+
+            if not os.path.exists(conf["embeddings_path"]):
+                logger.error(
+                    f"❌ The embedding file was not created: {conf['embeddings_path']}\n"
+                    f"💡 Please ensure the embedding step ran correctly. "
+                    f"You can try re-running with 'only_lookup: true' and 'input: <path_to_h5>'."
+                )
+                raise FileNotFoundError(
+                    f"Missing HDF5 file after embedding step: {conf['embeddings_path']}"
+                )
 
         lookup = EmbeddingLookUp(conf, current_date)
         lookup.start()

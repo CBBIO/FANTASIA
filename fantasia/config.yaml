@@ -104,7 +104,7 @@ delete_queues: True
 
 # ==========================
 # 🧬 Embedding Configuration:
-# this config is for run a test using only ProtT5 using euclidean distance at k=1. Modify paramenters accordingly.
+# this config is for run a test using only ProtT5 using Euclidean distance at k=1. Modify paramenters accordingly.
 # ==========================
 
 embedding:

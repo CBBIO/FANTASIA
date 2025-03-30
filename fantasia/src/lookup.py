@@ -105,7 +105,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
 
         # Paths
         self.experiment_path = self.conf.get("experiment_path")
-        self.embeddings_path = os.path.join(self.experiment_path, "embeddings.h5")
+        self.embeddings_path = self.conf.get("embeddings_path") or os.path.join(self.experiment_path, "embeddings.h5")
         self.results_path = os.path.join(self.experiment_path, "results.csv")
         self.topgo_path = os.path.join(self.experiment_path, "results_topgo.tsv")
 
@@ -212,6 +212,13 @@ class EmbeddingLookUp(QueueTaskInitializer):
         """
         try:
             self.logger.info(f"Reading embeddings from HDF5: {self.embeddings_path}")
+
+            if not os.path.exists(self.embeddings_path):
+                raise FileNotFoundError(
+                    f"❌ The HDF5 file '{self.embeddings_path}' does not exist.\n"
+                    f"💡 Make sure the embedding step has been completed, or that the path is correct "
+                    f"(e.g., use 'only_lookup: true' with a valid 'input' path in the config)."
+                )
 
             batch_size = self.conf.get("batch_size", 4)
             batch = []
