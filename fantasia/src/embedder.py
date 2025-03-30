@@ -213,11 +213,11 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 if not self.length_filter or len(record.seq) <= self.length_filter
             ]
 
-            if self.limit_entry is not None:
+            if self.limit_entry:
                 sequences = sequences[:self.limit_entry]
 
             if not sequences:
-                self.logger.warning("No sequences found after filtering.")
+                self.logger.warning("No sequences found. Finishing embedding enqueue process.")
                 return
 
             for model_id in self.conf["embedding"]["types"]:
