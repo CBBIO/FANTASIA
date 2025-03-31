@@ -77,7 +77,7 @@ base_directory: ~/fantasia/
 # ==========================
 
 # Path to the input file: FASTA for full pipeline or H5 for precomputed embeddings if only_lookup is True.
-input: data_sample/worm_test.fasta
+input: data_sample/cafa3_targets.fasta
 
 # Set to true to perform only the lookup from an embeddings file.
 only_lookup: False
@@ -89,7 +89,7 @@ batch_size: 1
 limit_per_entry: 1
 
 # Prefix for output file names.
-fantasia_prefix: worm_test_Prot_100_1.2
+prefix: cafa3_targets
 
 # Threshold for sequence length filtering.
 length_filter: 5000000
