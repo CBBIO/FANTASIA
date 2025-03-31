@@ -285,7 +285,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
         Processes a batch of embedding-based lookup tasks and retrieves associated GO term annotations.
 
         For each input embedding, the method:
-        - Computes distances against preloaded embeddings.
+        - Computes distances (matrix vs. matrix) against preloaded embeddings.
         - Selects similar sequences under a configured threshold.
         - Fetches GO annotations from the database.
         - Optionally filters out redundant annotations via clustering.
@@ -323,35 +323,44 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 model_names[accession] = task["model_name"]
                 embedding_type_ids.append(task["embedding_type_id"])
 
+            embeddings_matrix = np.vstack(embeddings)
+
             selected_sequence_ids = set()
             distance_map = {}
 
             # Distance computation and selection
-            for idx, accession in enumerate(accession_list):
-                embedding_vector = embeddings[idx]
-                threshold = thresholds[idx]
-                type_id = embedding_type_ids[idx]
+            for type_id in set(embedding_type_ids):
+                indices = [i for i, etid in enumerate(embedding_type_ids) if etid == type_id]
+                subset_embeddings = embeddings_matrix[indices]
+                subset_accessions = [accession_list[i] for i in indices]
+                subset_thresholds = [thresholds[i] for i in indices]
 
                 lookup = self.lookup_tables.get(type_id)
                 if lookup is None:
-                    self.logger.warning(f"No lookup table for embedding_type_id {type_id}. Skipping {accession}.")
+                    self.logger.warning(f"No lookup table for embedding_type_id {type_id}. Skipping.")
                     continue
 
+                lookup_embeddings = lookup["embeddings"]
+
                 if self.distance_metric == "euclidean":
-                    distances = euclidean_distances([embedding_vector], lookup["embeddings"])[0]
+                    dist_matrix = euclidean_distances(subset_embeddings, lookup_embeddings)
                 elif self.distance_metric == "cosine":
-                    distances = cosine_distances([embedding_vector], lookup["embeddings"])[0]
+                    dist_matrix = cosine_distances(subset_embeddings, lookup_embeddings)
                 else:
                     raise ValueError(f"Unsupported distance metric: {self.distance_metric}")
 
-                sorted_indices = np.argsort(distances)
-                selected = sorted_indices[distances[sorted_indices] <= threshold][:limit_per_entry]
+                for idx, accession in enumerate(subset_accessions):
+                    distances = dist_matrix[idx]
+                    threshold = subset_thresholds[idx]
 
-                for i in selected:
-                    seq_id = lookup["ids"][i]
-                    dist = distances[i]
-                    selected_sequence_ids.add(seq_id)
-                    distance_map[(accession, seq_id)] = dist
+                    sorted_indices = np.argsort(distances)
+                    selected = sorted_indices[distances[sorted_indices] <= threshold][:limit_per_entry]
+
+                    for i in selected:
+                        seq_id = lookup["ids"][i]
+                        dist = distances[i]
+                        selected_sequence_ids.add(seq_id)
+                        distance_map[(accession, seq_id)] = dist
 
             if not selected_sequence_ids:
                 self.logger.info("No sequence IDs passed distance threshold filtering.")
@@ -516,7 +525,6 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     for row in connection.execute(query):
                         ref_file.write(f">{row.id}\n{row.sequence}\n")
 
-                print(ref_file)
                 # Add sequences from the HDF5 file
                 with h5py.File(input_h5_path, "r") as h5file:
                     for accession, group in h5file.items():
