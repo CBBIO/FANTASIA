@@ -1,5 +1,7 @@
 import os
 import sys
+import urllib
+
 import yaml
 import logging
 from datetime import datetime
@@ -19,9 +21,12 @@ def initialize(conf):
     logger = logging.getLogger("fantasia")
     embeddings_dir = os.path.join(os.path.expanduser(conf["base_directory"]), "embeddings")
     os.makedirs(embeddings_dir, exist_ok=True)
-    tar_path = os.path.join(embeddings_dir, "embeddings.tar")
 
-    logger.info("Downloading reference embeddings...")
+    # Nuevo: obtener nombre del archivo desde la URL
+    filename = os.path.basename(urllib.parse.urlparse(conf["embeddings_url"]).path)
+    tar_path = os.path.join(embeddings_dir, filename)
+
+    logger.info(f"Downloading reference embeddings to {tar_path}...")
     download_embeddings(conf["embeddings_url"], tar_path)
 
     logger.info("Loading embeddings into the database...")
@@ -139,7 +144,7 @@ def main():
 
     #aqui el codigo para configurar el log con la fecha
     current_date = datetime.now().strftime("%Y%m%d%H%M%S")
-    logs_directory = os.path.expanduser(conf.get("log_path", "~/fantasia/logs/"))
+    logs_directory = os.path.expanduser(os.path.expanduser(conf.get("log_path", "~/fantasia/logs/")))
     log_name = f"Logs_{current_date}"
     conf['log_path'] = os.path.join(logs_directory, log_name)  # por ahora hace un archivo, no una carpeta
     logger = setup_logger("FANTASIA", conf.get("log_path", "fantasia.log"))
