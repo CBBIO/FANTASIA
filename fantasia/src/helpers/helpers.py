@@ -54,9 +54,26 @@ def load_dump_to_db(dump_path, db_config):
     db_config : dict
         Database configuration dictionary containing host, port, user, password, and db name.
     """
+    print("Resetting and preparing the database...")
+
+    from sqlalchemy import create_engine
+
+    url = (
+        f"postgresql://{db_config['DB_USERNAME']}:{db_config['DB_PASSWORD']}"
+        f"@{db_config['DB_HOST']}:{db_config['DB_PORT']}/{db_config['DB_NAME']}"
+    )
+
+    engine = create_engine(url)
+
+    with engine.connect() as conn:
+        conn.execution_options(isolation_level="AUTOCOMMIT")
+        conn.execute(text("DROP SCHEMA public CASCADE;"))
+        conn.execute(text("CREATE SCHEMA public;"))
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS VECTOR;"))
+        print("✅ Schema reset and VECTOR extension created.")
+
     print("Loading dump into the database...")
 
-    # Configura las variables de entorno necesarias para pg_restore
     env = os.environ.copy()
     env["PGPASSWORD"] = db_config["DB_PASSWORD"]
 
@@ -77,16 +94,17 @@ def load_dump_to_db(dump_path, db_config):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            env=env  # Usa las variables de entorno configuradas
+            env=env
         )
         stdout, stderr = process.communicate()
 
         if process.returncode == 0:
-            print("Database dump loaded successfully.")
+            print("✅ Database dump loaded successfully.")
         else:
-            print(f"Error while loading dump: {stderr}")
+            print(f"❌ Error while loading dump: {stderr}")
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        print(f"❌ An unexpected error occurred: {e}")
+
 
 
 def parse_unknown_args(unknown_args):
