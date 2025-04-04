@@ -142,7 +142,6 @@ def main():
 
     conf = load_and_merge_config(args, unknown_args)
 
-    #aqui el codigo para configurar el log con la fecha
     current_date = datetime.now().strftime("%Y%m%d%H%M%S")
     logs_directory = os.path.expanduser(os.path.expanduser(conf.get("log_path", "~/fantasia/logs/")))
     log_name = f"Logs_{current_date}"

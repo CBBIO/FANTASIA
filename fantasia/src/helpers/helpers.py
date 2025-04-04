@@ -106,7 +106,6 @@ def load_dump_to_db(dump_path, db_config):
         print(f"❌ An unexpected error occurred: {e}")
 
 
-
 def parse_unknown_args(unknown_args):
     """Convierte una lista de argumentos desconocidos en un diccionario."""
     result = {}

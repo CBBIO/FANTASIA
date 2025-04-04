@@ -119,7 +119,6 @@ class EmbeddingLookUp(QueueTaskInitializer):
         # Redundancy filtering setup
         redundancy_filter_threshold = self.conf.get("redundancy_filter", 0)
         if redundancy_filter_threshold > 0:
-
             self.generate_clusters()
 
         # Load GO ontology
@@ -271,7 +270,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 self.logger.info(f"Published final batch {total_batches} with {len(batch)} tasks.")
 
             self.logger.info(f"Enqueued a total of {total_batches} batches for processing.")
-        except OSError as e:
+        except OSError:
             self.logger.error(f"Failed to read HDF5 file: '{self.embeddings_path}'. "
                               f"Make sure that to perform the only lookup, an embedding file in H5 format is required as input.")
             raise
@@ -678,8 +677,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
 
             self.logger.info(f"🏁 Lookup table construction completed for {len(self.lookup_tables)} model(s).")
 
-        except Exception as e:
+        except Exception:
             import traceback
             self.logger.error("❌ Failed to load lookup tables:\n" + traceback.format_exc())
             raise
-
