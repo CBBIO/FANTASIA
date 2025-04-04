@@ -117,7 +117,7 @@ embedding:
     # ----------------------
     esm:
       enabled: False
-      distance_threshold: 2
+      distance_threshold: 3
       batch_size: 32
 
     # ----------------------
@@ -125,7 +125,7 @@ embedding:
     # ----------------------
     prost_t5:
       enabled: False
-      distance_threshold: 2
+      distance_threshold: 3
       batch_size: 32
 
     # ----------------------
@@ -133,7 +133,7 @@ embedding:
     # ----------------------
     prot_t5:
       enabled: True
-      distance_threshold: 2
+      distance_threshold: 3
       batch_size: 32
 
 

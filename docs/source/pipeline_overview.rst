@@ -3,43 +3,52 @@ Pipeline Overview
 
 0. **System Setup**
 
-   Automatically downloads pre-trained embeddings or allows the use of local embeddings.
+   Sets up the environment and dependencies. Pre-trained embeddings are downloaded automatically or local embeddings can be used.
 
-   - **Required dependencies**:
+   - **Core dependencies**:
 
-     - **PostgreSQL**:
-       Stores protein metadata, Gene Ontology annotations, and embedding information.
-     - **RabbitMQ**:
-       Manages parallel task queues for pipeline execution.
-     - **pgvector**:
-       PostgreSQL extension for vector-based similarity searches.
+     - **PostgreSQL**
+       Stores protein metadata, Gene Ontology (GO) annotations, and reference embedding information.
+
+     - **RabbitMQ**
+       Handles distributed execution through parallel task queues.
+
+     - **pgvector**
+       PostgreSQL extension for efficient vector similarity indexing and retrieval.
 
 1. **Embedding Generation**
-   Computes protein embeddings using state-of-the-art language models.
 
-   - **Available models**:
+   Computes deep protein embeddings using cutting-edge language models.
+
+   - **Supported models**:
 
      - **ProtT5**
      - **ProstT5**
      - **ESM2**
 
-   - **Batch processing**: Uses a configurable batch size per model to optimize efficiency and scalability.
+   - **Batch processing**
+     Embeddings are generated in configurable batches to ensure scalability and resource efficiency.
 
-   Stores embeddings in **HDF5 format**, enabling fast and scalable access for downstream tasks.
+   - **Output format**
+     Embeddings are stored in **HDF5 format**, enabling fast I/O and compatibility with large-scale downstream analysis.
 
 2. **GO Term Lookup**
 
-   Performs similarity-based searches using embeddings stored in a vector database (**pgvector**).
+   Assigns Gene Ontology (GO) terms to query proteins via similarity search in the embedding space.
 
-   - **Configuration Parameters**:
+   - **Search strategy**
+     Similarity is computed **in-memory** after retrieving reference embeddings from a **PostgreSQL database with pgvector**.
 
-     - **Maximum number of reference proteins**:
-       Limits the number of closest proteins considered per query.
+   - **Key parameters**:
 
-     - **Distance threshold (per model)**:
-       Defines the similarity cutoff for assigning functional annotations.
+     - **Max reference proteins**
+       Sets the upper limit of reference proteins considered per query.
 
-     - **Redundancy filter (per execution)**:
-       Uses **CD-HIT** to exclude homologous sequences based on an adjustable identity threshold, ensuring robust benchmarking and reliable functional annotation.
+     - **Distance threshold (per model)**
+       Controls the similarity cutoff for assigning annotations.
 
-   Annotates query proteins with associated Gene Ontology (GO) terms retrieved from the most similar reference proteins.
+     - **Redundancy filtering**
+       Uses **CD-HIT** to remove homologous sequences prior to lookup, with a customizable identity threshold.
+
+   - **Annotation output**
+     GO terms are assigned based on the most similar reference proteins in the embedding space.

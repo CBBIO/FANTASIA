@@ -11,7 +11,6 @@ Our reference embedding set consists of a large-scale extraction of all UniProt 
 - **Enhanced Data Traceability**: By integrating metadata, we can track the provenance of annotations and ensure reproducibility.
 - **Relational Algebra Support**: The structured nature of the database allows advanced queries and relationship-based operations.
 - **Scalability & Expandability**: The system enables seamless integration with additional sources, such as structural data, experimental annotations, and evolutionary insights.
-- **Optimization for Efficient Retrieval**: The use of PostgreSQL-based vector searches ensures that even large-scale proteomes can be processed efficiently.
 - **Cross-Referencing with Structural Data**: By incorporating structural information, we facilitate comparative analyses that leverage both sequence-based and structure-based functional annotations.
 
 .. figure:: _static/PIS.png
@@ -26,4 +25,4 @@ References
 
 .. [PISGitHub] Protein Information System (PIS) GitHub Repository, available at: `GitHub <https://github.com/frapercan/protein_information_system>`_.
 
-.. [ZenodoRef] Reference database for FANTASIA, available at: `Zenodo <https://zenodo.org/records/14864851>`_.
+.. [ZenodoRef] Reference database for FANTASIA, available at: `Zenodo <https://zenodo.org/records/15133346>`_.

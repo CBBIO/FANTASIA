@@ -43,7 +43,6 @@ Alternatively, cosine similarity (:math:`d_c`) can be selected as a parameter, u
 .. math::
    d_c(n, m) = \frac{\sum_{i=1}^{s} n_i m_i}{\sqrt{\sum_{i=1}^{s} n_i^2} \cdot \sqrt{\sum_{i=1}^{s} m_i^2}}
 
-This step is significantly accelerated by leveraging ``pgvector`` [pgvector_git]_, a PostgreSQL extension optimized for efficient similarity searches in high-dimensional embedding spaces [pgvector_git]_. By default, ``pgvector`` performs exact nearest neighbor search, ensuring perfect recall. However, it also supports approximate nearest neighbor search, which trades some recall for increased speed. Unlike typical indexes, adding an approximate index may yield slightly different query results. In our implementation, we use **exact search to maximize accuracy**, but we leave the option open for approximate search if faster retrieval is needed in future optimizations.
 
 Step 4: GO Transfer
 -------------------
