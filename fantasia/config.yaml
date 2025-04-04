@@ -50,9 +50,9 @@ rabbitmq_password: guest     # RabbitMQ password for authentication.
 # embeddings database used as a reference during the annotation step.
 #
 # ➤ DEFAULT (used if no override is provided):
-#   UniProt 2024 + GOA full dump
-#   - File URL: https://zenodo.org/records/14864851/files/uniprot_embeddings_goa_2024_with_2022_tags.tar?download=1
-#   - Zenodo page: https://zenodo.org/records/14864851
+#   UniProt 2025 + GOA full dump only non-computational annotations.
+#   - File URL: https://zenodo.org/records/15133346/files/embeddings_non_computational_2025.tar?download=1
+#   - Zenodo page: https://zenodo.org/records/15133346/
 #
 # ➤ ALTERNATIVE (benchmark mode):
 #   GoPredSim 2022
@@ -63,7 +63,7 @@ rabbitmq_password: guest     # RabbitMQ password for authentication.
 #   --embeddings_url <ZENODO_URL>
 # ====================================================================
 # URL to download the embeddings database dump.
-embeddings_url: "https://zenodo.org/records/14864851/files/uniprot_embeddings_goa_2024_with_2022_tags.tar?download=1"
+embeddings_url: "https://zenodo.org/records/15133346/files/embeddings_non_computational_2025.tar?download=1"
 
 
 # ==========================
