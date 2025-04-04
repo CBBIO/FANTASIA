@@ -1,59 +1,75 @@
 import os
 import sys
-from pprint import pprint
+import urllib
+
 import yaml
-import argparse
+import logging
 from datetime import datetime
-from fantasia.src.helpers import download_embeddings, load_dump_to_db, parse_unknown_args
+
+from protein_metamorphisms_is.helpers.logger.logger import setup_logger
+
 from fantasia.src.embedder import SequenceEmbedder
+from fantasia.src.helpers.helpers import download_embeddings, load_dump_to_db, parse_unknown_args, check_services
 from fantasia.src.lookup import EmbeddingLookUp
 from protein_metamorphisms_is.helpers.config.yaml import read_yaml_config
-
 import protein_metamorphisms_is.sql.model.model  # noqa: F401
+
+from fantasia.src.helpers.parser import build_parser
 
 
 def initialize(conf):
-    """
-    Initializes the system by downloading embeddings and loading the database dump.
-    """
-
-
-
-
+    logger = logging.getLogger("fantasia")
     embeddings_dir = os.path.join(os.path.expanduser(conf["base_directory"]), "embeddings")
     os.makedirs(embeddings_dir, exist_ok=True)
-    tar_path = os.path.join(embeddings_dir, "embeddings.tar")
+
+    # Nuevo: obtener nombre del archivo desde la URL
+    filename = os.path.basename(urllib.parse.urlparse(conf["embeddings_url"]).path)
+    tar_path = os.path.join(embeddings_dir, filename)
+
+    logger.info(f"Downloading reference embeddings to {tar_path}...")
     download_embeddings(conf["embeddings_url"], tar_path)
-    print("Loading dump into the database...")
+
+    logger.info("Loading embeddings into the database...")
     load_dump_to_db(tar_path, conf)
 
 
 def run_pipeline(conf):
-    """
-    Runs the main pipeline for sequence embedding and similarity lookup.
-    """
+    logger = logging.getLogger("fantasia")
     try:
-        conf["embedding"]["types"] = [model for model, settings in conf["embedding"]["models"].items() if
-                                      settings["enabled"]]
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
         conf = setup_experiment_directories(conf, current_date)
-        print("Displaying configuration:")
-        pprint(conf)
 
-        embedder = SequenceEmbedder(conf, current_date)
-        embedder.start()
+        logger.info("Configuration loaded:")
+        logger.debug(conf)
+
+        if conf["only_lookup"]:
+            conf["embeddings_path"] = conf["input"]
+        else:
+            embedder = SequenceEmbedder(conf, current_date)
+            logger.info("Running embedding step to generate embeddings.h5...")
+            embedder.start()
+
+            conf["embeddings_path"] = os.path.join(conf["experiment_path"], "embeddings.h5")
+
+            if not os.path.exists(conf["embeddings_path"]):
+                logger.error(
+                    f"❌ The embedding file was not created: {conf['embeddings_path']}\n"
+                    f"💡 Please ensure the embedding step ran correctly. "
+                    f"You can try re-running with 'only_lookup: true' and 'input: <path_to_h5>'."
+                )
+                raise FileNotFoundError(
+                    f"Missing HDF5 file after embedding step: {conf['embeddings_path']}"
+                )
+
         lookup = EmbeddingLookUp(conf, current_date)
         lookup.start()
-    except Exception as ex:
-        print(f"Unexpected Error: {ex}", file=sys.stderr)
-        sys.exit(1)  # Detener el programa con código de error 1
+    except Exception:
+        logger.error("Pipeline execution failed.", exc_info=True)
+        sys.exit(1)
 
 
 def setup_experiment_directories(conf, timestamp):
-    """
-    Set up experiment directories using the format:
-    base_dir/experiments/{prefix}_{timestamp}
-    """
+    logger = logging.getLogger("fantasia")
     base_directory = os.path.expanduser(conf.get("base_directory", "~/fantasia/"))
     experiments_dir = os.path.join(base_directory, "experiments")
     os.makedirs(experiments_dir, exist_ok=True)
@@ -64,230 +80,97 @@ def setup_experiment_directories(conf, timestamp):
 
     conf['experiment_path'] = experiment_path
 
-    # Guardar el YAML con los parámetros del experimento
     yaml_path = os.path.join(experiment_path, "experiment_config.yaml")
     with open(yaml_path, "w") as yaml_file:
         yaml.safe_dump(conf, yaml_file, default_flow_style=False)
 
-    print(f"Configuración del experimento guardada en: {yaml_path}")
-
+    logger.info(f"Experiment configuration saved at: {yaml_path}")
     return conf
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description=(
-            "\nFANTASIA: Functional Annotation and Similarity Analysis\n"
-            "-------------------------------------------------------\n"
-            "FANTASIA is a command-line tool for computing vector similarity and generating\n"
-            "functional annotations using pre-trained language models (PLMs). It supports:\n"
-            "  • ProtT5\n"
-            "  • ProstT5\n"
-            "  • ESM2\n"
-            "\nThis system processes protein sequences by embedding them with these models,\n"
-            "storing the embeddings into an h5 Object, and performing efficient similarity searches over Vector Database.\n"
-            "\nPre-configured with UniProt 2024 data, FANTASIA integrates with an information system\n"
-            "for seamless data management. Protein data and Gene Ontology annotations (GOA) are\n"
-            "kept up to date, while proteins from the 2022 dataset remain for benchmarking (e.g., CAFA).\n"
-            "\nRequirements:\n"
-            "  • Relational Database: PostgreSQL (for storing annotations and metadata)\n"
-            "  • Vector Database: pgvector (for efficient similarity searches)\n"
-            "  • Task Queue: RabbitMQ (for parallel task execution)\n"
-            "\nFor setup instructions, refer to the documentation.\n"
-        ),
-        formatter_class=argparse.RawTextHelpFormatter
-    )
+def load_and_merge_config(args, unknown_args):
+    """
+    Loads the base configuration from YAML and applies any overrides provided via CLI arguments.
 
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    This function ensures that any parameters passed through standard arguments or unknown
+    arguments (parsed as key-value pairs) override those defined in the configuration file.
 
-    init_parser = subparsers.add_parser(
-        "initialize",
-        help="Set up the database and download the embeddings.",
-        description=(
-            "\nFANTASIA: Functional Annotation and Similarity Analysis\n"
-            "-------------------------------------------------------\n"
-            "The 'initialize' command prepares the system for operation by:\n"
-            "  • Reading the configuration file.\n"
-            "  • Downloading the embeddings database (if specified).\n"
-            "  • Setting up the necessary directories.\n"
-            "\n"
-            "By default, the configuration is loaded from './fantasia/config.yaml'.\n"
-        ),
-        formatter_class=argparse.RawTextHelpFormatter
-    )
+    Additionally, it restores legacy support for systems that rely on the presence of the
+    `embedding.types` field, which lists all embedding model identifiers enabled for the run.
 
-    init_parser.add_argument(
-        "--config", type=str, default="./fantasia/config.yaml",
-        help=(
-            "Path to the configuration file (YAML format).\n"
-            "Default: './fantasia/config.yaml'."
-        )
-    )
+    Parameters
+    ----------
+    args : Namespace
+        Parsed known arguments from argparse.
+    unknown_args : list of str
+        List of unknown CLI arguments in the format --key value.
 
-    init_parser.add_argument(
-        "--embeddings_url", type=str,
-        help=(
-            "URL to download the embeddings database dump.\n"
-            "If not provided, the system will use the URL from the config file."
-        )
-    )
-
-    init_parser.epilog = (
-        "Examples:\n"
-        "  python fantasia/main.py initialize --config my_config.yaml\n"
-        "  python fantasia/main.py initialize --config my_config.yaml --embeddings_url https://example.com/embeddings.tar\n"
-    )
-
-    run_parser = subparsers.add_parser(
-        "run",
-        help="Execute the pipeline to process sequences, generate embeddings, and manage lookups.",
-        description=(
-            "\nFANTASIA: Functional Annotation and Similarity Analysis\n"
-            "-------------------------------------------------------\n"
-            "The 'run' command executes the main pipeline, which includes:\n"
-            "  • Loading the configuration file.\n"
-            "  • Processing protein sequences from a FASTA file.\n"
-            "  • Generating sequence embeddings using selected models.\n"
-            "  • Storing embeddings in h5 file as input for similarity search through vectorial DB.\n"
-            "  • Running functional annotation lookups based on the embeddings.\n"
-            "\n"
-            "By default, the configuration is loaded from './fantasia/config.yaml'.\n"
-            "Supported models include ProtT5, ProstT5, and ESM2.\n"
-        ),
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-
-    run_parser.add_argument(
-        "--config", type=str, default="./fantasia/config.yaml",
-        help="Path to the YAML configuration file. Default: './fantasia/config.yaml'."
-    )
-
-    run_parser.add_argument(
-        "--input", type=str,
-        help="Path to the input FASTA file containing protein sequences."
-    )
-
-    run_parser.add_argument(
-        "--prefix", type=str,
-        help="Prefix used to name the output files."
-    )
-
-    run_parser.add_argument(
-        "--base_directory", type=str,
-        help="Base directory where all results, embeddings, and execution parameters will be stored."
-    )
-
-    run_parser.add_argument(
-        "--length_filter", type=int,
-        help="Filter sequences by length. Sequences longer than this value will be ignored."
-    )
-
-    run_parser.add_argument(
-        "--redundancy_filter", type=float,
-        help=(
-            "Apply sequence redundancy filtering using clustering.\n"
-            "Sequences that fall into the same cluster as reference sequences\n"
-            "will be excluded from the lookup to prevent homolog contamination.\n"
-            "Example: 0.8 filters sequences with >80 percent similarity."
-        )
-    )
-
-    run_parser.add_argument(
-        "--max_workers", type=int,
-        help="Number of parallel workers to process sequences. Recommended value: 1 for default PostgreSQL settings. "
-             "Increasing this requires configuring PostgreSQL to allocate more resources. This parameter does not "
-             "affect embedding generation as it relies on GPU."
-    )
-
-    run_parser.add_argument(
-        "--models", type=str,
-        help="Comma-separated list of embedding models to enable. Example: 'esm,prot'."
-    )
-
-    run_parser.add_argument(
-        "--distance_threshold", type=str,
-        help="Comma-separated list of model:threshold pairs. Example: 'esm:0.4,prot:0.6'."
-    )
-
-    run_parser.add_argument(
-        "--batch_size", type=str,
-        help="Comma-separated list of model:size pairs defining batch sizes. Example: 'esm:32,prot:64'."
-    )
-
-    run_parser.add_argument(
-        "--sequence_queue_package", type=int,
-        help="Number of sequences to queue per processing batch."
-    )
-
-    run_parser.add_argument(
-        "--limit_per_entry", type=int,
-        help=(
-            "Limit the number of reference proteins considered per query.\n"
-            "The closest matches based on distance will be selected.\n"
-            "Example: --limit_per_entry 5 ensures only the 5 closest references are used."
-        )
-    )
-
-    run_parser.add_argument(
-        "--device", type=str, choices=["cuda", "cpu"],
-        help="Device to use for embeddings (cuda or cpu)."
-    )
-
-
-
-
-
-    run_parser.epilog = (
-        "Example usage:\n"
-        "  python fantasia/main.py run \\\n"
-        "     --config ./fantasia/config.yaml \\\n"
-        "     --input ./data_sample/worm_test.fasta \\\n"
-        "     --prefix test_run \\\n"
-        "     --length_filter 300 \\\n"
-        "     --redundancy_filter 0.8 \\\n"
-        "     --max_workers 1 \\\n"
-        "     --models esm,prot \\\n"
-        "     --distance_threshold esm:0.4,prot:0.6 \\\n"
-        "     --batch_size esm:32,prot:64 \\\n"
-        "     --sequence_queue_package 100 \\\n"
-        "     --limit_per_entry 5\n"
-        "     --device cuda \\\n"
-        "     --log_path ~/fantasia/fantasia.log"
-    )
-
-    # Parsear los argumentos
-    args, unknown_args = parser.parse_known_args()
-
-    # Convertir unknown_args en un diccionario
-    unknown_args_dict = parse_unknown_args(unknown_args)
-
-    # Leer la configuración del archivo YAML
+    Returns
+    -------
+    dict
+        A merged and final configuration dictionary.
+    """
     conf = read_yaml_config(args.config)
 
-    # Actualizar la configuración con los valores de args
     for key, value in vars(args).items():
         if value is not None and key not in ["command", "config"]:
             conf[key] = value
 
-    # Actualizar la configuración con los valores de unknown_args
+    unknown_args_dict = parse_unknown_args(unknown_args)
     for key, value in unknown_args_dict.items():
-        if value is not None:  # Puedes agregar más condiciones si es necesario
+        if value is not None:
             conf[key] = value
 
-    # Imprimir la configuración actualizada
-    pprint(conf)
+    # ✅ Legacy compatibility: populate embedding.types with enabled model names
+    # This list is used by some components (e.g., GPU task schedulers)
+    conf.setdefault("embedding", {})
+    conf["embedding"]["types"] = [
+        model for model, settings in conf["embedding"].get("models", {}).items()
+        if settings.get("enabled", False)
+    ]
+
+    return conf
 
 
+def main():
+    parser = build_parser()
+    args, unknown_args = parser.parse_known_args()
+
+    if args.command is None:
+        parser.print_help()
+        sys.exit(0)
+
+    conf = load_and_merge_config(args, unknown_args)
+
+    current_date = datetime.now().strftime("%Y%m%d%H%M%S")
+    logs_directory = os.path.expanduser(os.path.expanduser(conf.get("log_path", "~/fantasia/logs/")))
+    log_name = f"Logs_{current_date}"
+    conf['log_path'] = os.path.join(logs_directory, log_name)  # por ahora hace un archivo, no una carpeta
+    logger = setup_logger("FANTASIA", conf.get("log_path", "fantasia.log"))
+
+    check_services(conf, logger)
 
     if args.command == "initialize":
-
-        print("Initializing embeddings and database...")
+        logger.info("Starting initialization...")
         initialize(conf)
+
     elif args.command == "run":
-        print("Running the FANTASIA pipeline...")
-        if args.device:
-            conf.setdefault("embedding", {})  # Asegurar que la clave embedding existe
-            conf["embedding"]["device"] = args.device
+        logger.info("Starting FANTASIA pipeline...")
+
+        models_cfg = conf.get("embedding", {}).get("models", {})
+        enabled_models = [name for name, model in models_cfg.items() if model.get("enabled")]
+
+        if not enabled_models:
+            raise ValueError(
+                "At least one embedding model must be enabled in the configuration under 'embedding.models'.")
+
+        if args.redundancy_filter is not None and not (0 < args.redundancy_filter <= 1):
+            raise ValueError("redundancy_filter must be a decimal between 0 and 1 (e.g., 0.95 for 95%)")
+
         run_pipeline(conf)
     else:
         parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
