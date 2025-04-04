@@ -91,7 +91,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         self.reference_attribute = "sequence_embedder_from_fasta"
 
         # Debug mode
-        self.limit_entry = conf.get("limit_entry")
+        self.limit_execution = conf.get("limit_execution")
 
         # Internal storage
         self.model_instances = {}
@@ -213,8 +213,8 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 if not self.length_filter or len(record.seq) <= self.length_filter
             ]
 
-            if self.limit_entry:
-                sequences = sequences[:self.limit_entry]
+            if self.limit_execution:
+                sequences = sequences[:self.limit_execution]
 
             if not sequences:
                 self.logger.warning("No sequences found. Finishing embedding enqueue process.")

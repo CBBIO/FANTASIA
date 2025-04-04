@@ -12,9 +12,9 @@ constants: "./fantasia/constants.yaml"
 monitor_interval: 10
 
 # Debug Feature
-# Activated only when 'limit_entry' is set. Limits the number of input samples processed
-# and builds the lookup table using at most 'limit_entry' vectors.
-limit_entry: 500
+# Activated only when 'limit_execution' is set. Limits the number of input samples processed
+# and builds the lookup table using at most 'limit_execution' vectors.
+limit_execution: 0
 
 log_path: ~/fantasia/logs/
 
@@ -83,13 +83,13 @@ input: data_sample/worm_test.fasta
 only_lookup: False
 
 # Batch size for Embedding Distance calculation - [batch_size,length(lookup_table)]
-batch_size: 1
+batch_size: 10
 
 # K-closest protein to consider for lookup
 limit_per_entry: 1
 
 # Prefix for output file names.
-fantasia_prefix: worm_test_Prot_100_1.2
+prefix: worm_test_Prot_100_1.2
 
 # Threshold for sequence length filtering.
 length_filter: 5000000

@@ -638,7 +638,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
             self.logger.info("🔄 Starting lookup table construction: loading embeddings into memory per model...")
 
             self.lookup_tables = {}
-            entry_limit = self.conf.get("limit_entry")
+            limit_execution = self.conf.get("limit_execution")
 
             for task_name, model_info in self.types.items():
                 embedding_type_id = model_info["id"]
@@ -652,9 +652,9 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     .filter(SequenceEmbedding.embedding_type_id == embedding_type_id)
                 )
 
-                if isinstance(entry_limit, int) and entry_limit > 0:
-                    self.logger.info(f"⛔ SQL limit applied: {entry_limit} entries for model '{task_name}'")
-                    query = query.limit(entry_limit)
+                if isinstance(limit_execution, int) and limit_execution > 0:
+                    self.logger.info(f"⛔ SQL limit applied: {limit_execution} entries for model '{task_name}'")
+                    query = query.limit(limit_execution)
 
                 results = query.all()
                 if not results:
