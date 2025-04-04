@@ -26,15 +26,16 @@ Functional Annotation Procedure
 --------------------------------
 
 1. **Input a set of unknown protein sequences**.
-2. **Generate embeddings** for each sequence using **ESM, ProtT5, or other models**.
-3. **Compare embeddings** against reference datasets with known functional annotations.
-4. **Assign GO terms** to unknown sequences based on the closest matches.
-5. **Export annotation results** for further analysis or integration into biological workflows.
+2. **Generate embeddings** for each sequence using **ProtT5**, **ProstT5**, or **ESM2**.
+3. **Retrieve reference embeddings** from a PostgreSQL + pgvector database.
+4. **Compute distances in-memory** to identify most similar annotated proteins.
+5. **Transfer GO terms** using model-specific thresholds and redundancy filtering (optional).
+6. **Export results** in standard CSV and TopGO-compatible TSV formats.
 
 Input Data
 ----------
 
-The input must be **protein sequences in FASTA format**, concatenated into a single file.
+The input must be a single FASTA file containing **protein sequences**.
 
 Example of **FILENAME_query.fasta**:
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -46,7 +47,7 @@ Example of **FILENAME_query.fasta**:
    >query2 Hypothetical protein
    MLFTGASDVKNQTWPAL...
 
-**Note:** Ensure the input consists of amino acid sequences, not DNA.
+**Note:** Input must consist of **amino acid sequences**, not DNA.
 
 Functional Annotation Configuration
 -----------------------------------
@@ -56,17 +57,15 @@ Pipeline Configuration
 
 .. code-block:: yaml
 
-   # Path to the input FASTA file containing unknown protein sequences
    input: data_sample/FILENAME_query.fasta
-
-   # Reference tag used for lookup operations.
-   lookup_reference_tag: GOA2024  # Accepted values: "0" (no filtering) | "GOA2024" (excludes GOA2022)
-
-   # Number of closest proteins to consider for annotation transfer.
-   limit_per_entry: 5  # Default is 5, can be optimized.
-
-   # Prefix for output file names.
+   only_lookup: false
+   limit_per_entry: 5
+   batch_size: 1
+   sequence_queue_package: 64
+   length_filter: 5000000
+   redundancy_filter: 0
    fantasia_prefix: FILENAME_query_annotated
+   delete_queues: true
 
 Embedding Configuration
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -74,19 +73,20 @@ Embedding Configuration
 .. code-block:: yaml
 
    embedding:
-     distance_metric: "<->"  # Options: "<=>" (cosine) | "<->" (Euclidean, default)
+     device: cuda  # Options: "cpu", "cuda", or "cuda:0", etc.
+     distance_metric: euclidean  # Options: "euclidean", "cosine"
      models:
        esm:
-         enabled: True
-         distance_threshold: 0
+         enabled: false
+         distance_threshold: 3
          batch_size: 32
        prost_t5:
-         enabled: True
-         distance_threshold: 0
+         enabled: false
+         distance_threshold: 3
          batch_size: 32
        prot_t5:
-         enabled: True
-         distance_threshold: 0
+         enabled: true
+         distance_threshold: 3
          batch_size: 32
 
 Functional Analysis
@@ -94,15 +94,159 @@ Functional Analysis
 
 .. code-block:: yaml
 
-   # Enable or disable file formatting for TOPGO downstream analyses
-   topgo: true  # Accepted values: "true" (enabled) | "false" (disabled)
+   topgo: true
+
+Directory Configuration
+^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: yaml
+
+   base_directory: ~/fantasia/
+   log_path: ~/fantasia/logs/
+
+Execution Modes
+---------------
+
+FANTASIA operates in two main phases, controlled via command-line arguments:
+
+1. **System Initialization** *(optional)*
+
+   Downloads the reference embeddings archive from Zenodo and loads it into a PostgreSQL + pgvector database.
+
+   .. code-block:: console
+
+      fantasia initialize --config config.yaml
+
+   To override the default reference source:
+
+   .. code-block:: yaml
+
+      embeddings_url: <ZENODO_URL>
+
+2. **Pipeline Execution**
+
+   Runs the embedding and GO term annotation steps. Behavior depends on the `only_lookup` setting:
+
+   - `only_lookup: false` → expects input in **FASTA format** and computes new embeddings.
+   - `only_lookup: true`  → expects input in **HDF5 format** with precomputed embeddings.
+
+   Run with:
+
+   .. code-block:: console
+
+      fantasia run --config config.yaml
+
+Redundancy Filtering (CD-HIT)
+-----------------------------
+
+To avoid assigning GO terms from highly similar proteins, FANTASIA supports optional **redundancy filtering** via **CD-HIT**.
+
+This step is activated by setting an identity threshold:
+
+.. code-block:: yaml
+
+   redundancy_filter: 0.95  # Only keep annotations below 95% sequence identity
+
+CD-HIT will:
+
+- Combine reference sequences and query sequences
+- Cluster them based on identity and coverage
+- Exclude annotations coming from sequences in the same cluster as the query
+
+This ensures more robust and non-redundant functional transfers.
+
+Lookup-Only Mode (`only_lookup`)
+--------------------------------
+
+FANTASIA can skip the embedding step and directly use precomputed embeddings stored in **HDF5 format**.
+
+.. code-block:: yaml
+
+   only_lookup: true
+   input: path/to/precomputed_embeddings.h5
+
+This is useful when:
+
+- Embeddings were computed in a previous run
+- You want to re-run the annotation with different parameters
+- You only want to test the lookup performance
+
+In contrast:
+
+.. code-block:: yaml
+
+   only_lookup: false
+   input: path/to/sequences.fasta
+
+In this case, the pipeline will generate embeddings from the input FASTA file.
+
 
 Results
-------------------
+-------
 
-Two main output files are generated:
+FANTASIA produces experiment-specific output files stored in a timestamped directory under `~/fantasia/experiments/`.
 
-1. **FILENAME_query.csv** → Contains predicted annotations for each sequence.
-2. **FILENAME_query.TOPGO.txt** → Contains annotations formatted for **TOPGO** software.
+Main output files:
 
-These results enable further downstream analysis, including enrichment studies and pathway predictions.
+1. **results.csv**
+   Predicted GO annotations for each query sequence:
+
+   - `accession`, `go_id`, `category`, `distance`, `reliability_index`, `model_name`
+   - Additional info: `evidence_code`, `organism`, `go_description`, etc.
+
+2. **results_topgo.tsv** *(optional)*
+   One row per query with comma-separated GO terms for **TopGO**.
+
+3. **experiment_config.yaml**
+   Snapshot of the full configuration used in the run.
+
+4. **embeddings.h5**
+   HDF5 file with embeddings and sequences. Required if `only_lookup: true`.
+
+5. **redundancy.fasta**, **filtered.fasta.clstr** *(optional)*
+   Intermediate files for CD-HIT clustering (if redundancy filtering is enabled).
+
+Logging
+-------
+
+All logs are saved in:
+
+.. code-block:: text
+
+   ~/fantasia/logs/Logs_<timestamp>.log
+
+They include:
+
+- Experiment configuration and parameters
+- Pipeline status and batch processing
+- Warnings (e.g., missing sequences, threshold filters)
+- Embedding memory usage and lookup summaries
+- CD-HIT execution info
+- Error tracebacks
+
+Advanced Configuration
+----------------------
+
+.. code-block:: yaml
+
+   # Worker threads
+   max_workers: 1
+
+   # Internal polling interval (in seconds)
+   monitor_interval: 10
+
+   # Path to constants file
+   constants: ./fantasia/constants.yaml
+
+   # PostgreSQL credentials
+   DB_USERNAME: usuario
+   DB_PASSWORD: clave
+   DB_HOST: localhost
+   DB_PORT: 5432
+   DB_NAME: BioData
+
+   # RabbitMQ setup
+   rabbitmq_host: localhost
+   rabbitmq_port: 5672
+   rabbitmq_user: guest
+   rabbitmq_password: guest

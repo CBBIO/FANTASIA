@@ -115,11 +115,9 @@ References
 
 .. [Heinzinger2019ProtTrans] M. Heinzinger et al., "Modeling aspects of the language of life through transfer-learning protein sequences," *BMC Bioinformatics*, vol. 20, no. 1, p. 723, 2019.
 
-..[Heinzinger2024ProSTT5]_  M. Heinzinger et al., "Bilingual language model for protein sequence and structure," *NARGAB*, vol. 6, issue 4, 2024.
+.. [Heinzinger2024ProSTT5]_  M. Heinzinger et al., "Bilingual language model for protein sequence and structure," *NARGAB*, vol. 6, issue 4, 2024.
 
 .. [Lin2022ESM2] Z. Lin et al., "Evolutionary-scale prediction of atomic-level protein structure with a language model," *Science*, vol. 379, no. 6637, pp. 1123-1130, 2023.
-
-.. [pgvector_git] PostgreSQL extension for high-dimensional similarity searches, available at: `GitHub <https://github.com/pgvector/pgvector>`_.
 
 .. [Alexa2017topGO] A. Alexa and J. Rahnenfuhrer, "topGO: Enrichment analysis for gene ontology," *Bioconductor*, 2017.
 
