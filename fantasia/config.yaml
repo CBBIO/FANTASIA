@@ -16,7 +16,7 @@ monitor_interval: 10
 # and builds the lookup table using at most 'limit_entry' vectors.
 limit_entry: 500
 
-log_path: ~/fantasia/fantasia.log
+log_path: ~/fantasia/logs/
 
 # ==========================
 # 🗄️ Database (PostgreSQL)
