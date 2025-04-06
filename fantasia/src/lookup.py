@@ -27,6 +27,8 @@ with downstream enrichment analysis tools.
 
 import importlib
 import os
+import time
+
 import numpy as np
 import pandas as pd
 from goatools.base import get_godag
@@ -279,33 +281,14 @@ class EmbeddingLookUp(QueueTaskInitializer):
             self.logger.error(f"Error enqueuing tasks from HDF5: {e}\n{traceback.format_exc()}")
             raise
 
+    import time  # Asegúrate de que está importado arriba
+
     def process(self, task_data):
         """
         Processes a batch of embedding-based lookup tasks and retrieves associated GO term annotations.
-
-        For each input embedding, the method:
-        - Computes distances against preloaded embeddings.
-        - Selects similar sequences under a configured threshold.
-        - Fetches GO annotations from the database.
-        - Optionally filters out redundant annotations via clustering.
-        - Returns GO terms with distance metadata for each matched protein.
-
-        Parameters
-        ----------
-        task_data : list of dict
-            A list of input entries, each with:
-            - accession : str
-            - embedding : np.ndarray
-            - embedding_type_id : int
-            - model_name : str
-            - distance_threshold : float
-
-        Returns
-        -------
-        list of dict
-            A list of GO annotations with metadata and distance information.
         """
         try:
+            start_total = time.perf_counter()
             limit_per_entry = self.conf.get("limit_per_entry", 1000)
 
             accession_list = []
@@ -325,6 +308,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
             selected_sequence_ids = set()
             distance_map = {}
 
+            start_distance = time.perf_counter()
             # Distance computation and selection
             for idx, accession in enumerate(accession_list):
                 embedding_vector = embeddings[idx]
@@ -352,10 +336,14 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     selected_sequence_ids.add(seq_id)
                     distance_map[(accession, seq_id)] = dist
 
+            end_distance = time.perf_counter()
+            self.logger.info(f"🧮 Distance computation took {end_distance - start_distance:.2f} seconds.")
+
             if not selected_sequence_ids:
                 self.logger.info("No sequence IDs passed distance threshold filtering.")
                 return []
 
+            start_query = time.perf_counter()
             # Fetch GO annotations for selected sequence IDs
             sql = text("""
                 SELECT
@@ -380,6 +368,9 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 rows = connection.execute(sql, {
                     "sequence_ids": tuple(int(sid) for sid in selected_sequence_ids)
                 }).fetchall()
+
+            end_query = time.perf_counter()
+            self.logger.info(f"🗂️ SQL query took {end_query - start_query:.2f} seconds and returned {len(rows)} rows.")
 
             # Filter redundancy (optional)
             redundant_ids_by_accession = {}
@@ -412,7 +403,9 @@ class EmbeddingLookUp(QueueTaskInitializer):
                         "organism": row.organism,
                     })
 
-            self.logger.info(f"Processed {len(go_terms)} GO terms for batch of {len(task_data)} entries.")
+            end_total = time.perf_counter()
+            self.logger.info(f"⏱️ Total time to process batch: {end_total - start_total:.2f} seconds.")
+            self.logger.info(f"✅ Processed {len(go_terms)} GO terms for batch of {len(task_data)} entries.")
             return go_terms
 
         except Exception as e:
