@@ -39,17 +39,16 @@ trap cleanup EXIT
 module load gcc/13.2.0
 module load hdf5/1.14.0
 module load singularity/3.11.3
-module load cuda/12.0.0
-module load openmpi/4.1.1
+
 
 # =======================
 # Set directories
 # =======================
-REPO_DIR="$HOME/FANTASIA"
-WORK_DIR="$HOME/PycharmProjects/FANTASIA"
-DB_BASE="$HOME/fantasia_pgvector"
-DB_SOCKET="$DB_BASE/socket"
-DB_DIR="$DB_BASE/data"
+REPO_DIR="$HOME/PycharmProjects/FANTASIA"
+WORK_DIR="$HOME/PycharmProjects//FANTASIA"
+SHM_DIR="/dev/shm/fantasia_pgvector"
+DB_DIR="$SHM_DIR/data"
+DB_SOCKET="$SHM_DIR/socket"
 RABBIT_DIR="$HOME/fantasia_rabbitmq"
 FANTASIA_RUN_DIR="$HOME/fantasia"
 CONFIG_PATH="$REPO_DIR/fantasia/config.yaml"
@@ -120,6 +119,20 @@ singularity exec "$PGVECTOR_SIF" psql -h "$DB_SOCKET" -p "$PG_PORT" -d "$DB_NAME
 singularity exec "$PGVECTOR_SIF" psql -h "$DB_SOCKET" -p "$PG_PORT" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
 
+singularity exec "$PGVECTOR_SIF" psql -h "$DB_SOCKET" -p "$PG_PORT" -d postgres <<EOF
+ALTER SYSTEM SET shared_buffers = '1GB';
+ALTER SYSTEM SET effective_cache_size = '3GB';
+ALTER SYSTEM SET work_mem = '64MB';
+ALTER SYSTEM SET max_worker_processes = 8;
+ALTER SYSTEM SET max_parallel_workers = 6;
+ALTER SYSTEM SET max_parallel_workers_per_gather = 2;
+ALTER SYSTEM SET maintenance_work_mem = '256MB';
+ALTER SYSTEM SET max_connections = 20;
+EOF
+
+
+singularity exec "$PGVECTOR_SIF" pg_ctl -D "$DB_DIR" restart
+
 # =======================
 # Start RabbitMQ
 # =======================
@@ -144,15 +157,16 @@ fi
 
 echo "✅ Configuration file found at $CONFIG_PATH"
 echo "📂 FANTASIA directory content:"
+
 ls -l "$REPO_DIR/fantasia/"
 
 # Initialize the information system
 singularity exec --nv --bind "$FANTASIA_RUN_DIR:/fantasia" "$FANTASIA_SIF" \
-    python3 -m fantasia.main initialize
+    pfantasia initialize
 
 # Run analysis
 singularity exec --nv --bind "$FANTASIA_RUN_DIR:/fantasia" "$FANTASIA_SIF" \
-    python3 -m fantasia.main run --input data_sample/sample.fasta
+    fantasia run
 
 # =======================
 # Cleanup function
@@ -175,4 +189,3 @@ cleanup() {
 
 # Ensure cleanup runs on script exit
 trap cleanup EXIT
-
