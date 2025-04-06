@@ -16,11 +16,11 @@ For full documentation, visit [FANTASIA Documentation](https://fantasia.readthed
 
 ## Key Features
 
-- **✅ Advanced Embedding Models**  
+- **✅ Available Embedding Models**  
   Supports protein language models: **ProtT5**, **ProstT5**, and **ESM2** for sequence representation.
 
 - **🔍 Redundancy Filtering**  
-  Filters out homologous sequences using **CD-HIT**, allowing controlled redundancy levels through an adjustable
+  Filters out homologous sequences using **CD-HIT** in the lookup table, allowing controlled redundancy levels through an adjustable
   threshold, ensuring reliable benchmarking and evaluation.
 
 - **💾 Optimized Data Storage**  
@@ -28,10 +28,10 @@ For full documentation, visit [FANTASIA Documentation](https://fantasia.readthed
   relational PostgreSQL database** using **pgvector**.
 
 - **🚀 Efficient Similarity Lookup**  
-  Performs high-speed searches using **pgvector**, enabling accurate annotation based on embedding similarity.
+  Performs high-speed searches using **in-memory computations**. Reference vectors are retrieved from a PostgreSQL database with pgvector for comparison.
 
 - **🔬 Functional Annotation by Similarity**  
-  Assigns Gene Ontology (GO) terms to proteins based on **embedding space similarity**, leveraging pre-trained
+  Assigns Gene Ontology (GO) terms to proteins based on **embedding space similarity**, using pre-trained
   embeddings.
 
 ## Pipeline Overview (Simplified)
@@ -41,11 +41,11 @@ For full documentation, visit [FANTASIA Documentation](https://fantasia.readthed
 
 2. **GO Term Lookup**  
    Performs vector similarity searches using **in-memory computations** to assign Gene Ontology terms. Reference
-   embeddings are retrieved from a **PostgreSQL database with pgvector**.
+   embeddings are retrieved from a **PostgreSQL database with pgvector**. Only experimental evidence codes are used for transfer.
 
 ## Acknowledgments
 
-FANTASIA is the result of a collaborative effort between **Ana Roja’s Lab** (Andalusian Center for Developmental
+FANTASIA is the result of a collaborative effort between **Ana Rojas’ Lab (CBBIO)** (Andalusian Center for Developmental
 Biology, CSIC) and **Rosa Fernández’s Lab** (Metazoa Phylogenomics Lab, Institute of Evolutionary Biology, CSIC-UPF).
 This project demonstrates the synergy between research teams with diverse expertise.
 
