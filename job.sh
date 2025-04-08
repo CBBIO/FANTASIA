@@ -11,29 +11,6 @@
 #SBATCH --ntasks=1
 
 # =======================
-# Cleanup function
-# =======================
-cleanup() {
-    echo "🧹 Cleaning up background services..."
-
-    # Stop PostgreSQL (based on data dir path)
-    if pgrep -f "$DB_DIR" > /dev/null; then
-        echo "🛑 Stopping PostgreSQL..."
-        pkill -f "$DB_DIR"
-    fi
-
-    # Stop RabbitMQ if running
-    if pgrep -f "rabbitmq-server" > /dev/null; then
-        echo "🛑 Stopping RabbitMQ..."
-        pkill -f "rabbitmq-server"
-    fi
-}
-
-# Ensure cleanup runs on script exit
-trap cleanup EXIT
-
-
-# =======================
 # Load necessary modules
 # =======================
 module load gcc/13.2.0
@@ -162,7 +139,7 @@ ls -l "$REPO_DIR/fantasia/"
 
 # Initialize the information system
 singularity exec --nv --bind "$FANTASIA_RUN_DIR:/fantasia" "$FANTASIA_SIF" \
-    pfantasia initialize
+    fantasia initialize
 
 # Run analysis
 singularity exec --nv --bind "$FANTASIA_RUN_DIR:/fantasia" "$FANTASIA_SIF" \
