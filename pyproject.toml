@@ -12,6 +12,7 @@ fantasia = "fantasia.main:main"
 python = "^3.10"
 docopt = "^0.6.2"
 protein-metamorphisms-is = "^4.0.0"
+scipy = "^1.15.2"
 
 
 [tool.poetry.group.dev.dependencies]
