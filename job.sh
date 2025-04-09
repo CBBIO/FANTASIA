@@ -44,8 +44,8 @@ module load singularity/3.11.3
 # =======================
 # Set directories
 # =======================
-REPO_DIR="$HOME/PycharmProjects/FANTASIA"
-WORK_DIR="$HOME/PycharmProjects//FANTASIA"
+REPO_DIR="$HOME/FANTASIA"
+WORK_DIR="$HOME/FANTASIA"
 SHM_DIR="/dev/shm/fantasia_pgvector"
 DB_DIR="$SHM_DIR/data"
 DB_SOCKET="$SHM_DIR/socket"
