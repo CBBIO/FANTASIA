@@ -32,12 +32,11 @@ import pandas as pd
 from goatools.base import get_godag
 from protein_metamorphisms_is.sql.model.entities.sequence.sequence import Sequence
 from pycdhit import cd_hit, read_clstr
-from sklearn.metrics import euclidean_distances
-from sklearn.metrics.pairwise import cosine_distances
+from scipy.spatial.distance import cdist
 
 from sqlalchemy import text
 import h5py
-
+from Bio.Align import PairwiseAligner
 from protein_metamorphisms_is.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType, \
     SequenceEmbedding
 from protein_metamorphisms_is.tasks.queue import QueueTaskInitializer
@@ -132,6 +131,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
             )
             self.distance_metric = "euclidean"
 
+        self.preload_annotations()
         # Load embedding lookup tables into memory
         self.lookup_table_into_memory()
 
@@ -286,7 +286,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
         For each input embedding, the method:
         - Computes distances against preloaded embeddings.
         - Selects similar sequences under a configured threshold.
-        - Fetches GO annotations from the database.
+        - Fetches GO annotations from preloaded metadata.
         - Optionally filters out redundant annotations via clustering.
         - Returns GO terms with distance metadata for each matched protein.
 
@@ -295,6 +295,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
         task_data : list of dict
             A list of input entries, each with:
             - accession : str
+            - sequence : str
             - embedding : np.ndarray
             - embedding_type_id : int
             - model_name : str
@@ -313,6 +314,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
             thresholds = []
             model_names = {}
             embedding_type_ids = []
+            sequence_by_accession = {}
 
             for task in task_data:
                 accession = task["accession"].removeprefix("accession_")
@@ -321,6 +323,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 thresholds.append(task["distance_threshold"])
                 model_names[accession] = task["model_name"]
                 embedding_type_ids.append(task["embedding_type_id"])
+                sequence_by_accession[accession] = task["sequence"]
 
             selected_sequence_ids = set()
             distance_map = {}
@@ -337,9 +340,9 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     continue
 
                 if self.distance_metric == "euclidean":
-                    distances = euclidean_distances([embedding_vector], lookup["embeddings"])[0]
+                    distances = cdist([embedding_vector], lookup["embeddings"], metric="euclidean")[0]
                 elif self.distance_metric == "cosine":
-                    distances = cosine_distances([embedding_vector], lookup["embeddings"])[0]
+                    distances = cdist([embedding_vector], lookup["embeddings"], metric="cosine")[0]
                 else:
                     raise ValueError(f"Unsupported distance metric: {self.distance_metric}")
 
@@ -356,43 +359,16 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 self.logger.info("No sequence IDs passed distance threshold filtering.")
                 return []
 
-            # Fetch GO annotations for selected sequence IDs
-            sql = text("""
-                SELECT
-                    s.id AS sequence_id,
-                    p.id AS protein_id,
-                    p.gene_name,
-                    p.organism,
-                    pgo.go_id,
-                    gt.category,
-                    gt.description AS go_term_description,
-                    pgo.evidence_code
-                FROM
-                    sequence s
-                    JOIN protein p ON s.id = p.sequence_id
-                    JOIN protein_go_term_annotation pgo ON p.id = pgo.protein_id
-                    JOIN go_terms gt ON pgo.go_id = gt.go_id
-                WHERE
-                    s.id IN :sequence_ids
-            """)
-
-            with self.engine.connect() as connection:
-                rows = connection.execute(sql, {
-                    "sequence_ids": tuple(int(sid) for sid in selected_sequence_ids)
-                }).fetchall()
-
             # Filter redundancy (optional)
             redundant_ids_by_accession = {}
             if self.conf.get("redundancy_filter", 0) > 0:
                 for accession in accession_list:
                     redundant_ids_by_accession[accession] = self.retrieve_cluster_members(accession)
 
-            # Construct output list
+            # Construct output list using precached annotations
             go_terms = []
             for accession in accession_list:
-                for row in rows:
-                    seq_id = row.sequence_id
-
+                for seq_id in selected_sequence_ids:
                     if accession in redundant_ids_by_accession:
                         if str(seq_id) in redundant_ids_by_accession[accession]:
                             continue
@@ -400,17 +376,24 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     if (accession, seq_id) not in distance_map:
                         continue
 
-                    go_terms.append({
-                        "accession": accession,
-                        "go_id": row.go_id,
-                        "category": row.category,
-                        "evidence_code": row.evidence_code,
-                        "go_description": row.go_term_description,
-                        "distance": distance_map[(accession, seq_id)],
-                        "model_name": model_names[accession],
-                        "protein_id": row.protein_id,
-                        "organism": row.organism,
-                    })
+                    if seq_id not in self.go_annotations:
+                        continue  # no annotations for this reference
+
+                    for annotation in self.go_annotations[seq_id]:
+                        go_terms.append({
+                            "accession": accession,
+                            "sequence_query": sequence_by_accession[accession],
+                            "sequence_reference": annotation["sequence"],
+                            "go_id": annotation["go_id"],
+                            "category": annotation["category"],
+                            "evidence_code": annotation["evidence_code"],
+                            "go_description": annotation["go_description"],
+                            "distance": distance_map[(accession, seq_id)],
+                            "model_name": model_names[accession],
+                            "protein_id": annotation["protein_id"],
+                            "organism": annotation["organism"],
+                            "gene_name": annotation["gene_name"],
+                        })
 
             self.logger.info(f"Processed {len(go_terms)} GO terms for batch of {len(task_data)} entries.")
             return go_terms
@@ -424,14 +407,15 @@ class EmbeddingLookUp(QueueTaskInitializer):
         Processes and stores GO term annotations for a given set of accessions.
 
         This method computes a reliability score for each annotation, filters out
-        redundant or less reliable entries, and saves the final results to a CSV file.
+        redundant or less reliable entries, calculates sequence identity and coverage
+        using Biopython's PairwiseAligner, and saves the final results to a CSV file.
         If enabled, it also generates a TSV file compatible with TopGO.
 
         Parameters
         ----------
         annotations : list of dict
             A list of GO annotations, each containing metadata such as accession, GO ID,
-            model name, distance, and evidence code.
+            sequences, model name, distance, and evidence code.
 
         Raises
         ------
@@ -450,6 +434,38 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 df["reliability_index"] = 1 - df["distance"]
             elif self.distance_metric == "euclidean":
                 df["reliability_index"] = 0.5 / (0.5 + df["distance"])
+
+            # Compute identity and coverage using Biopython's PairwiseAligner
+            aligner = PairwiseAligner()
+            aligner.mode = "global"
+
+            identities = []
+            coverages = []
+
+            for _, row in df.iterrows():
+                seq1 = row["sequence_query"]
+                seq2 = row["sequence_reference"]
+
+                alignment = aligner.align(seq1, seq2)[0]
+
+                aligned_seq1, aligned_seq2 = alignment.aligned
+                match_count = 0
+                aligned_len = 0
+
+                for (start1, end1), (start2, end2) in zip(aligned_seq1, aligned_seq2):
+                    for i1, i2 in zip(range(start1, end1), range(start2, end2)):
+                        if seq1[i1] == seq2[i2]:
+                            match_count += 1
+                        aligned_len += 1
+
+                identity = match_count / aligned_len if aligned_len > 0 else 0
+                coverage = aligned_len / len(seq1) if len(seq1) > 0 else 0
+
+                identities.append(identity)
+                coverages.append(coverage)
+
+            df["identity"] = identities
+            df["coverage"] = coverages
 
             # Retain only the most reliable annotation per (accession, GO term)
             df = df.loc[df.groupby(["accession", "go_id"])["reliability_index"].idxmax()]
@@ -515,7 +531,6 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     for row in connection.execute(query):
                         ref_file.write(f">{row.id}\n{row.sequence}\n")
 
-                print(ref_file)
                 # Add sequences from the HDF5 file
                 with h5py.File(input_h5_path, "r") as h5file:
                     for accession, group in h5file.items():
@@ -681,3 +696,36 @@ class EmbeddingLookUp(QueueTaskInitializer):
             import traceback
             self.logger.error("❌ Failed to load lookup tables:\n" + traceback.format_exc())
             raise
+
+    def preload_annotations(self):
+        sql = text("""
+            SELECT
+                s.id AS sequence_id,
+                s.sequence,
+                pgo.go_id,
+                gt.category,
+                gt.description AS go_term_description,
+                pgo.evidence_code,
+                p.id AS protein_id,
+                p.organism,
+                p.gene_name
+            FROM sequence s
+            JOIN protein p ON s.id = p.sequence_id
+            JOIN protein_go_term_annotation pgo ON p.id = pgo.protein_id
+            JOIN go_terms gt ON pgo.go_id = gt.go_id
+        """)
+        self.go_annotations = {}
+
+        with self.engine.connect() as connection:
+            for row in connection.execute(sql):
+                entry = {
+                    "sequence": row.sequence,
+                    "go_id": row.go_id,
+                    "category": row.category,
+                    "evidence_code": row.evidence_code,
+                    "go_description": row.go_term_description,
+                    "protein_id": row.protein_id,
+                    "organism": row.organism,
+                    "gene_name": row.gene_name,
+                }
+                self.go_annotations.setdefault(row.sequence_id, []).append(entry)
