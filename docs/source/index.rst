@@ -32,7 +32,7 @@ FANTASIA is an advanced pipeline designed for automatic functional annotation of
    system_overview
    deployment
    hpc_deployment
-   docker_build
+   docker_publish
    slurm
 
 
