@@ -156,3 +156,87 @@ def check_services(conf, logger):
             f"Could not connect to RabbitMQ at {conf['rabbitmq_host']}:{conf.get('rabbitmq_port', 5672)}. "
             f"Verify your MQ settings.\nDocs: https://fantasia.readthedocs.io"
         ) from e
+
+import re
+import tempfile
+import subprocess
+from pathlib import Path
+
+def run_needle_from_strings(seq1, seq2):
+    """
+    Executes EMBOSS Needle from two protein sequences as strings.
+    Returns official alignment metrics: identity, score, similarity, gaps, etc.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+
+        fasta1 = tmpdir / "seq1.fasta"
+        fasta2 = tmpdir / "seq2.fasta"
+        outfile = tmpdir / "needle.txt"
+
+        # Write sequences to temporary FASTA files
+        fasta1.write_text(f">seq1\n{seq1}\n")
+        fasta2.write_text(f">seq2\n{seq2}\n")
+
+        # Run EMBOSS Needle
+        result = subprocess.run([
+            "needle",
+            "-asequence", str(fasta1),
+            "-bsequence", str(fasta2),
+            "-gapopen", "10",
+            "-gapextend", "0.5",
+            "-outfile", str(outfile),
+            "-auto"
+        ], capture_output=True, text=True)
+
+        # Check for errors in the execution
+        if result.returncode != 0:
+            raise RuntimeError(f"Needle failed:\n{result.stderr}")
+
+        # Read the output
+        content = outfile.read_text()
+        metrics = {}
+
+        try:
+            # Parse relevant metrics from the output
+            for line in content.splitlines():
+                line = line.strip()
+
+                # Extract Identity
+                if line.startswith("# Identity:"):
+                    match = re.search(r"# Identity:\s+(\d+)\s*/\s*(\d+)\s*\(\s*([\d.]+)%\)", line)
+                    if match:
+                        matches, total, percent = match.groups()
+                        metrics["identity_count"] = int(matches)
+                        metrics["alignment_length"] = int(total)
+                        metrics["identity_percentage"] = float(percent)
+
+                # Extract Similarity
+                elif line.startswith("# Similarity:"):
+                    match = re.search(r"# Similarity:\s+\d+/\d+\s*\(\s*([\d.]+)%\)", line)
+                    if match:
+                        metrics["similarity_percentage"] = float(match.group(1))
+
+                # Extract Gaps
+                elif line.startswith("# Gaps:"):
+                    match = re.search(r"# Gaps:\s+\d+/\d+\s*\(\s*([\d.]+)%\)", line)
+                    if match:
+                        metrics["gaps_percentage"] = float(match.group(1))
+
+                # Extract Score
+                elif line.startswith("# Score:"):
+                    match = re.search(r"# Score:\s*([\d.]+)", line)
+                    if match:
+                        metrics["alignment_score"] = float(match.group(1))
+
+            # Ensure identity percentage is parsed
+            if "identity_percentage" not in metrics:
+                raise ValueError(f"Unable to parse Needle output. Unexpected format:\n{content}")
+
+            # Default to None if gaps_percentage or other values are missing
+            metrics["gaps_percentage"] = metrics.get("gaps_percentage", None)
+
+            return metrics
+
+        except Exception as e:
+            raise ValueError(f"Error parsing Needle output:\n{content}") from e

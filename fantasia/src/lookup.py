@@ -42,6 +42,8 @@ from protein_metamorphisms_is.sql.model.entities.embedding.sequence_embedding im
 from protein_metamorphisms_is.tasks.queue import QueueTaskInitializer
 from protein_metamorphisms_is.helpers.clustering.cdhit import calculate_cdhit_word_length
 
+from fantasia.src.helpers.helpers import run_needle_from_strings
+
 
 class EmbeddingLookUp(QueueTaskInitializer):
     """
@@ -408,7 +410,7 @@ class EmbeddingLookUp(QueueTaskInitializer):
 
         This method computes a reliability score for each annotation, filters out
         redundant or less reliable entries, calculates sequence identity and coverage
-        using Biopython's PairwiseAligner, and saves the final results to a CSV file.
+        using EMBOSS Needle, and saves the final results to a CSV file.
         If enabled, it also generates a TSV file compatible with TopGO.
 
         Parameters
@@ -440,32 +442,30 @@ class EmbeddingLookUp(QueueTaskInitializer):
             aligner.mode = "global"
 
             identities = []
-            coverages = []
+            similarities = []
+            alignment_scores = []
+            gaps_percentages = []
+            alignment_lengths = []
 
             for _, row in df.iterrows():
                 seq1 = row["sequence_query"]
                 seq2 = row["sequence_reference"]
 
-                alignment = aligner.align(seq1, seq2)[0]
+                # Run EMBOSS Needle and retrieve metrics
 
-                aligned_seq1, aligned_seq2 = alignment.aligned
-                match_count = 0
-                aligned_len = 0
+                metrics = run_needle_from_strings(seq1, seq2)
 
-                for (start1, end1), (start2, end2) in zip(aligned_seq1, aligned_seq2):
-                    for i1, i2 in zip(range(start1, end1), range(start2, end2)):
-                        if seq1[i1] == seq2[i2]:
-                            match_count += 1
-                        aligned_len += 1
-
-                identity = match_count / aligned_len if aligned_len > 0 else 0
-                coverage = aligned_len / len(seq1) if len(seq1) > 0 else 0
-
-                identities.append(identity)
-                coverages.append(coverage)
+                identities.append(metrics["identity_percentage"])
+                similarities.append(metrics.get("similarity_percentage", None))
+                alignment_scores.append(metrics["alignment_score"])
+                gaps_percentages.append(metrics.get("gaps_percentage", None))
+                alignment_lengths.append(metrics["alignment_length"])
 
             df["identity"] = identities
-            df["coverage"] = coverages
+            df["similarity"] = similarities
+            df["alignment_score"] = alignment_scores
+            df["gaps_percentage"] = gaps_percentages
+            df["alignment_length"] = alignment_lengths
 
             # Retain only the most reliable annotation per (accession, GO term)
             df = df.loc[df.groupby(["accession", "go_id"])["reliability_index"].idxmax()]
