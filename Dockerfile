@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     cd-hit \
     postgresql-client-16 \
     postgresql-contrib \
+    emboss \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set up a virtual environment for Python
