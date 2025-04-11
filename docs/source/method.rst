@@ -47,7 +47,7 @@ Alternatively, cosine similarity (:math:`d_c`) can be selected as a parameter, u
 Step 4: GO Transfer
 -------------------
 
-FANTASIA  by default transfers GO terms from the :math:`k` proteins providing the closest embedding(s) hit(s) in the database. Additionally, the user can define a distance threshold for each model that determines the maximum allowed distance between query and reference embeddings. These thresholds have not been fully optimised and defaults are selected as relaible options (they cannot be "0"). By default, only the closest hit (:math:`k=1`) is used, regardless of its distance to the query embedding. Alhough the GO terms of the current version correspond to the release from the 3rd of November 2024 (GOA2024), the default configuration is "GOA2022" for consistency with previous work.
+FANTASIA  by default transfers GO terms from the :math:`k` proteins providing the closest embedding(s) hit(s) in the database. Additionally, the user can define a distance threshold for each model that determines the maximum allowed distance between query and reference embeddings. These thresholds have not been fully optimised and defaults are selected as relaible options (they cannot be "0"). By default, only the closest hit (:math:`k=1`) is used, regardless of its distance to the query embedding. 
 
 Step 5: Output Description and Optional Formatting
 --------------------------------------------------
