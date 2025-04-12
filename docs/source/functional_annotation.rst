@@ -18,7 +18,7 @@ The annotation is performed using the three **Gene Ontology (GO)** domains:
 - **B**: Biological Process
 - **C**: Cellular Component
 
-Annotations are assigned based on similarity to reference datasets following **CAFA** standards:
+Annotations are assigned based on similarity to reference datasets following **CAFA** standards (https://geneontology.org/docs/guide-go-evidence-codes/):
 
 - **EXP, IDA, IPI, IMP, IGI, IEP, TAS, IC**
 
@@ -139,7 +139,7 @@ FANTASIA operates in two main phases, controlled via command-line arguments:
 Redundancy Filtering (CD-HIT)
 -----------------------------
 
-To avoid assigning GO terms from highly similar proteins, FANTASIA supports optional **redundancy filtering** via **CD-HIT**.
+To avoid assigning GO terms from highly similar proteins in the LOOKUP table, FANTASIA supports optional **redundancy filtering** via **CD-HIT**.
 
 This step is activated by setting an identity threshold:
 
@@ -158,7 +158,7 @@ This ensures more robust and non-redundant functional transfers.
 Lookup-Only Mode (`only_lookup`)
 --------------------------------
 
-FANTASIA can skip the embedding step and directly use precomputed embeddings stored in **HDF5 format**.
+FANTASIA can skip the embedding calculation step and directly use precomputed embeddings stored in **HDF5 format**.
 
 .. code-block:: yaml
 
@@ -191,11 +191,11 @@ Main output files:
 1. **results.csv**
    Predicted GO annotations for each query sequence:
 
-   - `accession`, `go_id`, `category`, `distance`, `reliability_index`, `model_name`
+   - `accession`, `sequence_query`, `sequence_reference`, `go_id`, `category`, `distance`, `reliability_index`, `model_name`
    - Additional info: `evidence_code`, `organism`, `go_description`, etc.
 
 2. **results_topgo.tsv** *(optional)*
-   One row per query with comma-separated GO terms for **TopGO**.
+   One row per query with comma-separated GO terms to produce **TopGO** input ready-to-use files.
 
 3. **experiment_config.yaml**
    Snapshot of the full configuration used in the run.
