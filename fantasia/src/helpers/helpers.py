@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from protein_metamorphisms_is.sql.base.database_manager import DatabaseManager
 from tqdm import tqdm
+from ete3 import NCBITaxa
 
 
 def download_embeddings(url, tar_path):
@@ -240,3 +241,12 @@ def run_needle_from_strings(seq1, seq2):
 
         except Exception as e:
             raise ValueError(f"Error parsing Needle output:\n{content}") from e
+
+def get_descendant_ids(parent_ids):
+    descendants_ids = []
+    ncbi = NCBITaxa()
+    for taxon in parent_ids:
+        descendants = ncbi.get_descendant_taxa(taxon, intermediate_nodes=True)
+        descendants_ids.extend(str(tid) for tid in descendants)
+    descendants_ids.extend(str(tid) for tid in parent_ids)
+    return descendants_ids
