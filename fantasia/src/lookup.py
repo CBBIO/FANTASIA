@@ -39,6 +39,7 @@ import h5py
 from Bio.Align import PairwiseAligner
 from protein_metamorphisms_is.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType, \
     SequenceEmbedding
+from protein_metamorphisms_is.sql.model.entities.protein.protein import Protein
 from protein_metamorphisms_is.tasks.queue import QueueTaskInitializer
 from protein_metamorphisms_is.helpers.clustering.cdhit import calculate_cdhit_word_length
 
@@ -659,13 +660,23 @@ class EmbeddingLookUp(QueueTaskInitializer):
                 embedding_type_id = model_info["id"]
                 self.logger.info(f"📥 Model '{task_name}' (ID: {embedding_type_id}): retrieving embeddings...")
 
+                exclude_taxon_ids = [str(tid) for tid in self.conf.get("taxonomy_ids_to_exclude", [])]
+                include_taxon_ids = [str(tid) for tid in self.conf.get("taxonomy_ids_included_exclusively", [])]
+
                 # Build the query to retrieve sequence ID and its embedding vector
                 query = (
                     self.session
                     .query(Sequence.id, SequenceEmbedding.embedding)
                     .join(Sequence, Sequence.id == SequenceEmbedding.sequence_id)
+                    .join(Protein, Sequence.id == Protein.sequence_id)
                     .filter(SequenceEmbedding.embedding_type_id == embedding_type_id)
                 )
+
+                if exclude_taxon_ids:
+                    query = query.filter(~Protein.taxonomy_id.in_(exclude_taxon_ids))
+
+                if include_taxon_ids:
+                    query = query.filter(Protein.taxonomy_id.in_(include_taxon_ids))
 
                 if isinstance(limit_execution, int) and limit_execution > 0:
                     self.logger.info(f"⛔ SQL limit applied: {limit_execution} entries for model '{task_name}'")
