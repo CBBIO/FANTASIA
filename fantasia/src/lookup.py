@@ -27,6 +27,9 @@ with downstream enrichment analysis tools.
 
 import importlib
 import os
+import time
+from concurrent.futures import ProcessPoolExecutor
+
 import numpy as np
 import pandas as pd
 from goatools.base import get_godag
@@ -43,6 +46,20 @@ from protein_metamorphisms_is.tasks.queue import QueueTaskInitializer
 from protein_metamorphisms_is.helpers.clustering.cdhit import calculate_cdhit_word_length
 
 from fantasia.src.helpers.helpers import run_needle_from_strings
+
+
+def compute_metrics(row):
+    seq1 = row["sequence_query"]
+    seq2 = row["sequence_reference"]
+    metrics = run_needle_from_strings(seq1, seq2)
+    return {
+        "identity": metrics["identity_percentage"],
+        "similarity": metrics.get("similarity_percentage"),
+
+        "alignment_score": metrics["alignment_score"],
+        "gaps_percentage": metrics.get("gaps_percentage"),
+        "alignment_length": metrics["alignment_length"],
+    }
 
 
 class EmbeddingLookUp(QueueTaskInitializer):
@@ -404,6 +421,8 @@ class EmbeddingLookUp(QueueTaskInitializer):
             self.logger.error(f"Error during GO annotation processing: {e}")
             raise
 
+    import time
+
     def store_entry(self, annotations):
         """
         Processes and stores GO term annotations for a given set of accessions.
@@ -428,77 +447,51 @@ class EmbeddingLookUp(QueueTaskInitializer):
             self.logger.info("No valid GO terms to store.")
             return
 
+        start_total = time.perf_counter()
+
         try:
             df = pd.DataFrame(annotations)
 
-            # Compute reliability index based on the selected distance metric
+            start_reliability = time.perf_counter()
             if self.distance_metric == "cosine":
                 df["reliability_index"] = 1 - df["distance"]
             elif self.distance_metric == "euclidean":
                 df["reliability_index"] = 0.5 / (0.5 + df["distance"])
+            end_reliability = time.perf_counter()
 
-            # Compute identity and coverage using Biopython's PairwiseAligner
-            aligner = PairwiseAligner()
-            aligner.mode = "global"
+            start_alignment = time.perf_counter()
+            with ProcessPoolExecutor(max_workers=self.conf.get("store_workers", 4)) as executor:
+                metrics_list = list(executor.map(compute_metrics, df.to_dict("records")))
+            metrics_df = pd.DataFrame(metrics_list)
+            df = pd.concat([df.reset_index(drop=True), metrics_df], axis=1)
+            end_alignment = time.perf_counter()
 
-            identities = []
-            similarities = []
-            alignment_scores = []
-            gaps_percentages = []
-            alignment_lengths = []
-
-            for _, row in df.iterrows():
-                seq1 = row["sequence_query"]
-                seq2 = row["sequence_reference"]
-
-                # Run EMBOSS Needle and retrieve metrics
-
-                metrics = run_needle_from_strings(seq1, seq2)
-
-                identities.append(metrics["identity_percentage"])
-                similarities.append(metrics.get("similarity_percentage", None))
-                alignment_scores.append(metrics["alignment_score"])
-                gaps_percentages.append(metrics.get("gaps_percentage", None))
-                alignment_lengths.append(metrics["alignment_length"])
-
-            df["identity"] = identities
-            df["similarity"] = similarities
-            df["alignment_score"] = alignment_scores
-            df["gaps_percentage"] = gaps_percentages
-            df["alignment_length"] = alignment_lengths
-
-            # Retain only the most reliable annotation per (accession, GO term)
             df = df.loc[df.groupby(["accession", "go_id"])["reliability_index"].idxmax()]
 
-            # Identify all parent GO terms using the GO DAG
             parent_go_terms = set()
             for go_id in df["go_id"].unique():
                 if go_id in self.go:
                     parent_go_terms.update(p.id for p in self.go[go_id].parents)
-
-            # Filter out parent terms if their children are already present
             df = df[~df["go_id"].isin(parent_go_terms)]
-
-            # Sort by reliability (descending)
             df = df.sort_values(by="reliability_index", ascending=False)
 
-            # Save final results to CSV
             write_mode = "a" if os.path.exists(self.results_path) and os.path.getsize(self.results_path) > 0 else "w"
             include_header = write_mode == "w"
             df.to_csv(self.results_path, mode=write_mode, index=False, header=include_header)
 
-            self.logger.info(f"Stored {len(df)} GO annotations to CSV.")
-
-            # If enabled, generate TopGO-compatible TSV file
             if self.topgo_enabled:
                 df_topgo = (
                     df.groupby("accession")["go_id"]
                     .apply(lambda x: ", ".join(x))
                     .reset_index()
                 )
-
                 with open(self.topgo_path, "a") as f:
                     df_topgo.to_csv(f, sep="\t", index=False, header=False)
+
+            end_total = time.perf_counter()
+            self.logger.info(
+                f"⏱️ store_entry: total={end_total - start_total:.2f}s | reliability={end_reliability - start_reliability:.2f}s | alignment={end_alignment - start_alignment:.2f}s")
+            self.logger.info(f"Stored {len(df)} GO annotations to CSV.")
 
         except Exception as e:
             self.logger.error(f"Error storing results: {e}")
