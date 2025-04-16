@@ -687,14 +687,33 @@ class EmbeddingLookUp(BaseTaskInitializer):
         df = df.merge(metrics_df, on=["sequence_query", "sequence_reference"], how="left")
         end_alignment = time.perf_counter()
 
-        df = df.loc[df.groupby(["accession", "go_id"])["reliability_index"].idxmax()]
+        df = df.drop(columns=["sequence_query", "sequence_reference"], errors="ignore")
 
-        parent_go_terms = set()
-        for go_id in df["go_id"].unique():
-            if go_id in self.go:
-                parent_go_terms.update(p.id for p in self.go[go_id].parents)
-        df = df[~df["go_id"].isin(parent_go_terms)]
-        df = df.sort_values(by="reliability_index", ascending=False)
+        def is_ancestor(go_dag, parent, child):
+            """True si `parent` es ancestro de `child` en la ontología GO."""
+            return child in go_dag and parent in go_dag[child].get_all_parents()
+
+        rows = []
+        for (_, _), group in df.groupby(["accession", "model_name"]):
+            for go_id, go_group in group.groupby("go_id"):
+                all_go_ids = go_group["go_id"].unique()
+
+                leaf_entries = []
+                for i, row in go_group.iterrows():
+                    term = row["go_id"]
+                    is_leaf = not any(
+                        term != other and is_ancestor(self.go, term, other)
+                        for other in all_go_ids
+                    )
+                    if is_leaf:
+                        leaf_entries.append(row)
+
+                rows.extend(leaf_entries)
+
+        # Nuevo DataFrame con solo términos hoja por (accession, go_id, model_name)
+        df = pd.DataFrame(rows)
+        df = df.sort_values(by=["accession", "go_id", "model_name", "reliability_index"],
+                            ascending=[True, True, True, False])
 
         write_mode = "a" if os.path.exists(self.results_path) else "w"
         df.to_csv(self.results_path, mode=write_mode, index=False, header=(write_mode == "w"))
