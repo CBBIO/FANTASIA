@@ -369,20 +369,6 @@ class EmbeddingLookUp(BaseTaskInitializer):
             raise
 
     def process(self, task_data):
-        """
-        Processes a batch of embedding tasks by computing distances to reference embeddings,
-        filtering redundant neighbors, and retrieving GO annotations from the most similar entries.
-
-        Parameters
-        ----------
-        task_data : list of dict
-            List of input entries with accession, sequence, embedding, model info and thresholds.
-
-        Returns
-        -------
-        list of dict
-            Predicted GO term annotations for the batch.
-        """
         import torch
         import numpy as np
         from scipy.spatial.distance import cdist
@@ -398,12 +384,11 @@ class EmbeddingLookUp(BaseTaskInitializer):
         if lookup is None:
             self.logger.warning(f"No lookup table for embedding_type_id {model_id}. Skipping batch.")
             return []
-        self.logger.info([np.array(t["embedding"]).shape for t in task_data])
+
         embeddings = np.stack([np.array(t["embedding"]) for t in task_data])
         accessions = [t["accession"].removeprefix("accession_") for t in task_data]
         sequences = {t["accession"].removeprefix("accession_"): t["sequence"] for t in task_data}
 
-        # Compute distance matrix
         if use_gpu:
             queries = torch.tensor(embeddings, dtype=torch.float16).cuda()
             targets = torch.tensor(lookup["embeddings"], dtype=torch.float16).cuda()
@@ -422,29 +407,22 @@ class EmbeddingLookUp(BaseTaskInitializer):
         else:
             dist_matrix = cdist(embeddings, lookup["embeddings"], metric=self.distance_metric)
 
-        self.logger.info(f"Distance matrix computed. Shape: {dist_matrix.shape}")
-
         redundancy = self.conf.get("redundancy_filter", 0)
-        redundant_ids = {
-            acc: self.retrieve_cluster_members(acc)
-            for acc in accessions
-        } if redundancy > 0 else {}
-
+        redundant_ids = {}
         if redundancy > 0:
-            for acc, ids in redundant_ids.items():
-                self.logger.info(f"Redundancy filter active: accession {acc} -> {len(ids)} cluster members.")
+            for acc in accessions:
+                redundant_ids[acc] = self.retrieve_cluster_members(acc)
 
         go_terms = []
+        total_transfers = 0
+        total_neighbors = 0
 
         for i, accession in enumerate(accessions):
-            self.logger.info(f"[{i}] Processing accession '{accession}'")
-
             all_distances = dist_matrix[i]
             all_seq_ids = lookup["ids"]
 
-            # Filtrar redundantes antes de seleccionar por distancia
             if redundancy > 0 and accession in redundant_ids:
-                mask = np.array([str(seq_id) not in redundant_ids[accession] for seq_id in all_seq_ids])
+                mask = ~np.isin(all_seq_ids.astype(str), list(redundant_ids[accession]))
                 distances = all_distances[mask]
                 seq_ids = all_seq_ids[mask]
             else:
@@ -452,27 +430,19 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 seq_ids = all_seq_ids
 
             if len(distances) == 0:
-                self.logger.warning(f"No candidates remain after redundancy filtering for '{accession}'")
                 continue
 
             sorted_idx = np.argsort(distances)
             selected_idx = sorted_idx[distances[sorted_idx] <= threshold][:limit]
-
-            self.logger.info(f"Found {len(selected_idx)} neighbors within threshold {threshold}.")
+            total_neighbors += len(selected_idx)
 
             for idx in selected_idx:
                 seq_id = seq_ids[idx]
                 if seq_id not in self.go_annotations:
-                    self.logger.info(f"No GO terms found for seq_id {seq_id}. Skipping.")
                     continue
 
                 annotations = self.go_annotations[seq_id]
-                protein_ids = set(ann["protein_id"] for ann in annotations)
-
-                self.logger.info(
-                    f"→ Transferring {len(annotations)} annotation(s) from seq_id {seq_id} "
-                    f"(protein_id(s): {list(protein_ids)}) to '{accession}'."
-                )
+                total_transfers += len(annotations)
 
                 for ann in annotations:
                     go_terms.append({
@@ -490,10 +460,11 @@ class EmbeddingLookUp(BaseTaskInitializer):
                         "gene_name": ann["gene_name"],
                     })
 
-        self.logger.info(f"Batch processed: {len(go_terms)} GO terms assigned in total.")
+        self.logger.info(
+            f"✅ Batch processed ({len(accessions)} entries): {total_neighbors} neighbors found, "
+            f"{total_transfers} GO annotations transferred."
+        )
         return go_terms
-
-    import time
 
     def store_entry(self, annotations):
         if not annotations:
@@ -580,6 +551,9 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
             self.logger.info(f"CD-HIT completed. Loading clusters from: {clstr_path}")
             self.clusters = read_clstr(clstr_path)
+            self.clusters_by_id = self.clusters.set_index("identifier")
+            self.clusters_by_cluster = self.clusters.groupby("cluster")["identifier"].apply(set).to_dict()
+
             self.logger.info(f"{len(self.clusters)} clusters loaded into memory.")
 
         except Exception as e:
@@ -587,60 +561,13 @@ class EmbeddingLookUp(BaseTaskInitializer):
             raise
 
     def retrieve_cluster_members(self, accession):
-        """
-        Retrieves all members from the cluster associated with the given accession.
-
-        This method is used to identify potentially redundant sequences belonging to
-        the same cluster as the query accession. These members can then be excluded
-        from downstream annotation transfer.
-
-        Parameters
-        ----------
-        accession : str
-            The query accession for which cluster members will be retrieved.
-
-        Returns
-        -------
-        set of str
-            A set of sequence identifiers (as strings) that belong to the same cluster
-            as the given accession. Only numeric identifiers are returned.
-
-        Raises
-        ------
-        Exception
-            If cluster information is missing or an error occurs during filtering.
-        """
         try:
-            if not hasattr(self, "clusters"):
-                raise ValueError(
-                    "Cluster data not loaded. Make sure 'generate_clusters()' has been called before using this method."
-                )
-
-            self.logger.info(f"Retrieving cluster members for accession '{accession}'...")
-
-            # Find the cluster to which this accession belongs
-            cluster_row = self.clusters[self.clusters["identifier"] == accession]
-            if cluster_row.empty:
-                self.logger.warning(f"Accession '{accession}' not found in any cluster.")
-                return set()
-
-            cluster_id = cluster_row.iloc[0]["cluster"]
-
-            # Extract all identifiers in the same cluster
-            cluster_members = self.clusters[self.clusters["cluster"] == cluster_id]["identifier"]
-
-            # Keep only numeric IDs (likely to be database sequence IDs)
-            numeric_members = {member for member in cluster_members if member.isdigit()}
-
-            self.logger.info(
-                f"Cluster {cluster_id}: found {len(numeric_members)} numeric members for accession '{accession}'."
-            )
-
-            return numeric_members
-
-        except Exception as e:
-            self.logger.error(f"Failed to retrieve cluster members for accession '{accession}': {e}")
-            raise
+            cluster_id = self.clusters_by_id.loc[accession, "cluster"]
+            members = self.clusters_by_cluster.get(cluster_id, set())
+            return {m for m in members if m.isdigit()}
+        except KeyError:
+            self.logger.warning(f"Accession '{accession}' not found in clusters.")
+            return set()
 
     def lookup_table_into_memory(self):
         """
@@ -705,21 +632,20 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
     def preload_annotations(self):
         sql = text("""
-            SELECT
-                s.id AS sequence_id,
-                s.sequence,
-                pgo.go_id,
-                gt.category,
-                gt.description AS go_term_description,
-                pgo.evidence_code,
-                p.id AS protein_id,
-                p.organism,
-                p.gene_name
-            FROM sequence s
-            JOIN protein p ON s.id = p.sequence_id
-            JOIN protein_go_term_annotation pgo ON p.id = pgo.protein_id
-            JOIN go_terms gt ON pgo.go_id = gt.go_id
-        """)
+                   SELECT s.id           AS sequence_id,
+                          s.sequence,
+                          pgo.go_id,
+                          gt.category,
+                          gt.description AS go_term_description,
+                          pgo.evidence_code,
+                          p.id           AS protein_id,
+                          p.organism,
+                          p.gene_name
+                   FROM sequence s
+                            JOIN protein p ON s.id = p.sequence_id
+                            JOIN protein_go_term_annotation pgo ON p.id = pgo.protein_id
+                            JOIN go_terms gt ON pgo.go_id = gt.go_id
+                   """)
         self.go_annotations = {}
 
         with self.engine.connect() as connection:
