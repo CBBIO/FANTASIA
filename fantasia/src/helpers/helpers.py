@@ -8,6 +8,8 @@ from sqlalchemy.exc import OperationalError
 from protein_metamorphisms_is.sql.base.database_manager import DatabaseManager
 from tqdm import tqdm
 
+import parasail
+
 
 def download_embeddings(url, tar_path):
     """
@@ -157,86 +159,31 @@ def check_services(conf, logger):
             f"Verify your MQ settings.\nDocs: https://fantasia.readthedocs.io"
         ) from e
 
-import re
-import tempfile
-import subprocess
-from pathlib import Path
+
 
 def run_needle_from_strings(seq1, seq2):
     """
-    Executes EMBOSS Needle from two protein sequences as strings.
-    Returns official alignment metrics: identity, score, similarity, gaps, etc.
+    Alinea dos secuencias con Parasail (global alignment) y extrae métricas estilo EMBOSS.
     """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir = Path(tmpdir)
+    result = parasail.nw_trace_scan_16(seq1, seq2, 10, 1, parasail.blosum62)
 
-        fasta1 = tmpdir / "seq1.fasta"
-        fasta2 = tmpdir / "seq2.fasta"
-        outfile = tmpdir / "needle.txt"
+    aligned_query = result.traceback.query
+    aligned_ref = result.traceback.ref
+    comp_line = result.traceback.comp
 
-        # Write sequences to temporary FASTA files
-        fasta1.write_text(f">seq1\n{seq1}\n")
-        fasta2.write_text(f">seq2\n{seq2}\n")
+    alignment_length = len(aligned_query)
+    matches = sum(a == b for a, b in zip(aligned_query, aligned_ref) if a != '-' and b != '-')
+    similarity = sum(c in "|:" for c in comp_line)
+    gaps = aligned_query.count('-') + aligned_ref.count('-')
 
-        # Run EMBOSS Needle
-        result = subprocess.run([
-            "needle",
-            "-asequence", str(fasta1),
-            "-bsequence", str(fasta2),
-            "-gapopen", "10",
-            "-gapextend", "0.5",
-            "-outfile", str(outfile),
-            "-auto"
-        ], capture_output=True, text=True)
+    metrics = {
+        "identity_count": matches,
+        "alignment_length": alignment_length,
+        "identity_percentage": 100 * matches / alignment_length,
+        "similarity_percentage": 100 * similarity / alignment_length,
+        "gaps_percentage": 100 * gaps / alignment_length,
+        "alignment_score": result.score,
+    }
 
-        # Check for errors in the execution
-        if result.returncode != 0:
-            raise RuntimeError(f"Needle failed:\n{result.stderr}")
+    return metrics
 
-        # Read the output
-        content = outfile.read_text()
-        metrics = {}
-
-        try:
-            # Parse relevant metrics from the output
-            for line in content.splitlines():
-                line = line.strip()
-
-                # Extract Identity
-                if line.startswith("# Identity:"):
-                    match = re.search(r"# Identity:\s+(\d+)\s*/\s*(\d+)\s*\(\s*([\d.]+)%\)", line)
-                    if match:
-                        matches, total, percent = match.groups()
-                        metrics["identity_count"] = int(matches)
-                        metrics["alignment_length"] = int(total)
-                        metrics["identity_percentage"] = float(percent)
-
-                # Extract Similarity
-                elif line.startswith("# Similarity:"):
-                    match = re.search(r"# Similarity:\s+\d+/\d+\s*\(\s*([\d.]+)%\)", line)
-                    if match:
-                        metrics["similarity_percentage"] = float(match.group(1))
-
-                # Extract Gaps
-                elif line.startswith("# Gaps:"):
-                    match = re.search(r"# Gaps:\s+\d+/\d+\s*\(\s*([\d.]+)%\)", line)
-                    if match:
-                        metrics["gaps_percentage"] = float(match.group(1))
-
-                # Extract Score
-                elif line.startswith("# Score:"):
-                    match = re.search(r"# Score:\s*([\d.]+)", line)
-                    if match:
-                        metrics["alignment_score"] = float(match.group(1))
-
-            # Ensure identity percentage is parsed
-            if "identity_percentage" not in metrics:
-                raise ValueError(f"Unable to parse Needle output. Unexpected format:\n{content}")
-
-            # Default to None if gaps_percentage or other values are missing
-            metrics["gaps_percentage"] = metrics.get("gaps_percentage", None)
-
-            return metrics
-
-        except Exception as e:
-            raise ValueError(f"Error parsing Needle output:\n{content}") from e

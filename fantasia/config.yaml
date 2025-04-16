@@ -106,7 +106,6 @@ delete_queues: True
 # 🧬 Embedding Configuration:
 # this config is for run a test using only ProtT5 using Euclidean distance at k=1. Modify paramenters accordingly.
 # ==========================
-
 embedding:
   device: cuda  # 🔹 Options: "cpu", "cuda" (default GPU), or "cuda:N" (e.g., "cuda:0", "cuda:1", ...)
   distance_metric: euclidean  # 🔹 Options: [euclidean, cosine]
@@ -137,6 +136,9 @@ embedding:
       batch_size: 32
 
 
+use_gpu: False
+
+store_workers: 5
 # ==========================
 # 🧠 Functional Analysis
 # ==========================
