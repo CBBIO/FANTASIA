@@ -1,5 +1,3 @@
-
-
 import multiprocessing
 import pickle
 import threading
@@ -8,8 +6,9 @@ from abc import abstractmethod
 import pika
 from pika import PlainCredentials
 from protein_metamorphisms_is.tasks.queue import QueueTaskInitializer
-class SimpleGPUTaskInitializer(QueueTaskInitializer):
 
+
+class SimpleGPUTaskInitializer(QueueTaskInitializer):
 
     def __init__(self, conf, session_required=True):
         """
@@ -96,8 +95,6 @@ class SimpleGPUTaskInitializer(QueueTaskInitializer):
             self.consume_messages(channel, stop_event)
         self.logger.info("Processor worker (GPU) stopped.")
 
-
-
     def publish_task(self, batch_data):
         """
         Publish a task to the GPU processing queue.
@@ -144,4 +141,3 @@ class SimpleGPUTaskInitializer(QueueTaskInitializer):
     @abstractmethod
     def store_entry(self, record):
         pass
-

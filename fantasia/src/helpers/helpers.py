@@ -160,7 +160,6 @@ def check_services(conf, logger):
         ) from e
 
 
-
 def run_needle_from_strings(seq1, seq2):
     """
     Alinea dos secuencias con Parasail (global alignment) y extrae métricas estilo EMBOSS.
@@ -186,4 +185,3 @@ def run_needle_from_strings(seq1, seq2):
     }
 
     return metrics
-

@@ -31,26 +31,20 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 
 from protein_metamorphisms_is.tasks.base import BaseTaskInitializer
-from protein_metamorphisms_is.tasks.gpu import GPUTaskInitializer
-from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
 from goatools.base import get_godag
 from protein_metamorphisms_is.sql.model.entities.sequence.sequence import Sequence
 from pycdhit import cd_hit, read_clstr
-from scipy.spatial.distance import cdist
 
 from sqlalchemy import text
 import h5py
-from Bio.Align import PairwiseAligner
 from protein_metamorphisms_is.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType, \
     SequenceEmbedding
-from protein_metamorphisms_is.tasks.queue import QueueTaskInitializer
 from protein_metamorphisms_is.helpers.clustering.cdhit import calculate_cdhit_word_length
 
 from fantasia.src.helpers.helpers import run_needle_from_strings
-from fantasia.src.simple_gpu_task import SimpleGPUTaskInitializer
 
 
 def compute_metrics(row):
@@ -67,7 +61,6 @@ def compute_metrics(row):
         "alignment_length": metrics["alignment_length"],
         "alignment_time": metrics.get("alignment_time", None),
     }
-
 
 
 class EmbeddingLookUp(BaseTaskInitializer):
@@ -160,7 +153,6 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 f"Invalid distance metric '{self.distance_metric}', defaulting to 'euclidean'."
             )
             self.distance_metric = "euclidean"
-
 
         self.logger.info("EmbeddingLookUp initialization complete.")
 
@@ -806,7 +798,3 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 f"reliability={end_reliability - start_reliability:.2f}s | "
                 f"alignment={end_alignment - start_alignment:.2f}s"
             )
-
-
-
-
