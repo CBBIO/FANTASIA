@@ -30,6 +30,10 @@ import os
 import time
 from concurrent.futures import ProcessPoolExecutor
 
+from protein_metamorphisms_is.tasks.base import BaseTaskInitializer
+from protein_metamorphisms_is.tasks.gpu import GPUTaskInitializer
+from tqdm import tqdm
+
 import numpy as np
 import pandas as pd
 from goatools.base import get_godag
@@ -46,6 +50,7 @@ from protein_metamorphisms_is.tasks.queue import QueueTaskInitializer
 from protein_metamorphisms_is.helpers.clustering.cdhit import calculate_cdhit_word_length
 
 from fantasia.src.helpers.helpers import run_needle_from_strings
+from fantasia.src.simple_gpu_task import SimpleGPUTaskInitializer
 
 
 def compute_metrics(row):
@@ -53,16 +58,19 @@ def compute_metrics(row):
     seq2 = row["sequence_reference"]
     metrics = run_needle_from_strings(seq1, seq2)
     return {
+        "sequence_query": seq1,
+        "sequence_reference": seq2,
         "identity": metrics["identity_percentage"],
         "similarity": metrics.get("similarity_percentage"),
-
         "alignment_score": metrics["alignment_score"],
         "gaps_percentage": metrics.get("gaps_percentage"),
         "alignment_length": metrics["alignment_length"],
+        "alignment_time": metrics.get("alignment_time", None),
     }
 
 
-class EmbeddingLookUp(QueueTaskInitializer):
+
+class EmbeddingLookUp(BaseTaskInitializer):
     """
     EmbeddingLookUp handles the similarity-based annotation of proteins using precomputed embeddings.
 
@@ -123,7 +131,10 @@ class EmbeddingLookUp(QueueTaskInitializer):
 
         # Paths
         self.experiment_path = self.conf.get("experiment_path")
+
         self.embeddings_path = self.conf.get("embeddings_path") or os.path.join(self.experiment_path, "embeddings.h5")
+
+        self.raw_results_path = os.path.join(self.experiment_path, "raw_results.csv")
         self.results_path = os.path.join(self.experiment_path, "results.csv")
         self.topgo_path = os.path.join(self.experiment_path, "results_topgo.tsv")
 
@@ -150,11 +161,78 @@ class EmbeddingLookUp(QueueTaskInitializer):
             )
             self.distance_metric = "euclidean"
 
-        self.preload_annotations()
-        # Load embedding lookup tables into memory
-        self.lookup_table_into_memory()
 
         self.logger.info("EmbeddingLookUp initialization complete.")
+
+    def start(self):
+        self.logger.info("Starting embedding-based GO annotation process.")
+
+        self.logger.info("Preloading GO annotations from the database.")
+        self.preload_annotations()
+
+        self.logger.info("Loading reference embeddings into memory.")
+        self.lookup_table_into_memory()
+
+        self.logger.info(f"Processing query embeddings from HDF5: {self.embeddings_path}")
+        try:
+            batch_size = self.conf.get("batch_size", 4)
+            batches_by_model = {}
+            total_batches = 0
+
+            if not os.path.exists(self.embeddings_path):
+                raise FileNotFoundError(
+                    f"HDF5 file not found: {self.embeddings_path}. "
+                    f"Ensure embeddings have been generated prior to annotation."
+                )
+
+            with h5py.File(self.embeddings_path, "r") as h5file:
+                for accession, group in h5file.items():
+                    if "sequence" not in group:
+                        self.logger.warning(f"Sequence missing for accession '{accession}'. Skipping.")
+                        continue
+
+                    sequence = group["sequence"][()].decode("utf-8")
+
+                    for item_name, item_group in group.items():
+                        if not item_name.startswith("type_") or "embedding" not in item_group:
+                            continue
+
+                        model_key = item_name.replace("type_", "")
+                        if model_key not in self.types:
+                            continue
+
+                        embedding = item_group["embedding"][:]
+                        model_info = self.types[model_key]
+
+                        task_data = {
+                            "accession": accession,
+                            "sequence": sequence,
+                            "embedding": embedding,
+                            "embedding_type_id": model_info["id"],
+                            "model_name": model_key,
+                            "distance_threshold": model_info["distance_threshold"]
+                        }
+
+                        batches_by_model.setdefault(model_key, []).append(task_data)
+
+            for model_key, tasks in batches_by_model.items():
+                for i in range(0, len(tasks), batch_size):
+                    batch = tasks[i:i + batch_size]
+                    annotations = self.process(batch)
+                    self.store_entry(annotations)
+                    total_batches += 1
+                    self.logger.info(
+                        f"Processed batch {total_batches} for model '{model_key}' with {len(batch)} entries.")
+
+            self.logger.info(f"All batches completed successfully. Total batches: {total_batches}.")
+
+        except Exception as e:
+            self.logger.error(f"Unexpected error during batch processing: {e}", exc_info=True)
+            raise
+
+        self.logger.info("Starting post-processing of annotation results.")
+        self.post_process_results()
+        self.logger.info("Embedding lookup pipeline completed.")
 
     def fetch_models_info(self):
         """
@@ -300,201 +378,144 @@ class EmbeddingLookUp(QueueTaskInitializer):
 
     def process(self, task_data):
         """
-        Processes a batch of embedding-based lookup tasks and retrieves associated GO term annotations.
-
-        For each input embedding, the method:
-        - Computes distances against preloaded embeddings.
-        - Selects similar sequences under a configured threshold.
-        - Fetches GO annotations from preloaded metadata.
-        - Optionally filters out redundant annotations via clustering.
-        - Returns GO terms with distance metadata for each matched protein.
+        Processes a batch of embedding tasks by computing distances to reference embeddings,
+        filtering redundant neighbors, and retrieving GO annotations from the most similar entries.
 
         Parameters
         ----------
         task_data : list of dict
-            A list of input entries, each with:
-            - accession : str
-            - sequence : str
-            - embedding : np.ndarray
-            - embedding_type_id : int
-            - model_name : str
-            - distance_threshold : float
+            List of input entries with accession, sequence, embedding, model info and thresholds.
 
         Returns
         -------
         list of dict
-            A list of GO annotations with metadata and distance information.
+            Predicted GO term annotations for the batch.
         """
-        try:
-            limit_per_entry = self.conf.get("limit_per_entry", 1000)
+        import torch
+        import numpy as np
+        from scipy.spatial.distance import cdist
 
-            accession_list = []
-            embeddings = []
-            thresholds = []
-            model_names = {}
-            embedding_type_ids = []
-            sequence_by_accession = {}
+        task = task_data[0]
+        model_id = task["embedding_type_id"]
+        model_name = task["model_name"]
+        threshold = task["distance_threshold"]
+        use_gpu = self.conf.get("use_gpu", True)
+        limit = self.conf.get("limit_per_entry", 1000)
 
-            for task in task_data:
-                accession = task["accession"].removeprefix("accession_")
-                accession_list.append(accession)
-                embeddings.append(np.array(task["embedding"]))
-                thresholds.append(task["distance_threshold"])
-                model_names[accession] = task["model_name"]
-                embedding_type_ids.append(task["embedding_type_id"])
-                sequence_by_accession[accession] = task["sequence"]
+        lookup = self.lookup_tables.get(model_id)
+        if lookup is None:
+            self.logger.warning(f"No lookup table for embedding_type_id {model_id}. Skipping batch.")
+            return []
+        self.logger.info([np.array(t["embedding"]).shape for t in task_data])
+        embeddings = np.stack([np.array(t["embedding"]) for t in task_data])
+        accessions = [t["accession"].removeprefix("accession_") for t in task_data]
+        sequences = {t["accession"].removeprefix("accession_"): t["sequence"] for t in task_data}
 
-            selected_sequence_ids = set()
-            distance_map = {}
+        # Compute distance matrix
+        if use_gpu:
+            queries = torch.tensor(embeddings, dtype=torch.float16).cuda()
+            targets = torch.tensor(lookup["embeddings"], dtype=torch.float16).cuda()
 
-            # Distance computation and selection
-            for idx, accession in enumerate(accession_list):
-                embedding_vector = embeddings[idx]
-                threshold = thresholds[idx]
-                type_id = embedding_type_ids[idx]
+            if self.distance_metric == "euclidean":
+                q2 = (queries ** 2).sum(dim=1).unsqueeze(1)
+                t2 = (targets ** 2).sum(dim=1).unsqueeze(0)
+                d2 = q2 + t2 - 2 * torch.matmul(queries, targets.T)
+                dist_matrix = torch.sqrt(torch.clamp(d2, min=0.0)).cpu().numpy()
+            elif self.distance_metric == "cosine":
+                qn = torch.nn.functional.normalize(queries, p=2, dim=1)
+                tn = torch.nn.functional.normalize(targets, p=2, dim=1)
+                dist_matrix = (1 - torch.matmul(qn, tn.T)).cpu().numpy()
+            else:
+                raise ValueError(f"Unsupported distance metric: {self.distance_metric}")
+        else:
+            dist_matrix = cdist(embeddings, lookup["embeddings"], metric=self.distance_metric)
 
-                lookup = self.lookup_tables.get(type_id)
-                if lookup is None:
-                    self.logger.warning(f"No lookup table for embedding_type_id {type_id}. Skipping {accession}.")
+        self.logger.info(f"Distance matrix computed. Shape: {dist_matrix.shape}")
+
+        redundancy = self.conf.get("redundancy_filter", 0)
+        redundant_ids = {
+            acc: self.retrieve_cluster_members(acc)
+            for acc in accessions
+        } if redundancy > 0 else {}
+
+        if redundancy > 0:
+            for acc, ids in redundant_ids.items():
+                self.logger.info(f"Redundancy filter active: accession {acc} -> {len(ids)} cluster members.")
+
+        go_terms = []
+
+        for i, accession in enumerate(accessions):
+            self.logger.info(f"[{i}] Processing accession '{accession}'")
+
+            all_distances = dist_matrix[i]
+            all_seq_ids = lookup["ids"]
+
+            # Filtrar redundantes antes de seleccionar por distancia
+            if redundancy > 0 and accession in redundant_ids:
+                mask = np.array([str(seq_id) not in redundant_ids[accession] for seq_id in all_seq_ids])
+                distances = all_distances[mask]
+                seq_ids = all_seq_ids[mask]
+            else:
+                distances = all_distances
+                seq_ids = all_seq_ids
+
+            if len(distances) == 0:
+                self.logger.warning(f"No candidates remain after redundancy filtering for '{accession}'")
+                continue
+
+            sorted_idx = np.argsort(distances)
+            selected_idx = sorted_idx[distances[sorted_idx] <= threshold][:limit]
+
+            self.logger.info(f"Found {len(selected_idx)} neighbors within threshold {threshold}.")
+
+            for idx in selected_idx:
+                seq_id = seq_ids[idx]
+                if seq_id not in self.go_annotations:
+                    self.logger.info(f"No GO terms found for seq_id {seq_id}. Skipping.")
                     continue
 
-                if self.distance_metric == "euclidean":
-                    distances = cdist([embedding_vector], lookup["embeddings"], metric="euclidean")[0]
-                elif self.distance_metric == "cosine":
-                    distances = cdist([embedding_vector], lookup["embeddings"], metric="cosine")[0]
-                else:
-                    raise ValueError(f"Unsupported distance metric: {self.distance_metric}")
+                annotations = self.go_annotations[seq_id]
+                protein_ids = set(ann["protein_id"] for ann in annotations)
 
-                sorted_indices = np.argsort(distances)
-                selected = sorted_indices[distances[sorted_indices] <= threshold][:limit_per_entry]
+                self.logger.info(
+                    f"→ Transferring {len(annotations)} annotation(s) from seq_id {seq_id} "
+                    f"(protein_id(s): {list(protein_ids)}) to '{accession}'."
+                )
 
-                for i in selected:
-                    seq_id = lookup["ids"][i]
-                    dist = distances[i]
-                    selected_sequence_ids.add(seq_id)
-                    distance_map[(accession, seq_id)] = dist
+                for ann in annotations:
+                    go_terms.append({
+                        "accession": accession,
+                        "sequence_query": sequences[accession],
+                        "sequence_reference": ann["sequence"],
+                        "go_id": ann["go_id"],
+                        "category": ann["category"],
+                        "evidence_code": ann["evidence_code"],
+                        "go_description": ann["go_description"],
+                        "distance": distances[idx],
+                        "model_name": model_name,
+                        "protein_id": ann["protein_id"],
+                        "organism": ann["organism"],
+                        "gene_name": ann["gene_name"],
+                    })
 
-            if not selected_sequence_ids:
-                self.logger.info("No sequence IDs passed distance threshold filtering.")
-                return []
-
-            # Filter redundancy (optional)
-            redundant_ids_by_accession = {}
-            if self.conf.get("redundancy_filter", 0) > 0:
-                for accession in accession_list:
-                    redundant_ids_by_accession[accession] = self.retrieve_cluster_members(accession)
-
-            # Construct output list using precached annotations
-            go_terms = []
-            for accession in accession_list:
-                for seq_id in selected_sequence_ids:
-                    if accession in redundant_ids_by_accession:
-                        if str(seq_id) in redundant_ids_by_accession[accession]:
-                            continue
-
-                    if (accession, seq_id) not in distance_map:
-                        continue
-
-                    if seq_id not in self.go_annotations:
-                        continue  # no annotations for this reference
-
-                    for annotation in self.go_annotations[seq_id]:
-                        go_terms.append({
-                            "accession": accession,
-                            "sequence_query": sequence_by_accession[accession],
-                            "sequence_reference": annotation["sequence"],
-                            "go_id": annotation["go_id"],
-                            "category": annotation["category"],
-                            "evidence_code": annotation["evidence_code"],
-                            "go_description": annotation["go_description"],
-                            "distance": distance_map[(accession, seq_id)],
-                            "model_name": model_names[accession],
-                            "protein_id": annotation["protein_id"],
-                            "organism": annotation["organism"],
-                            "gene_name": annotation["gene_name"],
-                        })
-
-            self.logger.info(f"Processed {len(go_terms)} GO terms for batch of {len(task_data)} entries.")
-            return go_terms
-
-        except Exception as e:
-            self.logger.error(f"Error during GO annotation processing: {e}")
-            raise
+        self.logger.info(f"Batch processed: {len(go_terms)} GO terms assigned in total.")
+        return go_terms
 
     import time
 
     def store_entry(self, annotations):
-        """
-        Processes and stores GO term annotations for a given set of accessions.
-
-        This method computes a reliability score for each annotation, filters out
-        redundant or less reliable entries, calculates sequence identity and coverage
-        using EMBOSS Needle, and saves the final results to a CSV file.
-        If enabled, it also generates a TSV file compatible with TopGO.
-
-        Parameters
-        ----------
-        annotations : list of dict
-            A list of GO annotations, each containing metadata such as accession, GO ID,
-            sequences, model name, distance, and evidence code.
-
-        Raises
-        ------
-        Exception
-            If any error occurs during processing or file writing.
-        """
         if not annotations:
             self.logger.info("No valid GO terms to store.")
             return
 
-        start_total = time.perf_counter()
-
         try:
             df = pd.DataFrame(annotations)
-
-            start_reliability = time.perf_counter()
-            if self.distance_metric == "cosine":
-                df["reliability_index"] = 1 - df["distance"]
-            elif self.distance_metric == "euclidean":
-                df["reliability_index"] = 0.5 / (0.5 + df["distance"])
-            end_reliability = time.perf_counter()
-
-            start_alignment = time.perf_counter()
-            with ProcessPoolExecutor(max_workers=self.conf.get("store_workers", 4)) as executor:
-                metrics_list = list(executor.map(compute_metrics, df.to_dict("records")))
-            metrics_df = pd.DataFrame(metrics_list)
-            df = pd.concat([df.reset_index(drop=True), metrics_df], axis=1)
-            end_alignment = time.perf_counter()
-
-            df = df.loc[df.groupby(["accession", "go_id"])["reliability_index"].idxmax()]
-
-            parent_go_terms = set()
-            for go_id in df["go_id"].unique():
-                if go_id in self.go:
-                    parent_go_terms.update(p.id for p in self.go[go_id].parents)
-            df = df[~df["go_id"].isin(parent_go_terms)]
-            df = df.sort_values(by="reliability_index", ascending=False)
-
-            write_mode = "a" if os.path.exists(self.results_path) and os.path.getsize(self.results_path) > 0 else "w"
+            write_mode = "a" if os.path.exists(self.raw_results_path) else "w"
             include_header = write_mode == "w"
-            df.to_csv(self.results_path, mode=write_mode, index=False, header=include_header)
-
-            if self.topgo_enabled:
-                df_topgo = (
-                    df.groupby("accession")["go_id"]
-                    .apply(lambda x: ", ".join(x))
-                    .reset_index()
-                )
-                with open(self.topgo_path, "a") as f:
-                    df_topgo.to_csv(f, sep="\t", index=False, header=False)
-
-            end_total = time.perf_counter()
-            self.logger.info(
-                f"⏱️ store_entry: total={end_total - start_total:.2f}s | reliability={end_reliability - start_reliability:.2f}s | alignment={end_alignment - start_alignment:.2f}s")
-            self.logger.info(f"Stored {len(df)} GO annotations to CSV.")
-
+            df.to_csv(self.raw_results_path, mode=write_mode, index=False, header=include_header)
+            self.logger.info(f"Stored {len(df)} raw GO annotations.")
         except Exception as e:
-            self.logger.error(f"Error storing results: {e}")
+            self.logger.error(f"Error writing raw results: {e}")
             raise
 
     def generate_clusters(self):
@@ -722,3 +743,70 @@ class EmbeddingLookUp(QueueTaskInitializer):
                     "gene_name": row.gene_name,
                 }
                 self.go_annotations.setdefault(row.sequence_id, []).append(entry)
+
+    def post_process_results(self):
+        if not os.path.exists(self.raw_results_path):
+            self.logger.warning("No raw results found for post-processing.")
+            return
+
+        self.logger.info("🔍 Starting post-processing of raw GO annotations.")
+        start_total = time.perf_counter()
+
+        df = pd.read_csv(self.raw_results_path)
+
+        start_reliability = time.perf_counter()
+        if self.distance_metric == "cosine":
+            df["reliability_index"] = 1 - df["distance"]
+        elif self.distance_metric == "euclidean":
+            df["reliability_index"] = 0.5 / (0.5 + df["distance"])
+        end_reliability = time.perf_counter()
+
+        start_alignment = time.perf_counter()
+        unique_pairs = df[["sequence_query", "sequence_reference"]].drop_duplicates()
+        with ProcessPoolExecutor(max_workers=self.conf.get("store_workers", 4)) as executor:
+            metrics_list = list(executor.map(compute_metrics, unique_pairs.to_dict("records")))
+        metrics_df = pd.DataFrame(metrics_list)
+        df = df.merge(metrics_df, on=["sequence_query", "sequence_reference"], how="left")
+        end_alignment = time.perf_counter()
+
+        df = df.loc[df.groupby(["accession", "go_id"])["reliability_index"].idxmax()]
+
+        parent_go_terms = set()
+        for go_id in df["go_id"].unique():
+            if go_id in self.go:
+                parent_go_terms.update(p.id for p in self.go[go_id].parents)
+        df = df[~df["go_id"].isin(parent_go_terms)]
+        df = df.sort_values(by="reliability_index", ascending=False)
+
+        write_mode = "a" if os.path.exists(self.results_path) else "w"
+        df.to_csv(self.results_path, mode=write_mode, index=False, header=(write_mode == "w"))
+
+        if self.topgo_enabled:
+            df_topgo = (
+                df.groupby("accession")["go_id"]
+                .apply(lambda x: ", ".join(x))
+                .reset_index()
+            )
+            with open(self.topgo_path, "a") as f:
+                df_topgo.to_csv(f, sep="\t", index=False, header=False)
+
+        end_total = time.perf_counter()
+        total_alignment_time = metrics_df["alignment_time"].sum() if "alignment_time" in metrics_df else None
+
+        if total_alignment_time is not None:
+            self.logger.info(
+                f"✅ Post-processing finished: total={end_total - start_total:.2f}s | "
+                f"reliability={end_reliability - start_reliability:.2f}s | "
+                f"alignment={end_alignment - start_alignment:.2f}s | "
+                f"alignment_total_time={total_alignment_time:.2f}s"
+            )
+        else:
+            self.logger.info(
+                f"✅ Post-processing finished: total={end_total - start_total:.2f}s | "
+                f"reliability={end_reliability - start_reliability:.2f}s | "
+                f"alignment={end_alignment - start_alignment:.2f}s"
+            )
+
+
+
+
