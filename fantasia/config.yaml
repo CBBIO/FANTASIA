@@ -117,7 +117,7 @@ delete_queues: True
 # ==========================
 embedding:
   device: cuda  # 🔹 Options: "cpu", "cuda" (default GPU), or "cuda:N" (e.g., "cuda:0", "cuda:1", ...)
-  distance_metric: euclidean  # 🔹 Options: [euclidean, cosine]
+  distance_metric: cosine  # 🔹 Options: [euclidean, cosine]
 
   models:
     # ----------------------
@@ -126,7 +126,7 @@ embedding:
     esm:
       enabled: True
       distance_threshold: 3
-      batch_size: 32
+      batch_size: 1
 
     # ----------------------
     # 🔬 ProSTT5 Model
@@ -134,7 +134,7 @@ embedding:
     prost_t5:
       enabled: True
       distance_threshold: 3
-      batch_size: 32
+      batch_size: 1
 
     # ----------------------
     # 🧪 ProtT5 Model
@@ -142,7 +142,7 @@ embedding:
     prot_t5:
       enabled: True
       distance_threshold: 3
-      batch_size: 32
+      batch_size: 1
 
 
 use_gpu: True
