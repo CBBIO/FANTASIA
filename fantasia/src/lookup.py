@@ -47,6 +47,7 @@ from protein_metamorphisms_is.helpers.clustering.cdhit import calculate_cdhit_wo
 
 from fantasia.src.helpers.helpers import run_needle_from_strings, get_descendant_ids
 
+import json
 
 def compute_metrics(row):
     seq1 = row["sequence_query"]
@@ -574,16 +575,11 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
     def lookup_table_into_memory(self):
         """
-        Loads sequence embeddings from the database into memory for each enabled model (embedding_type_id).
+        Loads sequence embeddings from the database into memory for each enabled embedding model.
 
-        Embeddings are fetched from the `SequenceEmbedding` table and stored in memory as NumPy arrays,
-        allowing fast similarity searches during processing. Optionally, a limit can be applied per model
-        to reduce memory usage or for testing purposes.
-
-        Raises
-        ------
-        Exception
-            If any error occurs during database query or memory allocation.
+        This method constructs a lookup table per model by retrieving embeddings from the database.
+        It applies optional filtering by taxonomy (inclusion or exclusion lists), with support
+        for hierarchical filtering (i.e., inclusion of descendant taxa via the NCBI taxonomy tree).
         """
         try:
             self.logger.info("🔄 Starting lookup table construction: loading embeddings into memory per model...")
@@ -613,7 +609,6 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 embedding_type_id = model_info["id"]
                 self.logger.info(f"📥 Model '{task_name}' (ID: {embedding_type_id}): retrieving embeddings...")
 
-                # Build the query to retrieve sequence ID and its embedding vector
                 query = (
                     self.session
                     .query(Sequence.id, SequenceEmbedding.embedding)
@@ -716,30 +711,70 @@ class EmbeddingLookUp(BaseTaskInitializer):
         df = df.drop(columns=["sequence_query", "sequence_reference"], errors="ignore")
 
         def is_ancestor(go_dag, parent, child):
-            """True si `parent` es ancestro de `child` en la ontología GO."""
             return child in go_dag and parent in go_dag[child].get_all_parents()
+
+        df["support_count"] = df.groupby(["accession", "model_name", "go_id"])["go_id"].transform("count")
 
         rows = []
         for (_, _), group in df.groupby(["accession", "model_name"]):
-            for go_id, go_group in group.groupby("go_id"):
-                all_go_ids = go_group["go_id"].unique()
+            all_go_ids = group["go_id"].unique().tolist()
+            support_map = group.drop_duplicates(subset=["go_id"])[["go_id", "support_count"]].set_index("go_id")[
+                "support_count"].to_dict()
 
-                leaf_entries = []
-                for i, row in go_group.iterrows():
-                    term = row["go_id"]
-                    is_leaf = not any(
-                        term != other and is_ancestor(self.go, term, other)
-                        for other in all_go_ids
-                    )
-                    if is_leaf:
-                        leaf_entries.append(row)
+            leaf_terms = []
+            collapsed_terms = {}
 
-                rows.extend(leaf_entries)
+            for go_id in all_go_ids:
+                is_leaf = not any(
+                    go_id != other and is_ancestor(self.go, go_id, other)
+                    for other in all_go_ids
+                )
+                if is_leaf:
+                    leaf_terms.append(go_id)
+                else:
+                    for lt in all_go_ids:
+                        if go_id != lt and is_ancestor(self.go, go_id, lt):
+                            collapsed_terms.setdefault(lt, {"collapsed_support": 0, "terms": set()})
+                            collapsed_terms[lt]["collapsed_support"] += support_map.get(go_id, 1)
+                            collapsed_terms[lt]["terms"].add(go_id)
 
-        # Nuevo DataFrame con solo términos hoja por (accession, go_id, model_name)
+            for go_id in leaf_terms:
+                subset = group[group["go_id"] == go_id].copy()
+                info = collapsed_terms.get(go_id, {})
+                subset["collapsed_support"] = info.get("collapsed_support", 0)
+                subset["n_collapsed_terms"] = len(info.get("terms", []))
+                subset["collapsed_terms"] = ", ".join(sorted(info.get("terms", []))) if info.get("terms") else ""
+                rows.extend(subset.to_dict("records"))
+
         df = pd.DataFrame(rows)
+
         df = df.sort_values(by=["accession", "go_id", "model_name", "reliability_index"],
                             ascending=[True, True, True, False])
+
+        # Redondear columnas numéricas para mejor presentación
+        columns_to_round = ["distance", "identity", "similarity", "alignment_score", "gaps_percentage",
+                            "reliability_index"]
+        for col in columns_to_round:
+            if col in df.columns:
+                df[col] = df[col].apply(lambda x: round(x, 4))
+
+        def extract_gene_name(g):
+            try:
+                val = eval(g)
+                if (
+                        isinstance(g, str)
+                        and g.startswith("[{")
+                        and isinstance(val, list)
+                        and len(val) > 0
+                        and "Name" in val[0]
+                ):
+                    return val[0]["Name"]
+            except Exception:
+                return None
+            return None
+
+        if "gene_name" in df.columns:
+            df["gene_name"] = df["gene_name"].apply(extract_gene_name)
 
         write_mode = "a" if os.path.exists(self.results_path) else "w"
         df.to_csv(self.results_path, mode=write_mode, index=False, header=(write_mode == "w"))
