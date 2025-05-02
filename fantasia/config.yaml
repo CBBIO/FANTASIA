@@ -50,9 +50,9 @@ rabbitmq_password: guest     # RabbitMQ password for authentication.
 # embeddings database used as a reference during the annotation step.
 #
 # ➤ DEFAULT (used if no override is provided):
-#   UniProt 2025 + GOA full dump only non-computational annotations.
-#   - File URL: https://zenodo.org/records/15133346/files/embeddings_non_computational_2025.tar?download=1
-#   - Zenodo page: https://zenodo.org/records/15133346/
+#   UniProt 2025 + GOA full  --dump only non-computational annotations.
+#   - File URL: https://zenodo.org/records/15261639/files/BioData_backup_2025_hq.tar?download=1
+#   - Zenodo page: https://zenodo.org/records/15261639/
 #
 # ➤ ALTERNATIVE (benchmark mode):
 #   GoPredSim 2022
@@ -63,7 +63,7 @@ rabbitmq_password: guest     # RabbitMQ password for authentication.
 #   --embeddings_url <ZENODO_URL>
 # ====================================================================
 # URL to download the embeddings database dump.
-embeddings_url: "https://zenodo.org/records/15133346/files/embeddings_non_computational_2025.tar?download=1"
+embeddings_url: "https://zenodo.org/records/15261639/files/BioData_backup_2025_hq.tar?download=1"
 
 
 # ==========================
@@ -97,6 +97,15 @@ length_filter: 5000000
 # Threshold for redundancy filtering.
 redundancy_filter: 0
 
+# A list of taxonomy IDs to exclude from the reference database, set it to empty if you don't want to exclude any IDs.
+taxonomy_ids_to_exclude: [] #6239 is C. elegans
+
+# A list of taxonomy IDs to included exclusively from the reference database, set it to empty if you want to include all IDs.
+taxonomy_ids_included_exclusively: []
+
+# Set to true if you want the filter to include the descendants of the previous taxonomy IDs.
+get_descendants: False
+
 # Number of sequences to package in each queue batch.
 sequence_queue_package: 64
 
@@ -106,27 +115,26 @@ delete_queues: True
 # 🧬 Embedding Configuration:
 # this config is for run a test using only ProtT5 using Euclidean distance at k=1. Modify paramenters accordingly.
 # ==========================
-
 embedding:
   device: cuda  # 🔹 Options: "cpu", "cuda" (default GPU), or "cuda:N" (e.g., "cuda:0", "cuda:1", ...)
-  distance_metric: euclidean  # 🔹 Options: [euclidean, cosine]
+  distance_metric: cosine  # 🔹 Options: [euclidean, cosine]
 
   models:
     # ----------------------
     # 🧪 ESM Model
     # ----------------------
     esm:
-      enabled: False
+      enabled: True
       distance_threshold: 3
-      batch_size: 32
+      batch_size: 1
 
     # ----------------------
     # 🔬 ProSTT5 Model
     # ----------------------
     prost_t5:
-      enabled: False
+      enabled: True
       distance_threshold: 3
-      batch_size: 32
+      batch_size: 1
 
     # ----------------------
     # 🧪 ProtT5 Model
@@ -134,9 +142,12 @@ embedding:
     prot_t5:
       enabled: True
       distance_threshold: 3
-      batch_size: 32
+      batch_size: 1
 
 
+use_gpu: True
+
+store_workers: 1
 # ==========================
 # 🧠 Functional Analysis
 # ==========================
