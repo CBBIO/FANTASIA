@@ -97,6 +97,15 @@ length_filter: 5000000
 # Threshold for redundancy filtering.
 redundancy_filter: 0
 
+# A list of taxonomy IDs to exclude from the reference database, set it to empty if you don't want to exclude any IDs.
+taxonomy_ids_to_exclude: [] #6239 is C. elegans
+
+# A list of taxonomy IDs to included exclusively from the reference database, set it to empty if you want to include all IDs.
+taxonomy_ids_included_exclusively: []
+
+# Set to true if you want the filter to include the descendants of the previous taxonomy IDs.
+get_descendants: False
+
 # Number of sequences to package in each queue batch.
 sequence_queue_package: 64
 
