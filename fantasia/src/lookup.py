@@ -47,7 +47,6 @@ from protein_metamorphisms_is.helpers.clustering.cdhit import calculate_cdhit_wo
 
 from fantasia.src.helpers.helpers import run_needle_from_strings, get_descendant_ids
 
-import json
 
 def compute_metrics(row):
     seq1 = row["sequence_query"]
