@@ -539,6 +539,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 o=filtered_fasta,
                 c=identity,
                 d=0,
+                l=4,
                 aL=coverage,
                 M=memory,
                 T=threads,
