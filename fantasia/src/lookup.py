@@ -60,7 +60,8 @@ def compute_metrics(row):
         "alignment_score": metrics["alignment_score"],
         "gaps_percentage": metrics.get("gaps_percentage"),
         "alignment_length": metrics["alignment_length"],
-        "alignment_time": metrics.get("alignment_time", None),
+        "length_query": len(seq1),
+        "length_reference": len(seq2),
     }
 
 
@@ -588,6 +589,24 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
             self.lookup_tables = {}
             limit_execution = self.conf.get("limit_execution")
+            get_descendants = self.conf.get("get_descendants", False)
+
+            # Procesar filtros de taxonomía
+            def expand_tax_ids(key):
+                ids = self.conf.get(key, [])
+                if get_descendants and ids:
+                    return get_descendant_ids([int(tid) for tid in ids])
+                return [str(tid) for tid in ids]
+
+            exclude_taxon_ids = expand_tax_ids("taxonomy_ids_to_exclude")
+            include_taxon_ids = expand_tax_ids("taxonomy_ids_included_exclusively")
+
+            if exclude_taxon_ids and include_taxon_ids:
+                self.logger.warning(
+                    "⚠️ Both 'taxonomy_ids_to_exclude' and 'taxonomy_ids_included_exclusively' are set. This may lead to conflicting filters.")
+
+            self.logger.info(
+                f"🧬 Taxonomy filters — Exclude: {exclude_taxon_ids}, Include: {include_taxon_ids}, Descendants: {get_descendants}")
 
             for task_name, model_info in self.types.items():
                 embedding_type_id = model_info["id"]
