@@ -3,6 +3,8 @@ import os
 import pika
 import requests
 import subprocess
+
+from ete3 import NCBITaxa
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from protein_metamorphisms_is.sql.base.database_manager import DatabaseManager
