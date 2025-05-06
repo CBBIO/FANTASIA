@@ -83,7 +83,7 @@ input: data_sample/worm_test.fasta
 only_lookup: False
 
 # Batch size for Embedding Distance calculation - [batch_size,length(lookup_table)]
-batch_size: 10
+batch_size: 512
 
 # K-closest protein to consider for lookup
 limit_per_entry: 1
@@ -107,7 +107,7 @@ taxonomy_ids_included_exclusively: []
 get_descendants: False
 
 # Number of sequences to package in each queue batch.
-sequence_queue_package: 64
+sequence_queue_package: 512
 
 delete_queues: True
 
