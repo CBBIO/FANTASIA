@@ -1,28 +1,42 @@
+"""
+helpers.py
+
+Utility functions for downloading files, restoring PostgreSQL dumps,
+checking infrastructure services, running sequence alignments, and handling NCBI taxonomy.
+
+All functions are documented in Sphinx-style and follow PEP8 for readability and maintainability.
+"""
+
 import os
+import subprocess
+from typing import List, Dict, Union
 
 import pika
 import requests
-import subprocess
-
 from ete3 import NCBITaxa
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
-from protein_metamorphisms_is.sql.base.database_manager import DatabaseManager
 from tqdm import tqdm
-
 import parasail
 
+from protein_metamorphisms_is.sql.base.database_manager import DatabaseManager
 
-def download_embeddings(url, tar_path):
+
+def download_embeddings(url: str, tar_path: str) -> None:
     """
-    Download the embeddings TAR file from the given URL with a progress bar.
+    Download a TAR file containing embeddings from a given URL with a progress bar.
 
     Parameters
     ----------
     url : str
-        The URL to download the embeddings from.
+        The URL from which to download the embeddings.
     tar_path : str
-        Path where the TAR file will be saved.
+        The local path where the TAR file will be saved.
+
+    Raises
+    ------
+    Exception
+        If the download fails due to a non-200 HTTP status code.
     """
     if os.path.exists(tar_path):
         print("Embeddings file already exists. Skipping download.")
@@ -33,11 +47,11 @@ def download_embeddings(url, tar_path):
     if response.status_code == 200:
         total_size = int(response.headers.get('content-length', 0))
         with open(tar_path, "wb") as f, tqdm(
-                desc="Downloading",
-                total=total_size,
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
+            desc="Downloading",
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
         ) as progress_bar:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
@@ -47,26 +61,28 @@ def download_embeddings(url, tar_path):
         raise Exception(f"Failed to download embeddings. Status code: {response.status_code}")
 
 
-def load_dump_to_db(dump_path, db_config):
+def load_dump_to_db(dump_path: str, db_config: Dict[str, str]) -> None:
     """
-    Load a database backup file (in TAR format) into the database.
+    Load a PostgreSQL database dump (TAR format) into the database.
 
     Parameters
     ----------
     dump_path : str
-        Path to the database backup TAR file.
+        Path to the .tar database dump.
     db_config : dict
-        Database configuration dictionary containing host, port, user, password, and db name.
+        Dictionary with keys: DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD, DB_NAME.
+
+    Raises
+    ------
+    Exception
+        If subprocess execution fails.
     """
     print("Resetting and preparing the database...")
-
-    from sqlalchemy import create_engine
 
     url = (
         f"postgresql://{db_config['DB_USERNAME']}:{db_config['DB_PASSWORD']}"
         f"@{db_config['DB_HOST']}:{db_config['DB_PORT']}/{db_config['DB_NAME']}"
     )
-
     engine = create_engine(url)
 
     with engine.connect() as conn:
@@ -110,38 +126,65 @@ def load_dump_to_db(dump_path, db_config):
         print(f"❌ An unexpected error occurred: {e}")
 
 
-def parse_unknown_args(unknown_args):
-    """Convierte una lista de argumentos desconocidos en un diccionario."""
+def parse_unknown_args(unknown_args: List[str]) -> Dict[str, Union[str, bool]]:
+    """
+    Parse unknown command-line arguments into a dictionary.
+
+    Parameters
+    ----------
+    unknown_args : list of str
+        List of arguments in the format ["--key", "value", "--flag"].
+
+    Returns
+    -------
+    dict
+        Parsed arguments where flags have boolean True and keys have corresponding values.
+    """
     result = {}
     i = 0
     while i < len(unknown_args):
         arg = unknown_args[i]
         if arg.startswith("--"):
-            key = arg[2:]  # Elimina los dos guiones
+            key = arg[2:]
             if i + 1 < len(unknown_args) and not unknown_args[i + 1].startswith("--"):
                 result[key] = unknown_args[i + 1]
                 i += 1
             else:
-                result[key] = True  # Si no tiene valor, se asume un flag booleano
+                result[key] = True
         i += 1
     return result
 
 
-def check_services(conf, logger):
-    # Comprobación de PostgreSQL usando tu propio DatabaseManager
+def check_services(conf: Dict[str, str], logger) -> None:
+    """
+    Check the connectivity of PostgreSQL and RabbitMQ services.
+
+    Parameters
+    ----------
+    conf : dict
+        Configuration with DB and RabbitMQ credentials.
+    logger : logging.Logger
+        Logger instance for logging status messages.
+
+    Raises
+    ------
+    ConnectionError
+        If connection to PostgreSQL or RabbitMQ fails.
+    """
+    # PostgreSQL check
     try:
         db_manager = DatabaseManager(conf)
         session = db_manager.get_session()
-        session.execute(text("SELECT 1"))  # ✅ Correcto
+        session.execute(text("SELECT 1"))
         session.close()
         logger.info("PostgreSQL connection OK.")
     except OperationalError as e:
         raise ConnectionError(
             f"Could not connect to PostgreSQL at {conf['DB_HOST']}:{conf['DB_PORT']}. "
-            f"Verify your DB settings.\nDocs: https://fantasia.readthedocs.io"
+            f"Check your DB settings.\nDocs: https://fantasia.readthedocs.io"
         ) from e
 
-    # Comprobación de RabbitMQ usando Pika (como haces tú mismo)
+    # RabbitMQ check
     try:
         connection_params = pika.ConnectionParameters(
             host=conf["rabbitmq_host"],
@@ -158,16 +201,27 @@ def check_services(conf, logger):
     except Exception as e:
         raise ConnectionError(
             f"Could not connect to RabbitMQ at {conf['rabbitmq_host']}:{conf.get('rabbitmq_port', 5672)}. "
-            f"Verify your MQ settings.\nDocs: https://fantasia.readthedocs.io"
+            f"Check your MQ settings.\nDocs: https://fantasia.readthedocs.io"
         ) from e
 
 
-def run_needle_from_strings(seq1, seq2):
+def run_needle_from_strings(seq1: str, seq2: str) -> Dict[str, float]:
     """
-    Alinea dos secuencias con Parasail (global alignment) y extrae métricas estilo EMBOSS.
-    """
-    result = parasail.nw_trace_scan_16(seq1, seq2, 10, 1, parasail.blosum62)
+    Perform global alignment of two sequences using Parasail and return EMBOSS-style metrics.
 
+    Parameters
+    ----------
+    seq1 : str
+        First sequence (query).
+    seq2 : str
+        Second sequence (reference).
+
+    Returns
+    -------
+    dict
+        Dictionary with identity, similarity, gaps, and alignment score metrics.
+    """
+    result = parasail.nw_trace(seq1, seq2, 10, 1, parasail.blosum62)
     aligned_query = result.traceback.query
     aligned_ref = result.traceback.ref
     comp_line = result.traceback.comp
@@ -177,7 +231,7 @@ def run_needle_from_strings(seq1, seq2):
     similarity = sum(c in "|:" for c in comp_line)
     gaps = aligned_query.count('-') + aligned_ref.count('-')
 
-    metrics = {
+    return {
         "identity_count": matches,
         "alignment_length": alignment_length,
         "identity_percentage": 100 * matches / alignment_length,
@@ -186,10 +240,21 @@ def run_needle_from_strings(seq1, seq2):
         "alignment_score": result.score,
     }
 
-    return metrics
 
+def get_descendant_ids(parent_ids: List[int]) -> List[str]:
+    """
+    Get all descendant taxon IDs (including intermediate nodes) from a list of parent taxon IDs.
 
-def get_descendant_ids(parent_ids):
+    Parameters
+    ----------
+    parent_ids : list of int
+        List of NCBI taxonomy IDs.
+
+    Returns
+    -------
+    list of str
+        List of descendant taxonomy IDs as strings (including the original parent IDs).
+    """
     print(parent_ids)
     descendants_ids = []
     ncbi = NCBITaxa()
@@ -198,5 +263,4 @@ def get_descendant_ids(parent_ids):
         descendants = ncbi.get_descendant_taxa(taxon, intermediate_nodes=True)
         descendants_ids.extend(str(tid) for tid in descendants)
     descendants_ids.extend(str(tid) for tid in parent_ids)
-    print(descendants_ids)
     return descendants_ids

@@ -1,156 +1,104 @@
-# ==========================
-# 🌍 Global Configuration
-# ==========================
+# ============================================================
+# 🌍 Global Configuration — FANTASIA Functional Annotation System
+# ============================================================
 
-# Maximum number of worker threads for parallel processing.
-max_workers: 1
-
-# Path to the system constants file.
-constants: "./fantasia/constants.yaml"
-
-# Monitoring interval in seconds (for processes that require periodic checks).
-monitor_interval: 10
-
-# Debug Feature
-# Activated only when 'limit_execution' is set. Limits the number of input samples processed
-# and builds the lookup table using at most 'limit_execution' vectors.
-limit_execution: 0
-
+# ➤ Logging and system paths
 log_path: ~/fantasia/logs/
+constants: ./fantasia/constants.yaml
+monitor_interval: 5             # Seconds between monitoring cycles.
+limit_execution: 100              # Limits number of entries used (debug/benchmark only).
+log_level: INFO                 # Options: DEBUG, INFO, WARNING, ERROR
 
-# ==========================
-# 🗄️ Database (PostgreSQL)
-# ==========================
+# ➤ Parallelism
+store_workers: 1                # Workers used in final post-processing steps. (1 Suggested WIP)
 
-# Credentials and configuration for connecting to the PostgreSQL database.
-DB_USERNAME: usuario         # Database username.
-DB_PASSWORD: clave           # Database password.
-DB_HOST: localhost           # Host where the database server is running.
-DB_PORT: 5432                # Port used for the database connection.
-DB_NAME: BioData             # Name of the database to use.
+# ============================================================
+# 🗄️ Database Configuration — PostgreSQL
+# ============================================================
+DB_USERNAME: usuario
+DB_PASSWORD: clave
+DB_HOST: localhost
+DB_PORT: 5432
+DB_NAME: BioData
 
+# ============================================================
+# 📬 Messaging Queue — RabbitMQ
+# ============================================================
+rabbitmq_host: localhost
+rabbitmq_port: 5672
+rabbitmq_user: guest
+rabbitmq_password: guest
 
-# ==========================
-# 📨 Message Queue (RabbitMQ)
-# ==========================
+# ============================================================
+# 📂 Experiment & Directory Setup
+# ============================================================
+experiment:
+  prefix: sample                            # Used to name output folders and files.
+  base_directory: ~/fantasia/experiments    # All experiment outputs go here.
+  output_path: null                         # Optional override for result saving path.
 
-# Configuration for the RabbitMQ message broker.
-rabbitmq_host: localhost     # RabbitMQ server hostname.
-rabbitmq_port: 5672         # RabbitMQ server port.
-rabbitmq_user: guest         # RabbitMQ username for authentication.
-rabbitmq_password: guest     # RabbitMQ password for authentication.
+# ============================================================
+# 📥 Input Configuration
+# ============================================================
+input:
+  embeddings_path: null     # If set, runs lookup mode on an existing .h5 file.
+  fasta_path: data/sample.fasta  # Input FASTA if generating embeddings.
 
+only_lookup: false           # Set true if skipping embedding generation.
+length_filter: 5000000       # Optional maximum sequence length.
 
-# ====================================================================
-# 🔄 Data Source Configuration
-# ====================================================================
-
-# This configuration file supports the initialization and execution of
-# the FANTASIA pipeline. Below are two options for selecting the
-# embeddings database used as a reference during the annotation step.
-#
-# ➤ DEFAULT (used if no override is provided):
-#   UniProt 2025 + GOA full  --dump only non-computational annotations.
-#   - File URL: https://zenodo.org/records/15261639/files/BioData_backup_2025_hq.tar?download=1
-#   - Zenodo page: https://zenodo.org/records/15261639/
-#
-# ➤ ALTERNATIVE (benchmark mode):
-#   GoPredSim 2022
-#   - File URL: https://zenodo.org/records/15095845/files/embeddings_fantasia_gopredsim_2022.dump?download=1
-#   - Zenodo page: https://zenodo.org/records/15095845
-#
-# You can override the default during initialization using:
-#   --embeddings_url <ZENODO_URL>
-# ====================================================================
-# URL to download the embeddings database dump.
-embeddings_url: "https://zenodo.org/records/15261639/files/BioData_backup_2025_hq.tar?download=1"
-
-
-# ==========================
-# 📂 Directory Configuration
-# ==========================
-
-base_directory: ~/fantasia/
-
-# ==========================
-# 🔬 Pipeline Configuration
-# ==========================
-
-# Path to the input file: FASTA for full pipeline or H5 for precomputed embeddings if only_lookup is True.
-input: data_sample/worm_test.fasta
-
-# Set to true to perform only the lookup from an embeddings file.
-only_lookup: False
-
-# Batch size for Embedding Distance calculation - [batch_size,length(lookup_table)]
-batch_size: 512
-
-# K-closest protein to consider for lookup
-limit_per_entry: 1
-
-# Prefix for output file names.
-prefix: worm_test_Prot_100_1.2
-
-# Threshold for sequence length filtering.
-length_filter: 5000000
-
-# Threshold for redundancy filtering.
-redundancy_filter: 0
-
-# A list of taxonomy IDs to exclude from the reference database, set it to empty if you don't want to exclude any IDs.
-taxonomy_ids_to_exclude: [] #6239 is C. elegans
-
-# A list of taxonomy IDs to included exclusively from the reference database, set it to empty if you want to include all IDs.
-taxonomy_ids_included_exclusively: []
-
-# Set to true if you want the filter to include the descendants of the previous taxonomy IDs.
-get_descendants: False
-
-# Number of sequences to package in each queue batch.
-sequence_queue_package: 512
-
-delete_queues: True
-
-# ==========================
-# 🧬 Embedding Configuration:
-# this config is for run a test using only ProtT5 using Euclidean distance at k=1. Modify paramenters accordingly.
-# ==========================
+# ============================================================
+# 🧬 Embedding Model Configuration
+# ============================================================
 embedding:
-  device: cuda  # 🔹 Options: "cpu", "cuda" (default GPU), or "cuda:N" (e.g., "cuda:0", "cuda:1", ...)
-  distance_metric: cosine  # 🔹 Options: [euclidean, cosine]
+  device: cuda
+  distance_metric: cosine  # Options: euclidean, cosine
 
   models:
-    # ----------------------
-    # 🧪 ESM Model
-    # ----------------------
     esm:
-      enabled: True
+      enabled: true
       distance_threshold: 3
       batch_size: 1
 
-    # ----------------------
-    # 🔬 ProSTT5 Model
-    # ----------------------
-    prost_t5:
-      enabled: True
-      distance_threshold: 3
-      batch_size: 1
-
-    # ----------------------
-    # 🧪 ProtT5 Model
-    # ----------------------
     prot_t5:
-      enabled: True
+      enabled: true
       distance_threshold: 3
       batch_size: 1
 
+    prost_t5:
+      enabled: true
+      distance_threshold: 3
+      batch_size: 1
 
-use_gpu: True
+# ============================================================
+# 🔍 Lookup & Redundancy Filtering
+# ============================================================
+filters:
+  redundancy_filter: 0.90                  # Identity threshold for MMseqs2
+  alignment_coverage: 0                   # Percent coverage for alignments (0 = no constraint)
+  taxonomy_ids_to_exclude: []             # e.g., [6239] to exclude C. elegans
+  taxonomy_ids_included_exclusively: []   # Include only these (conflicts with exclude if both used)
+  get_descendants: false                  # Expand taxonomy IDs hierarchically if true
 
-store_workers: 1
-# ==========================
-# 🧠 Functional Analysis
-# ==========================
+# ============================================================
+# ⚙️ Runtime Behavior
+# ============================================================
+runtime:
+  batch_size: 512                          # Size for batch distance calculation
+  limit_per_entry: 1                       # Max neighbors considered per embedding
+  sequence_queue_package: 512              # Size of batches when enqueueing sequences
+  delete_queues: true                      # If true, queues are cleared on startup
+  use_gpu: true                            # Whether to use CUDA-enabled operations for distance calculations
+  mmseqs_tempdir: true                     # Use /tmp for MMseqs2 temporary files
 
-# Enable or disable the use of TopGO formatting output for Gene Ontology enrichment analysis. Options: "True" or "False".
-topgo: True
+# ============================================================
+# 📊 Functional Annotation Output
+# ============================================================
+output:
+  topgo: true                              # Generate TopGO-compatible .tsv
+  save_raw_results: true                   # Save detailed annotation logs (pre-collapsing)
+
+# ============================================================
+# 💾 Reference Embeddings Dataset (Zenodo)
+# ============================================================
+embeddings_url: "https://zenodo.org/records/15261639/files/BioData_backup_2025_hq.tar?download=1"

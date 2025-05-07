@@ -103,6 +103,8 @@ The 'run' command executes the main pipeline, which includes:
   • Storing embeddings in h5 file as input for similarity search through vectorial DB.
   • Running functional annotation lookups based on the embeddings.
 
+CAUTION: Batch size for embeddings > 1 generate strange results due to Padding mechanism on models. Use 1
+
 By default, the configuration is loaded from './fantasia/config.yaml'.
 Supported models include ProtT5, ProstT5, and ESM2.
             """
@@ -128,6 +130,10 @@ Supported models include ProtT5, ProstT5, and ESM2.
                             help="Comma-separated model:threshold pairs. Example: 'esm:0.4,prot:0.6'.")
     run_parser.add_argument("--batch_size", type=str,
                             help="Comma-separated model:batch_size pairs. Example: 'esm:32,prot:64'.")
+    run_parser.add_argument(
+        "--batch_size_lookup", type=int,
+        help="Batch size used for the GO annotation lookup stage. Overrides runtime.batch_size in config."
+    )
     run_parser.add_argument("--sequence_queue_package", type=int, help="Number of sequences to queue per batch.")
     run_parser.add_argument("--limit_per_entry", type=int,
                             help="Limit the number of retrieved reference entries per query.")
@@ -138,18 +144,28 @@ Supported models include ProtT5, ProstT5, and ESM2.
         "Example usage:\n"
         "  python fantasia/main.py run \\\n"
         "     --config ./fantasia/config.yaml \\\n"
-        "     --input ./data_sample/worm_test.fasta \\\n"
+        "     --input ./data/worm_test.fasta \\\n"
         "     --prefix test_run \\\n"
-        "     --length_filter 300 \\\n"
+        "     --length_filter 9999999 \\\n"
         "     --redundancy_filter 0.8 \\\n"
-        "     --max_workers 1 \\\n"
-        "     --models esm,prot \\\n"
-        "     --distance_threshold esm:0.4,prot:0.6 \\\n"
-        "     --batch_size esm:32,prot:64 \\\n"
-        "     --sequence_queue_package 100 \\\n"
+        "     --models esm,prot_t5 \\\n"
+        "     --distance_threshold esm:3,prot_t5:3 \\\n"
+        "     --batch_size esm:1,prot_t5:1 \\\n"
+        "     --batch_size_lookup 256 \\\n"
+        "     --sequence_queue_package 128 \\\n"
         "     --limit_per_entry 5 \\\n"
         "     --device cuda \\\n"
-        "     --log_path ~/fantasia/fantasia.log"
+        "     --log_path ~/fantasia/logs\n\n"
+        "Parameter summary:\n"
+        "  --models               Comma-separated list of models to use. E.g., esm,prot_t5\n"
+        "  --batch_size           Per-model batch size for embedding generation. Format: model:size\n"
+        "  --batch_size_lookup    Batch size for functional annotation lookup (runtime.batch_size override)\n"
+        "  --distance_threshold   Per-model distance threshold for neighbor filtering. Format: model:threshold\n"
+        "  --redundancy_filter    Identity threshold to exclude redundant hits (0.0 to 1.0)\n"
+        "  --limit_per_entry      Maximum number of GO terms transferred per query sequence\n"
+        "  --sequence_queue_package Number of sequences to enqueue at a time\n"
+        "  --device               Device for model execution: cuda or cpu\n"
+        "  --log_path             Path to the log output directory or file"
     )
 
     return parser

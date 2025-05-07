@@ -90,27 +90,26 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         self.current_date = current_date
         self.reference_attribute = "sequence_embedder_from_fasta"
 
-        # Debug mode
         self.limit_execution = conf.get("limit_execution")
 
-        # Internal storage
         self.model_instances = {}
         self.tokenizer_instances = {}
         self.types = {}
         self.results = []
 
-        # Load models and configurations
         self.base_module_path = "protein_metamorphisms_is.operation.embedding.proccess.sequence"
         self.fetch_models_info()
 
-        # Input and output paths
-        self.fasta_path = conf.get("input")  # Actual input FASTA
-        self.experiment_path = conf.get("experiment_path")
+        # Config paths
+        self.fasta_path = conf["input"]["fasta_path"]
+        self.experiment_path = conf["experiment_path"]
 
-        # Optional batch and filtering settings
-        self.batch_sizes = conf.get("embedding", {}).get("batch_size", {})
-        self.sequence_queue_package = conf.get("sequence_queue_package")
-        self.length_filter = conf.get("length_filter")
+        # Optional config
+        self.batch_sizes = {
+            k: v.get("batch_size") for k, v in conf["embedding"]["models"].items()
+        }
+        self.sequence_queue_package = conf["runtime"].get("sequence_queue_package", 512)
+        self.length_filter = conf["input"].get("length_filter")
 
     def fetch_models_info(self):
         """
@@ -220,7 +219,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 self.logger.warning("No sequences found. Finishing embedding enqueue process.")
                 return
 
-            for model_id in self.conf["embedding"]["types"]:
+            for model_id in self.types.keys():
                 model_info = self.types.get(model_id)
                 if model_info is None:
                     self.logger.warning(f"Model '{model_id}' not found in loaded types. Skipping.")

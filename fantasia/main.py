@@ -1,4 +1,3 @@
-
 import os
 import sys
 import urllib
@@ -43,27 +42,29 @@ def run_pipeline(conf):
         logger.info("Configuration loaded:")
         logger.debug(conf)
 
-        if conf["only_lookup"]:
-            conf["embeddings_path"] = conf["input"]
+        embeddings_path = os.path.join(
+            os.path.expanduser(conf["experiment"]["base_directory"]),
+            f"{conf['experiment']['prefix']}_{current_date}",
+            "embeddings.h5"
+        )
+
+        if conf.get("only_lookup", False) and embeddings_path:
+            conf["embeddings_path"] = embeddings_path
         else:
             embedder = SequenceEmbedder(conf, current_date)
             logger.info("Running embedding step to generate embeddings.h5...")
             embedder.start()
 
-            conf["embeddings_path"] = os.path.join(conf["experiment_path"], "embeddings.h5")
+            if not os.path.exists(embeddings_path):
+                raise FileNotFoundError(f"Expected embeddings file not found at {embeddings_path}")
 
+            conf["embeddings_path"] = os.path.join(conf["experiment_path"], "embeddings.h5")
             if not os.path.exists(conf["embeddings_path"]):
-                logger.error(
-                    f"❌ The embedding file was not created: {conf['embeddings_path']}\n"
-                    f"💡 Please ensure the embedding step ran correctly. "
-                    f"You can try re-running with 'only_lookup: true' and 'input: <path_to_h5>'."
-                )
-                raise FileNotFoundError(
-                    f"Missing HDF5 file after embedding step: {conf['embeddings_path']}"
-                )
+                raise FileNotFoundError(f"Missing HDF5 file after embedding step: {conf['embeddings_path']}")
 
         lookup = EmbeddingLookUp(conf, current_date)
         lookup.start()
+
     except Exception:
         logger.error("Pipeline execution failed.", exc_info=True)
         sys.exit(1)
@@ -71,15 +72,18 @@ def run_pipeline(conf):
 
 def setup_experiment_directories(conf, timestamp):
     logger = logging.getLogger("fantasia")
-    base_directory = os.path.expanduser(conf.get("base_directory", "~/fantasia/"))
-    experiments_dir = os.path.join(base_directory, "experiments")
+
+    base_dir = os.path.expanduser(conf["experiment"]["base_directory"])
+    experiments_dir = base_dir
     os.makedirs(experiments_dir, exist_ok=True)
 
-    experiment_name = f"{conf.get('prefix', 'experiment')}_{timestamp}"
+    prefix = conf["experiment"].get("prefix", "experiment")
+    experiment_name = f"{prefix}_{timestamp}"
     experiment_path = os.path.join(experiments_dir, experiment_name)
     os.makedirs(experiment_path, exist_ok=True)
 
-    conf['experiment_path'] = experiment_path
+    conf["experiment_path"] = experiment_path
+    conf["output_path"] = conf["experiment"].get("output_path", experiment_path)
 
     yaml_path = os.path.join(experiment_path, "experiment_config.yaml")
     with open(yaml_path, "w") as yaml_file:
@@ -91,43 +95,62 @@ def setup_experiment_directories(conf, timestamp):
 
 def load_and_merge_config(args, unknown_args):
     """
-    Loads the base configuration from YAML and applies any overrides provided via CLI arguments.
+    Load the base configuration from a YAML file and apply overrides provided
+    through explicit CLI arguments or additional unknown parameters.
 
-    This function ensures that any parameters passed through standard arguments or unknown
-    arguments (parsed as key-value pairs) override those defined in the configuration file.
-
-    Additionally, it restores legacy support for systems that rely on the presence of the
-    `embedding.types` field, which lists all embedding model identifiers enabled for the run.
-
-    Parameters
-    ----------
-    args : Namespace
-        Parsed known arguments from argparse.
-    unknown_args : list of str
-        List of unknown CLI arguments in the format --key value.
+    This method ensures proper integration between configuration layers, giving
+    priority to CLI arguments while preserving default and runtime behaviors.
 
     Returns
     -------
     dict
-        A merged and final configuration dictionary.
+        Merged configuration dictionary ready for pipeline execution.
     """
     conf = read_yaml_config(args.config)
 
+    # 1. Apply known CLI arguments (e.g., --fasta_path, --device)
     for key, value in vars(args).items():
         if value is not None and key not in ["command", "config"]:
             conf[key] = value
 
+    # 2. Apply unknown CLI overrides (e.g., --batch_size esm:16,prot_t5:8)
     unknown_args_dict = parse_unknown_args(unknown_args)
-    for key, value in unknown_args_dict.items():
-        if value is not None:
-            conf[key] = value
+    conf.update(unknown_args_dict)
 
-    # ✅ Legacy compatibility: populate embedding.types with enabled model names
-    # This list is used by some components (e.g., GPU task schedulers)
-    conf.setdefault("embedding", {})
+    # 3. Parse CLI-specified models and disable others explicitly
+    if "models" in conf and isinstance(conf["models"], str):
+        selected_models = [m.strip() for m in conf["models"].split(",")]
+        conf.setdefault("embedding", {})
+        conf["embedding"].setdefault("models", {})
+        for model in conf["embedding"]["models"]:
+            conf["embedding"]["models"][model]["enabled"] = model in selected_models
+
+    # 4. Apply per-model batch size if provided (e.g., --batch_size esm:32,prot_t5:8)
+    if "batch_size" in conf and isinstance(conf["batch_size"], str):
+        for pair in conf["batch_size"].split(","):
+            model, size = pair.split(":")
+            conf["embedding"]["models"].setdefault(model, {})
+            conf["embedding"]["models"][model]["batch_size"] = int(size)
+        del conf["batch_size"]
+    else:
+        # Use runtime.batch_size as fallback for models without batch_size
+        runtime_default = conf.get("runtime", {}).get("batch_size")
+        if runtime_default is not None:
+            for model in conf.get("embedding", {}).get("models", {}):
+                conf["embedding"]["models"][model].setdefault("batch_size", runtime_default)
+
+    # 5. Apply per-model distance thresholds (e.g., --distance_threshold esm:3.0)
+    if "distance_threshold" in conf and isinstance(conf["distance_threshold"], str):
+        for pair in conf["distance_threshold"].split(","):
+            model, threshold = pair.split(":")
+            conf["embedding"]["models"].setdefault(model, {})
+            conf["embedding"]["models"][model]["distance_threshold"] = float(threshold)
+        del conf["distance_threshold"]
+
+    # 6. Set list of enabled model types for processing
     conf["embedding"]["types"] = [
-        model for model, settings in conf["embedding"].get("models", {}).items()
-        if settings.get("enabled", False)
+        model for model, cfg in conf["embedding"]["models"].items()
+        if cfg.get("enabled", False)
     ]
 
     return conf
