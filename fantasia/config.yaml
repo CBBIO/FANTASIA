@@ -34,7 +34,7 @@ rabbitmq_password: guest
 # ============================================================
 experiment:
   prefix: sample                            # Used to name output folders and files.
-  base_directory: ~/fantasia/experiments    # All experiment outputs go here.
+  base_directory: ~/fantasia/    # All experiment outputs go here.
   output_path: null                         # Optional override for result saving path.
 
 # ============================================================

@@ -19,7 +19,7 @@ from fantasia.src.helpers.parser import build_parser
 
 def initialize(conf):
     logger = logging.getLogger("fantasia")
-    embeddings_dir = os.path.join(os.path.expanduser(conf["base_directory"]), "embeddings")
+    embeddings_dir = os.path.join(os.path.expanduser(conf["experiment"]["base_directory"]), "embeddings")
     os.makedirs(embeddings_dir, exist_ok=True)
 
     # Nuevo: obtener nombre del archivo desde la URL
@@ -42,15 +42,13 @@ def run_pipeline(conf):
         logger.info("Configuration loaded:")
         logger.debug(conf)
 
-        embeddings_path = os.path.join(
-            os.path.expanduser(conf["experiment"]["base_directory"]),
-            f"{conf['experiment']['prefix']}_{current_date}",
-            "embeddings.h5"
-        )
+        # Ruta del archivo de embeddings generados por el embedder
+        embeddings_path = os.path.join(conf["experiment_path"], "embeddings.h5")
 
-        if conf.get("only_lookup", False) and embeddings_path:
+        if conf.get("only_lookup", False) and os.path.exists(embeddings_path):
             conf["embeddings_path"] = embeddings_path
         else:
+            # Ejecuta el módulo de embeddings y espera al archivo de salida
             embedder = SequenceEmbedder(conf, current_date)
             logger.info("Running embedding step to generate embeddings.h5...")
             embedder.start()
@@ -58,16 +56,16 @@ def run_pipeline(conf):
             if not os.path.exists(embeddings_path):
                 raise FileNotFoundError(f"Expected embeddings file not found at {embeddings_path}")
 
-            conf["embeddings_path"] = os.path.join(conf["experiment_path"], "embeddings.h5")
-            if not os.path.exists(conf["embeddings_path"]):
-                raise FileNotFoundError(f"Missing HDF5 file after embedding step: {conf['embeddings_path']}")
+            conf["embeddings_path"] = embeddings_path
 
+        # Ejecuta la búsqueda de anotaciones funcionales basadas en embeddings
         lookup = EmbeddingLookUp(conf, current_date)
         lookup.start()
 
     except Exception:
         logger.error("Pipeline execution failed.", exc_info=True)
         sys.exit(1)
+
 
 
 def setup_experiment_directories(conf, timestamp):
@@ -152,6 +150,11 @@ def load_and_merge_config(args, unknown_args):
         model for model, cfg in conf["embedding"]["models"].items()
         if cfg.get("enabled", False)
     ]
+
+    # Map CLI-level `prefix` to nested `experiment.prefix` if needed
+    if "prefix" in conf:
+        conf.setdefault("experiment", {})
+        conf["experiment"]["prefix"] = conf.pop("prefix")
 
     return conf
 
