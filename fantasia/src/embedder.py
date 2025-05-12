@@ -235,7 +235,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                     task_batch = [
                         {
                             "sequence": str(seq_record.seq),
-                            "accession": seq_record.id,
+                            "accession": seq_record.id.replace("|", "_"),
                             "model_name": model_info["model_name"],
                             "embedding_type_id": model_id
                         }

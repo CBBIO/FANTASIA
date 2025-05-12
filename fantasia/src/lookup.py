@@ -27,6 +27,8 @@ with downstream enrichment analysis tools.
 
 import importlib
 import os
+import time
+from concurrent.futures import ProcessPoolExecutor
 
 from protein_metamorphisms_is.tasks.base import BaseTaskInitializer
 
@@ -123,10 +125,8 @@ class EmbeddingLookUp(BaseTaskInitializer):
         self.logger.info("Initializing EmbeddingLookUp...")
 
         # Paths
-        self.experiment_path = os.path.join(
-            os.path.expanduser(self.conf["experiment"]["base_directory"]),
-            f"{self.conf['experiment']['prefix']}_{current_date}"
-        )
+        self.experiment_path = self.conf["experiment_path"]
+
         if self.conf["input"].get("embeddings_path"):
             self.embeddings_path = self.conf["input"]["embeddings_path"]
         else:
@@ -143,7 +143,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
         self.fetch_models_info()
 
         # Optional redundancy filtering
-        redundancy_filter_threshold = self.conf["runtime"].get("redundancy_filter", 0)
+        redundancy_filter_threshold = self.conf["filters"].get("redundancy_filter", 0)
         if redundancy_filter_threshold > 0:
             self.generate_clusters()
 
@@ -413,7 +413,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
         threshold = task["distance_threshold"]
         use_gpu = self.conf["runtime"].get("use_gpu", True)
         limit = self.conf["runtime"].get("limit_per_entry", 1000)
-        redundancy = self.conf.get("redundancy_filter", 0)
+        redundancy = self.conf["filters"].get("redundancy_filter", 0)
 
         # --- Paso 2: Lookup table ---
         lookup = self.lookup_tables.get(model_id)
@@ -469,13 +469,9 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
             # Aplicar filtro de redundancia si es necesario
             if redundancy > 0 and accession in redundant_ids:
-                mask = np.array([
-                    not any(
-                        pid in redundant_ids[accession]
-                        for pid in self.sequence_to_protein.get(sid, set())
-                    )
-                    for sid in seq_ids
-                ])
+                redundant_set = set(map(str, redundant_ids[accession]))
+                seq_ids_str = seq_ids.astype(str)
+                mask = ~np.isin(seq_ids_str, list(redundant_set))
                 distances = distances[mask]
                 seq_ids = seq_ids[mask]
 
@@ -562,25 +558,8 @@ class EmbeddingLookUp(BaseTaskInitializer):
         """
         Generates non-redundant sequence clusters using MMseqs2.
 
-        This method creates a temporary FASTA file combining sequences from:
-        - Proteins in the database
-        - Query embeddings from the HDF5 file
-
-        Then, it runs MMseqs2 to cluster these sequences based on the configured identity
-        and coverage thresholds. The resulting clusters are stored in memory in two mappings:
-        - `self.clusters_by_id`: maps each sequence ID to its cluster.
-        - `self.clusters_by_cluster`: maps each cluster to the set of sequence IDs it contains.
-
-        Configuration requirements
-        --------------------------
-        - `redundancy_filter`: float (e.g., 0.9)
-        - `alignment_coverage`: int
-        - `threads`: int
-
-        Raises
-        ------
-        Exception
-            If MMseqs2 execution fails or required files cannot be created.
+        This method replaces the CD-HIT clustering with MMseqs2, using only the
+        sequence IDs from the database and the HDF5 file as identifiers.
         """
         import tempfile
         import subprocess
@@ -588,7 +567,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
         try:
             identity = self.conf["filters"].get("redundancy_filter", 0)
             coverage = self.conf["filters"].get("alignment_coverage", 0)
-            threads = self.conf["runtime"].get("threads", 12)
+            threads = self.conf.get("threads", 12)
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 fasta_path = os.path.join(tmpdir, "redundancy.fasta")
@@ -597,44 +576,42 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 tmp_path = os.path.join(tmpdir, "mmseqs_tmp")
                 tsv_path = os.path.join(tmpdir, "clusters.tsv")
 
-                self.logger.info("🔬 Generating input FASTA file for MMseqs2 clustering...")
+                self.logger.info("📄 Generating FASTA for MMseqs2 clustering...")
                 with open(fasta_path, "w") as fasta:
+                    # DB sequences
                     with self.engine.connect() as conn:
-                        rows = conn.execute(text("SELECT id, sequence_id FROM protein")).fetchall()
-                        for row in rows:
-                            seq = conn.execute(
-                                text("SELECT sequence FROM sequence WHERE id = :sid"),
-                                {"sid": row.sequence_id}
-                            ).scalar()
-                            if seq:
-                                fasta.write(f">{row.id}\n{seq}\n")
-
+                        seqs = conn.execute(text("SELECT id, sequence FROM sequence")).fetchall()
+                        for seq_id, seq in seqs:
+                            fasta.write(f">{seq_id}\n{seq}\n")
+                    # HDF5 sequences
                     with h5py.File(self.embeddings_path, "r") as h5file:
                         for accession, group in h5file.items():
                             if "sequence" in group:
-                                seq = group["sequence"][()].decode("utf-8")
-                                fasta.write(f">{accession.removeprefix('accession_')}\n{seq}\n")
+                                sequence = group["sequence"][()].decode("utf-8")
+                                clean_id = accession.removeprefix("accession_")
+                                fasta.write(f">{clean_id}\n{sequence}\n")
 
-                self.logger.info(f"🚀 Running MMseqs2 (identity={identity}, coverage={coverage}, threads={threads})...")
+                self.logger.info(f"⚙️ Running MMseqs2 (id={identity}, cov={coverage}, threads={threads})...")
                 subprocess.run(["mmseqs", "createdb", fasta_path, db_path], check=True)
                 subprocess.run([
-                    "mmseqs", "linclust", db_path, clu_path, tmp_path,
+                    "mmseqs", "cluster", db_path, clu_path, tmp_path,
                     "--min-seq-id", str(identity),
                     "--cov-mode", "1", "-c", str(coverage),
                     "--threads", str(threads)
                 ], check=True)
                 subprocess.run(["mmseqs", "createtsv", db_path, db_path, clu_path, tsv_path], check=True)
 
-                # Read the TSV and build cluster maps
+                # Cargar resultados
                 import pandas as pd
                 df = pd.read_csv(tsv_path, sep="\t", names=["cluster", "identifier"])
+                self.clusters = df
                 self.clusters_by_id = df.set_index("identifier")
                 self.clusters_by_cluster = df.groupby("cluster")["identifier"].apply(set).to_dict()
 
-                self.logger.info(f"✅ Loaded {len(self.clusters_by_cluster)} clusters from MMseqs2.")
+                self.logger.info(f"✅ {len(self.clusters_by_cluster)} clusters loaded from MMseqs2.")
 
         except Exception as e:
-            self.logger.error(f"❌ Error while generating MMseqs2 clusters: {e}")
+            self.logger.error(f"❌ Error running MMseqs2 clustering: {e}")
             raise
 
     def retrieve_cluster_members(self, accession: str) -> set:
@@ -667,7 +644,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
         try:
             cluster_id = self.clusters_by_id.loc[accession, "cluster"]
             members = self.clusters_by_cluster.get(cluster_id, set())
-            return {m for m in members}
+            return {m for m in members if m.isdigit()}
         except KeyError:
             self.logger.warning(f"Accession '{accession}' not found in clusters.")
             return set()
@@ -684,7 +661,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
             self.logger.info("🔄 Starting lookup table construction: loading embeddings into memory per model...")
 
             self.lookup_tables = {}
-            limit_execution = 100
+            limit_execution = self.conf["runtime"].get("limit_execution", 0)
             get_descendants = self.conf["runtime"].get("get_descendants", False)
 
             exclude_taxon_ids = self.conf.get("filters", {}).get("taxonomy_ids_to_exclude", [])
@@ -800,3 +777,123 @@ class EmbeddingLookUp(BaseTaskInitializer):
         Exception
             If errors occur during alignment computation or file writing.
         """
+        if not os.path.exists(self.raw_results_path):
+            self.logger.warning("No raw results found for post-processing.")
+            return
+
+        self.logger.info("🔍 Starting post-processing of raw GO annotations.")
+        start_total = time.perf_counter()
+
+        df = pd.read_csv(self.raw_results_path)
+
+        start_reliability = time.perf_counter()
+        if self.distance_metric == "cosine":
+            df["reliability_index"] = 1 - df["distance"]
+        elif self.distance_metric == "euclidean":
+            df["reliability_index"] = 0.5 / (0.5 + df["distance"])
+        end_reliability = time.perf_counter()
+
+        start_alignment = time.perf_counter()
+        unique_pairs = df[["sequence_query", "sequence_reference"]].drop_duplicates()
+        with ProcessPoolExecutor(max_workers=self.conf.get("store_workers", 1)) as executor:
+            metrics_list = list(executor.map(compute_metrics, unique_pairs.to_dict("records")))
+        metrics_df = pd.DataFrame(metrics_list)
+        df = df.merge(metrics_df, on=["sequence_query", "sequence_reference"], how="left")
+        end_alignment = time.perf_counter()
+
+        df = df.drop(columns=["sequence_query", "sequence_reference"], errors="ignore")
+
+        def is_ancestor(go_dag, parent, child):
+            return child in go_dag and parent in go_dag[child].get_all_parents()
+
+        df["support_count"] = df.groupby(["accession", "model_name", "go_id"])["go_id"].transform("count")
+
+        rows = []
+        for (_, _), group in df.groupby(["accession", "model_name"]):
+            all_go_ids = group["go_id"].unique().tolist()
+            support_map = group.drop_duplicates(subset=["go_id"])[["go_id", "support_count"]].set_index("go_id")[
+                "support_count"].to_dict()
+
+            leaf_terms = []
+            collapsed_terms = {}
+
+            for go_id in all_go_ids:
+                is_leaf = not any(
+                    go_id != other and is_ancestor(self.go, go_id, other)
+                    for other in all_go_ids
+                )
+                if is_leaf:
+                    leaf_terms.append(go_id)
+                else:
+                    for lt in all_go_ids:
+                        if go_id != lt and is_ancestor(self.go, go_id, lt):
+                            collapsed_terms.setdefault(lt, {"collapsed_support": 0, "terms": set()})
+                            collapsed_terms[lt]["collapsed_support"] += support_map.get(go_id, 1)
+                            collapsed_terms[lt]["terms"].add(go_id)
+
+            for go_id in leaf_terms:
+                subset = group[group["go_id"] == go_id].copy()
+                info = collapsed_terms.get(go_id, {})
+                subset["collapsed_support"] = info.get("collapsed_support", 0)
+                subset["n_collapsed_terms"] = len(info.get("terms", []))
+                subset["collapsed_terms"] = ", ".join(sorted(info.get("terms", []))) if info.get("terms") else ""
+                rows.extend(subset.to_dict("records"))
+
+        df = pd.DataFrame(rows)
+
+        df = df.sort_values(by=["accession", "go_id", "model_name", "reliability_index"],
+                            ascending=[True, True, True, False])
+
+        # Redondear columnas numéricas para mejor presentación
+        columns_to_round = ["distance", "identity", "similarity", "alignment_score", "gaps_percentage",
+                            "reliability_index"]
+        for col in columns_to_round:
+            if col in df.columns:
+                df[col] = df[col].apply(lambda x: round(x, 4))
+
+        def extract_gene_name(g):
+            try:
+                val = eval(g)
+                if (
+                        isinstance(g, str)
+                        and g.startswith("[{")
+                        and isinstance(val, list)
+                        and len(val) > 0
+                        and "Name" in val[0]
+                ):
+                    return val[0]["Name"]
+            except Exception:
+                return None
+            return None
+
+        if "gene_name" in df.columns:
+            df["gene_name"] = df["gene_name"].apply(extract_gene_name)
+
+        write_mode = "a" if os.path.exists(self.results_path) else "w"
+        df.to_csv(self.results_path, mode=write_mode, index=False, header=(write_mode == "w"))
+
+        if self.topgo_enabled:
+            df_topgo = (
+                df.groupby("accession")["go_id"]
+                .apply(lambda x: ", ".join(x))
+                .reset_index()
+            )
+            with open(self.topgo_path, "a") as f:
+                df_topgo.to_csv(f, sep="\t", index=False, header=False)
+
+        end_total = time.perf_counter()
+        total_alignment_time = metrics_df["alignment_time"].sum() if "alignment_time" in metrics_df else None
+
+        if total_alignment_time is not None:
+            self.logger.info(
+                f"✅ Post-processing finished: total={end_total - start_total:.2f}s | "
+                f"reliability={end_reliability - start_reliability:.2f}s | "
+                f"alignment={end_alignment - start_alignment:.2f}s | "
+                f"alignment_total_time={total_alignment_time:.2f}s"
+            )
+        else:
+            self.logger.info(
+                f"✅ Post-processing finished: total={end_total - start_total:.2f}s | "
+                f"reliability={end_reliability - start_reliability:.2f}s | "
+                f"alignment={end_alignment - start_alignment:.2f}s"
+            )

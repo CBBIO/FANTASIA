@@ -71,8 +71,8 @@ def run_pipeline(conf):
 def setup_experiment_directories(conf, timestamp):
     logger = logging.getLogger("fantasia")
 
-    base_dir = os.path.expanduser(conf["experiment"]["base_directory"])
-    experiments_dir = base_dir
+    base_dir = os.path.expanduser(conf["base_directory"])
+    experiments_dir = os.path.join(base_dir, "experiments")
     os.makedirs(experiments_dir, exist_ok=True)
 
     prefix = conf["experiment"].get("prefix", "experiment")
@@ -89,6 +89,7 @@ def setup_experiment_directories(conf, timestamp):
 
     logger.info(f"Experiment configuration saved at: {yaml_path}")
     return conf
+
 
 
 def load_and_merge_config(args, unknown_args):

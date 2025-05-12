@@ -3,10 +3,10 @@
 # ============================================================
 
 # ➤ Logging and system paths
-log_path: ~/fantasia/logs/
+base_directory: ~/fantasia/
 constants: ./fantasia/constants.yaml
 monitor_interval: 5             # Seconds between monitoring cycles.
-limit_execution: 100              # Limits number of entries used (debug/benchmark only).
+
 log_level: INFO                 # Options: DEBUG, INFO, WARNING, ERROR
 
 # ➤ Parallelism
@@ -33,16 +33,14 @@ rabbitmq_password: guest
 # 📂 Experiment & Directory Setup
 # ============================================================
 experiment:
-  prefix: sample                            # Used to name output folders and files.
-  base_directory: ~/fantasia/    # All experiment outputs go here.
-  output_path: null                         # Optional override for result saving path.
+  prefix: 50_random_mouse.nr95                            # Used to name output folders and files.
 
 # ============================================================
 # 📥 Input Configuration
 # ============================================================
 input:
-  embeddings_path: null     # If set, runs lookup mode on an existing .h5 file.
-  fasta_path: data/sample.fasta  # Input FASTA if generating embeddings.
+  embeddings_path: null     # If set, runs lookup mode on an existing .h5 file, ignoring embedding generation phase.
+  fasta_path: data/50_random_mouse.fasta  # Input FASTA if generating embeddings.
 
 only_lookup: false           # Set true if skipping embedding generation.
 length_filter: 5000000       # Optional maximum sequence length.
@@ -61,12 +59,12 @@ embedding:
       batch_size: 1
 
     prot_t5:
-      enabled: true
+      enabled: false
       distance_threshold: 3
       batch_size: 1
 
     prost_t5:
-      enabled: true
+      enabled: false
       distance_threshold: 3
       batch_size: 1
 
@@ -74,8 +72,8 @@ embedding:
 # 🔍 Lookup & Redundancy Filtering
 # ============================================================
 filters:
-  redundancy_filter: 0.90                  # Identity threshold for MMseqs2
-  alignment_coverage: 0                   # Percent coverage for alignments (0 = no constraint)
+  redundancy_filter: 0.80                  # Identity threshold for MMseqs2
+  alignment_coverage: 0.80                   # Percent coverage for alignments (0 = no constraint)
   taxonomy_ids_to_exclude: []             # e.g., [6239] to exclude C. elegans
   taxonomy_ids_included_exclusively: []   # Include only these (conflicts with exclude if both used)
   get_descendants: false                  # Expand taxonomy IDs hierarchically if true
@@ -89,7 +87,8 @@ runtime:
   sequence_queue_package: 512              # Size of batches when enqueueing sequences
   delete_queues: true                      # If true, queues are cleared on startup
   use_gpu: true                            # Whether to use CUDA-enabled operations for distance calculations
-  mmseqs_tempdir: true                     # Use /tmp for MMseqs2 temporary files
+  limit_execution: 0                       # Limits number of entries used (debug/benchmark only).
+  mmseqs_tempdir: false                     # Use /tmp for MMseqs2 temporary files
 
 # ============================================================
 # 📊 Functional Annotation Output
