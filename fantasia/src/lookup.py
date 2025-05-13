@@ -36,14 +36,12 @@ import numpy as np
 import pandas as pd
 from goatools.base import get_godag
 from protein_metamorphisms_is.sql.model.entities.sequence.sequence import Sequence
-from pycdhit import cd_hit, read_clstr
 
 from sqlalchemy import text
 import h5py
 from protein_metamorphisms_is.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType, \
     SequenceEmbedding
 from protein_metamorphisms_is.sql.model.entities.protein.protein import Protein
-from protein_metamorphisms_is.helpers.clustering.cdhit import calculate_cdhit_word_length
 
 from fantasia.src.helpers.helpers import run_needle_from_strings, get_descendant_ids
 
