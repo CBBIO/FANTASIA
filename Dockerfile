@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     postgresql-client-16 \
     postgresql-contrib \
     emboss \
+    mmseqs2 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set up a virtual environment for Python
