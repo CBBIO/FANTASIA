@@ -77,7 +77,7 @@ base_directory: ~/fantasia/
 # ==========================
 
 # Path to the input file: FASTA for full pipeline or H5 for precomputed embeddings if only_lookup is True.
-input: data_sample/worm_test.fasta
+input: data_sample/sample.fasta
 
 # Set to true to perform only the lookup from an embeddings file.
 only_lookup: False
@@ -89,13 +89,14 @@ batch_size: 512
 limit_per_entry: 1
 
 # Prefix for output file names.
-prefix: worm_test_Prot_100_1.2
+prefix: sample
 
 # Threshold for sequence length filtering.
 length_filter: 5000000
 
 # Threshold for redundancy filtering.
 redundancy_filter: 0
+alignment_coverage: 0
 
 # A list of taxonomy IDs to exclude from the reference database, set it to empty if you don't want to exclude any IDs.
 taxonomy_ids_to_exclude: [] #6239 is C. elegans

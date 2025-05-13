@@ -165,7 +165,7 @@ def main():
             raise ValueError(
                 "At least one embedding model must be enabled in the configuration under 'embedding.models'.")
 
-        if args.redundancy_filter is not None and not (0 < args.redundancy_filter <= 1):
+        if not (0 <= args.redundancy_filter <= 1):
             raise ValueError("redundancy_filter must be a decimal between 0 and 1 (e.g., 0.95 for 95%)")
 
         run_pipeline(conf)

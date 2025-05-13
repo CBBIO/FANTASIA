@@ -361,7 +361,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
 
             with h5py.File(output_h5, "a") as h5file:
                 for record in results:
-                    accession = record["accession"]
+                    accession = record["accession"].replace("|", "_")
                     embedding_type_id = record["embedding_type_id"]
 
                     accession_group = h5file.require_group(f"accession_{accession}")

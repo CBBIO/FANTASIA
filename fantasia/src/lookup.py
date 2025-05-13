@@ -485,85 +485,90 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
     def generate_clusters(self):
         """
-        Generates non-redundant sequence clusters using CD-HIT.
+        Generates non-redundant sequence clusters using MMseqs2.
 
-        This method builds a FASTA reference file by combining sequences from the database
-        and the HDF5 embedding file. It then runs CD-HIT to cluster sequences based on identity
-        and coverage thresholds. The resulting clusters are loaded into memory for redundancy filtering.
-
-        Raises
-        ------
-        Exception
-            If any error occurs during FASTA creation, CD-HIT execution, or cluster parsing.
+        This method replaces the CD-HIT clustering with MMseqs2, using only the
+        sequence IDs from the database and the HDF5 file as identifiers.
         """
+        import tempfile
+        import subprocess
+
         try:
-            input_h5_path = os.path.join(self.conf["experiment_path"], "embeddings.h5")
-            self.reference_fasta = os.path.join(self.experiment_path, "redundancy.fasta")
-            filtered_fasta = os.path.join(self.experiment_path, "filtered.fasta")
+            identity = self.conf.get("redundancy_filter", 0)
+            coverage = self.conf.get("alignment_coverage", 0)
+            threads = self.conf.get("threads", 12)
 
-            # Step 1: Build combined reference FASTA file
-            self.logger.info("Generating reference FASTA file from DB and HDF5...")
-            with open(self.reference_fasta, "w") as ref_file:
-                # Add sequences from the SQL database
-                with self.engine.connect() as connection:
-                    query = text("SELECT id, sequence FROM sequence")
-                    for row in connection.execute(query):
-                        ref_file.write(f">{row.id}\n{row.sequence}\n")
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fasta_path = os.path.join(tmpdir, "redundancy.fasta")
+                db_path = os.path.join(tmpdir, "seqDB")
+                clu_path = os.path.join(tmpdir, "mmseqs_clu")
+                tmp_path = os.path.join(tmpdir, "mmseqs_tmp")
+                tsv_path = os.path.join(tmpdir, "clusters.tsv")
 
-                # Add sequences from the HDF5 file
-                with h5py.File(input_h5_path, "r") as h5file:
-                    for accession, group in h5file.items():
-                        if "sequence" in group:
-                            sequence = group["sequence"][()].decode("utf-8")
-                            clean_id = accession.removeprefix("accession_")
-                            ref_file.write(f">{clean_id}\n{sequence}\n")
+                self.logger.info("📄 Generating FASTA for MMseqs2 clustering...")
+                with open(fasta_path, "w") as fasta:
+                    # DB sequences
+                    with self.engine.connect() as conn:
+                        seqs = conn.execute(text("SELECT id, sequence FROM sequence")).fetchall()
+                        for seq_id, seq in seqs:
+                            fasta.write(f">{seq_id}\n{seq}\n")
+                    # HDF5 sequences
+                    with h5py.File(self.embeddings_path, "r") as h5file:
+                        for accession, group in h5file.items():
+                            if "sequence" in group:
+                                sequence = group["sequence"][()].decode("utf-8")
+                                clean_id = accession.removeprefix("accession_")
+                                fasta.write(f">{clean_id}\n{sequence}\n")
 
-            # Step 2: Prepare CD-HIT parameters
-            identity = self.conf.get("redundancy_filter", 0.95)
-            coverage = self.conf.get("alignment_coverage", 0.95)
-            memory = self.conf.get("memory_usage", 32000)
-            threads = self.conf.get("threads", 0)
-            search_mode = self.conf.get("most_representative_search", 1)
-            word_length = calculate_cdhit_word_length(identity, self.logger)
+                self.logger.info(f"⚙️ Running MMseqs2 (id={identity}, cov={coverage}, threads={threads})...")
+                subprocess.run(["mmseqs", "createdb", fasta_path, db_path], check=True)
+                subprocess.run([
+                    "mmseqs", "linclust", db_path, clu_path, tmp_path,
+                    "--min-seq-id", str(identity),
+                    "--cov-mode", "1", "-c", str(coverage),
+                    "--threads", str(threads)
+                ], check=True)
+                subprocess.run(["mmseqs", "createtsv", db_path, db_path, clu_path, tsv_path], check=True)
 
-            self.logger.info("Running CD-HIT with parameters:")
-            self.logger.info(f"  Identity threshold: {identity}")
-            self.logger.info(f"  Coverage: {coverage}")
-            self.logger.info(f"  Memory: {memory} MB")
-            self.logger.info(f"  Threads: {threads}")
-            self.logger.info(f"  Word length: {word_length}")
+                # Cargar resultados
+                import pandas as pd
+                df = pd.read_csv(tsv_path, sep="\t", names=["cluster", "identifier"])
+                self.clusters = df
+                self.clusters_by_id = df.set_index("identifier")
+                self.clusters_by_cluster = df.groupby("cluster")["identifier"].apply(set).to_dict()
 
-            # Step 3: Execute CD-HIT
-            cd_hit(
-                i=self.reference_fasta,
-                o=filtered_fasta,
-                c=identity,
-                d=0,
-                l=4,
-                aL=coverage,
-                M=memory,
-                T=threads,
-                g=search_mode,
-                n=word_length
-            )
-
-            # Step 4: Load resulting clusters
-            clstr_path = f"{filtered_fasta}.clstr"
-            if not os.path.exists(clstr_path) or os.path.getsize(clstr_path) == 0:
-                raise ValueError(f"CD-HIT .clstr file missing or empty: {clstr_path}")
-
-            self.logger.info(f"CD-HIT completed. Loading clusters from: {clstr_path}")
-            self.clusters = read_clstr(clstr_path)
-            self.clusters_by_id = self.clusters.set_index("identifier")
-            self.clusters_by_cluster = self.clusters.groupby("cluster")["identifier"].apply(set).to_dict()
-
-            self.logger.info(f"{len(self.clusters)} clusters loaded into memory.")
+                self.logger.info(f"✅ {len(self.clusters_by_cluster)} clusters loaded from MMseqs2.")
 
         except Exception as e:
-            self.logger.error(f"Error while generating CD-HIT clusters: {e}")
+            self.logger.error(f"❌ Error running MMseqs2 clustering: {e}")
             raise
 
-    def retrieve_cluster_members(self, accession):
+    def retrieve_cluster_members(self, accession: str) -> set:
+        """
+        Retrieve the set of cluster members associated with a given accession.
+
+        This method looks up the cluster ID corresponding to the provided accession
+        and returns the set of all sequence identifiers that belong to the same cluster.
+
+        Parameters
+        ----------
+        accession : str
+            Accession string corresponding to a protein or sequence included in clustering.
+
+        Returns
+        -------
+        set
+            Set of accession strings belonging to the same cluster as the input accession.
+            Returns an empty set if the accession is not found in any cluster.
+
+        Logs
+        ----
+        - A warning if the accession is not found in the clustering result.
+
+        Examples
+        --------
+        >>> members = lookup.retrieve_cluster_members("P12345")
+        """
         try:
             cluster_id = self.clusters_by_id.loc[accession, "cluster"]
             members = self.clusters_by_cluster.get(cluster_id, set())
