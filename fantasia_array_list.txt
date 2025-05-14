@@ -1,0 +1,22 @@
+proteomes_uniprot/UP000000589.fasta	UP000000589_nr100	--redundancy_filter 1.0
+proteomes_uniprot/UP000037136.fasta	UP000037136_nr100	--redundancy_filter 1.0
+proteomes_uniprot/UP000002485.fasta	UP000002485_nr100	--redundancy_filter 1.0
+proteomes_uniprot/UP000006548.fasta	UP000006548_nr100	--redundancy_filter 1.0
+proteomes_uniprot/UP000000803.fasta	UP000000803_nr100	--redundancy_filter 1.0
+proteomes_uniprot/UP000001940.fasta	UP000001940_nr100	--redundancy_filter 1.0
+proteomes_uniprot/UP000002311.fasta	UP000002311_nr100	--redundancy_filter 1.0
+proteomes_uniprot/UP000000589.fasta	UP000000589_nr95	--redundancy_filter 0.95
+proteomes_uniprot/UP000037136.fasta	UP000037136_nr95	--redundancy_filter 0.95
+proteomes_uniprot/UP000002485.fasta	UP000002485_nr95	--redundancy_filter 0.95
+proteomes_uniprot/UP000006548.fasta	UP000006548_nr95	--redundancy_filter 0.95
+proteomes_uniprot/UP000000803.fasta	UP000000803_nr95	--redundancy_filter 0.95
+proteomes_uniprot/UP000001940.fasta	UP000001940_nr95	--redundancy_filter 0.95
+proteomes_uniprot/UP000002311.fasta	UP000002311_nr95	--redundancy_filter 0.95
+non_model/DFRU1_longiso.pep	DFRU1_nr100
+non_model/ESIG1_longiso.pep	ESIG1_nr100
+non_model/IPUL1_longiso.pep	IPUL1_nr100
+non_model/SPAN1_longiso.pep	SPAN1_nr100
+non_model/DFRU1_longiso.pep	DFRU1_nr95
+non_model/ESIG1_longiso.pep	ESIG1_nr95
+non_model/IPUL1_longiso.pep	IPUL1_nr95
+non_model/SPAN1_longiso.pep	SPAN1_nr95
