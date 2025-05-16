@@ -165,7 +165,7 @@ def run_needle_from_strings(seq1, seq2):
     """
     Alinea dos secuencias con Parasail (global alignment) y extrae métricas estilo EMBOSS.
     """
-    result = parasail.nw_trace_scan_16(seq1, seq2, 10, 1, parasail.blosum62)
+    result = parasail.nw_trace_striped_32(seq1, seq2, 10, 1, parasail.blosum62)
 
     aligned_query = result.traceback.query
     aligned_ref = result.traceback.ref
