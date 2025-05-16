@@ -20,7 +20,7 @@ For full documentation, visit [FANTASIA Documentation](https://fantasia.readthed
   Supports protein language models: **ProtT5**, **ProstT5**, and **ESM2** for sequence representation.
 
 - **🔍 Redundancy Filtering**  
-  Filters out homologous sequences using **CD-HIT** in the lookup table, allowing controlled redundancy levels through an adjustable
+  Filters out homologous sequences using **MMseqs2** in the lookup table, allowing controlled redundancy levels through an adjustable
   threshold, ensuring reliable benchmarking and evaluation.
 
 - **💾 Optimized Data Storage**  
