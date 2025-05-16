@@ -28,6 +28,7 @@ with downstream enrichment analysis tools.
 import importlib
 import os
 import time
+import traceback
 from concurrent.futures import ProcessPoolExecutor
 
 from protein_metamorphisms_is.tasks.base import BaseTaskInitializer
@@ -413,6 +414,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
             for acc in accessions:
                 redundant_ids[acc] = self.retrieve_cluster_members(acc)
 
+        go_annotations = self.go_annotations
         go_terms = []
         total_transfers = 0
         total_neighbors = 0
@@ -438,10 +440,10 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
             for idx in selected_idx:
                 seq_id = seq_ids[idx]
-                if seq_id not in self.go_annotations:
+                if seq_id not in go_annotations:
                     continue
 
-                annotations = self.go_annotations[seq_id]
+                annotations = go_annotations[seq_id]
                 total_transfers += len(annotations)
 
                 for ann in annotations:
@@ -521,7 +523,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 self.logger.info(f"⚙️ Running MMseqs2 (id={identity}, cov={coverage}, threads={threads})...")
                 subprocess.run(["mmseqs", "createdb", fasta_path, db_path], check=True)
                 subprocess.run([
-                    "mmseqs", "linclust", db_path, clu_path, tmp_path,
+                    "mmseqs", "cluster", db_path, clu_path, tmp_path,
                     "--min-seq-id", str(identity),
                     "--cov-mode", "1", "-c", str(coverage),
                     "--threads", str(threads)
@@ -649,7 +651,6 @@ class EmbeddingLookUp(BaseTaskInitializer):
             self.logger.info(f"🏁 Lookup table construction completed for {len(self.lookup_tables)} model(s).")
 
         except Exception:
-            import traceback
             self.logger.error("❌ Failed to load lookup tables:\n" + traceback.format_exc())
             raise
 
