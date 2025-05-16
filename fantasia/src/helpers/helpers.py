@@ -128,7 +128,6 @@ def parse_unknown_args(unknown_args):
 
 
 def check_services(conf, logger):
-    # Comprobación de PostgreSQL usando tu propio DatabaseManager
     try:
         db_manager = DatabaseManager(conf)
         session = db_manager.get_session()
