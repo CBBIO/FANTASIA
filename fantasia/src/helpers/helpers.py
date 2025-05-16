@@ -189,7 +189,6 @@ def run_needle_from_strings(seq1, seq2):
 
 
 def get_descendant_ids(parent_ids):
-    print(parent_ids)
     descendants_ids = []
     ncbi = NCBITaxa()
     ncbi.update_taxonomy_database()
@@ -197,5 +196,4 @@ def get_descendant_ids(parent_ids):
         descendants = ncbi.get_descendant_taxa(taxon, intermediate_nodes=True)
         descendants_ids.extend(str(tid) for tid in descendants)
     descendants_ids.extend(str(tid) for tid in parent_ids)
-    print(descendants_ids)
     return descendants_ids
