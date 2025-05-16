@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "FANTASIA"
-version = "2.4.0"
+version = "2.5.0"
 description = "Functional ANnoTAtion based on embedding space SImilArity"
 authors = ["Francisco Miguel Pérez Canales <frapercan1@alum.us.es>","Gemma Martínez Redondo <gemma.martinez@ibe.upf-csic.es>"]
 readme = "README.md"
@@ -15,6 +15,7 @@ protein-metamorphisms-is = "^4.0.0"
 scipy = "^1.15.2"
 parasail = "^1.3.4"
 ete3 = "^3.1.3"
+ace-tools = "^0.0"
 
 
 [tool.poetry.group.dev.dependencies]
