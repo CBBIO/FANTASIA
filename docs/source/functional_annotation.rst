@@ -147,7 +147,7 @@ This step is activated by setting an identity threshold:
 
    redundancy_filter: 0.95  # Only keep annotations below 95% sequence identity
 
-CD-HIT will:
+MMseqs2 will:
 
 - Combine reference sequences and query sequences
 - Cluster them based on identity and coverage

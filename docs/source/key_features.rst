@@ -5,7 +5,7 @@ Key Features
   Supports protein language models: **ProtT5**, **ProstT5**, and **ESM2** for sequence representation.
 
 - **🔍 Redundancy Filtering**
-  Filters out homologous sequences using **CD-HIT**, allowing controlled redundancy levels through an adjustable
+  Filters out homologous sequences using **MMSeqs2**, allowing controlled redundancy levels through an adjustable
   threshold, ensuring reliable benchmarking and evaluation.
 
 - **💾 Optimized Data Storage**

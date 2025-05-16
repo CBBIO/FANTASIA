@@ -74,7 +74,7 @@ Summary
 
 - **100 workers** allow parallel execution of queries.
 - **No sequence length filtering** (value set extremely high).
-- **CD-HIT at 95% sequence identity** to remove redundancy.
+- **MMseqs2 at 95% sequence identity** to remove redundancy.
 - **Only proteins from GOA2022 are used as reference**.
 - **Euclidean distance metric** is applied.
 - **Batch size of 256** for all three embedding models.

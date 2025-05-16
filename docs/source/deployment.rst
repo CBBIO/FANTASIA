@@ -17,8 +17,7 @@ System Requirements
 - **Python**: Version 3.10 or higher
 - **Docker**: Installed and running.
   If not installed, follow the `Docker installation guide <https://docs.docker.com/get-docker/>`_ and the `post-installation steps <https://docs.docker.com/engine/install/linux-postinstall/>`_ to run Docker without `sudo`.
-- **CD-HIT**: Must be installed and available in the system `PATH`. You can install it from your package manager (e.g., `sudo apt install cd-hit`) or compile it from source at the [CD-HIT website](http://weizhong-lab.ucsd.edu/cd-hit/).
-- **EMBOSS**: Must be installed and available in the system `PATH`. You can install it from your package manager (e.g., `sudo apt install emboss`) or follow the [EMBOSS installation guide](http://emboss.open-bio.org/).
+- **MMseqs2**: Must be installed and available in the system `PATH`.
 
 Machine Learning Dependencies
 -----------------------------

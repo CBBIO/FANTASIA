@@ -36,4 +36,4 @@ References
 .. [1] Protein Information System (PIS) GitHub Repository, available at: `GitHub <https://github.com/frapercan/protein_information_system>`_.
 .. [2] Reference database for GOA2022, available at: `Zenodo <https://zenodo.org/records/15095845>`_.
 .. [3] Reference database for GOA2024, available at: `Zenodo <https://zenodo.org/records/14864851>`_.
-.. [4] Reference database for GOA2025, available at: `Zenodo <https://zenodo.org/records/15133346>`_.
+.. [4] Reference database for GOA2025, available at: `Zenodo <hhttps://zenodo.org/records/15261639>`_.
