@@ -23,7 +23,7 @@ module load singularity/3.11.3
 # =======================
 REPO_DIR="$HOME/FANTASIA"
 WORK_DIR="$HOME/FANTASIA"
-SHM_DIR="/dev/shm/fantasia_pgvector"
+SHM_DIR="/tmp/fantasia_pgvector"
 DB_DIR="$SHM_DIR/data"
 DB_SOCKET="$SHM_DIR/socket"
 RABBIT_DIR="$HOME/fantasia_rabbitmq"
