@@ -162,6 +162,13 @@ cleanup() {
         echo "🛑 Stopping RabbitMQ..."
         pkill -f "rabbitmq-server"
     fi
+
+    # Remove temporary directory
+    if [[ -d "$SHM_DIR" ]]; then
+        echo "🗑️ Removing temporary directory: $SHM_DIR"
+        rm -rf "$SHM_DIR"
+    fi
+
 }
 
 # Ensure cleanup runs on script exit
