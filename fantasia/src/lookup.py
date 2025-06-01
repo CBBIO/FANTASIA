@@ -844,5 +844,3 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 f"reliability={end_reliability - start_reliability:.2f}s | "
                 f"alignment={end_alignment - start_alignment:.2f}s"
             )
-
-

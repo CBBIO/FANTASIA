@@ -1,13 +1,10 @@
 import os
 
-import pika
 import requests
 import subprocess
 
 from ete3 import NCBITaxa
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
-from protein_metamorphisms_is.sql.base.database_manager import DatabaseManager
 from tqdm import tqdm
 
 import parasail
@@ -127,9 +124,6 @@ def parse_unknown_args(unknown_args):
     return result
 
 
-
-
-
 def run_needle_from_strings(seq1, seq2):
     """
     Alinea dos secuencias con Parasail (global alignment) y extrae métricas estilo EMBOSS.
@@ -165,4 +159,3 @@ def get_descendant_ids(parent_ids):
         descendants_ids.extend(descendants)
     descendants_ids.extend(parent_ids)
     return list(set(descendants_ids))  # Evita duplicados
-
