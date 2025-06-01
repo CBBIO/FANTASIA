@@ -4,9 +4,15 @@ Key Features
 - **✅ Advanced Embedding Models**
   Supports protein language models: **ProtT5**, **ProstT5**, and **ESM2** for sequence representation.
 
-- **🔍 Redundancy Filtering**
-  Filters out homologous sequences using **MMSeqs2**, allowing controlled redundancy levels through an adjustable
-  threshold, ensuring reliable benchmarking and evaluation.
+- **🔁 Redundancy Filtering**
+  Reduces bias by removing highly similar sequences from the reference database using **MMSeqs2**.
+  Configurable thresholds allow clustering proteins based on identity and coverage.
+  This improves generalization by avoiding annotation from near-identical entries.
+
+- **🌿 Taxonomy-Based Filtering**
+  Enables exclusion or inclusion of specific taxa from the annotation reference set based on **NCBI Taxonomy IDs**.
+  Supports descendant expansion for clade-level filtering. Essential for studies targeting particular lineages
+  or excluding over-represented model organisms.
 
 - **💾 Optimized Data Storage**
   Embeddings are stored in **HDF5 format** for input sequences. The reference table, however, is hosted in a **public

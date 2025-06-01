@@ -1,6 +1,6 @@
 .. _methods:
 
-Methods
+Method
 =======
 
 FANTASIA is a reimplementation of the original GOPredSim algorithm [1]_ for full proteome annotation, executing GO transference based on protein embedding similarity. Building on the original method, our pipeline enhances usability by **improving scalability** for full proteomes, streamlining installation with **minimized dependency conflicts**, and providing an intuitive command-line interface that simplifies parameter customization.
@@ -44,14 +44,74 @@ Alternatively, cosine similarity (:math:`d_c`) can be selected as a parameter, u
    d_c(n, m) = \frac{\sum_{i=1}^{s} n_i m_i}{\sqrt{\sum_{i=1}^{s} n_i^2} \cdot \sqrt{\sum_{i=1}^{s} m_i^2}}
 
 
+Redundancy Filtering
+--------------------
+
+To prevent redundant hits and reduce annotation bias, FANTASIA applies an optional **redundancy filter**
+over the reference database. This step uses **MMSeqs2** to remove protein entries that exceed a defined
+sequence identity threshold and lack sufficient alignment coverage.
+
+This process ensures that near-identical proteins are collapsed, especially useful in highly redundant
+organisms or datasets (e.g. human, yeast).
+
+- **Configuration:**
+
+.. code-block:: yaml
+
+   redundancy_filter: 0.95      # Remove sequences ≥95% identity
+   alignment_coverage: 0.7      # Minimum coverage required for clustering
+
+A threshold of `0` disables redundancy filtering completely.
+
+Taxonomy-Based Filtering
+--------------------------
+
+FANTASIA allows restricting the reference database by **taxonomic criteria**, supporting two mutually
+exclusive modes:
+
+1. **Exclude list**: Remove specific organisms from the reference database.
+2. **Include exclusively**: Retain only a predefined set of taxa.
+
+Additionally, the user may enable **descendant expansion**, including all child taxa under a given ID
+according to the NCBI taxonomy.
+
+- **Configuration:**
+
+.. code-block:: yaml
+
+   taxonomy_ids_to_exclude: [559292, 6239]
+   taxonomy_ids_included_exclusively: []
+   get_descendants: true
+
+- `559292` = *S. cerevisiae*, `6239` = *C. elegans*
+- Setting both lists empty disables taxonomic filtering.
+
+This step is essential when building reference sets restricted to specific clades (e.g., fungi, mammals)
+or when excluding over-represented organisms.
+
+Filters can also be provided via CLI:
+
+.. code-block:: bash
+
+   --taxonomy_ids_to_exclude 559292,6239 --get_descendants true
+
+
+
 Step 4: GO Transfer
 -------------------
 
-FANTASIA  by default transfers GO terms from the :math:`k` proteins providing the closest embedding(s) hit(s) in the database. Additionally, the user can define a distance threshold for each model that determines the maximum allowed distance between query and reference embeddings. These thresholds have not been fully optimised and defaults are selected as reliable options (they cannot be "0"). By default, only the closest hit (:math:`k=1`) is used, regardless of its distance to the query embedding. 
+By default, only the **closest hit** is used for each selected model. This behavior is controlled by the `limit_per_entry`
+parameter in the configuration file. Setting `limit_per_entry: 1` restricts the transfer to a single nearest neighbor;
+increasing it allows annotations from multiple top hits to be considered.
+
+Each model can also define its own **distance threshold**, which acts as a cutoff to reject hits that are too distant
+in embedding space. These thresholds are specified for each model under the `embedding.models` configuration block.
+
+Note: The thresholds are not fully optimized and should be adapted depending on the embedding model and use case.
 
 
-Step 5: Output Description and Optional Formatting
---------------------------------------------------
+Step 5: Annotation Post-processing and Output Filtering
+--------------------------------------------------------
 
 The output of FANTASIA consists of a comma-separated values (CSV) file named `results.csv`, containing the **functional annotations** predicted for each query sequence. The table includes the following columns:
 
@@ -162,7 +222,7 @@ The following alignment-derived metrics are computed and included in the `result
 This step is executed automatically during the post-processing stage and does **not require user configuration**. These metrics enable further filtering, interpretation of transfer reliability, or benchmarking against homology-based approaches.
 
 TopGO Compatibility
-^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~
 By default, FANTASIA also converts the standard output file into the input format required for [7]_'s GO enrichment analysis [8]_, facilitating its integration into broader biological workflows. This feature can be disabled by the user if desired.
 
 
