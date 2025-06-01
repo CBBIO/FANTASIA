@@ -149,7 +149,16 @@ Supported models include ProtT5, ProstT5, and ESM2.
         "     --sequence_queue_package 100 \\\n"
         "     --limit_per_entry 5 \\\n"
         "     --device cuda \\\n"
-        "     --log_path ~/fantasia/fantasia.log"
+        "     --log_path ~/fantasia/fantasia.log\n\n"
+        "Taxonomy filtering options:\n"
+        "  • To exclude specific taxonomy IDs:\n"
+        "      --taxonomy_ids_to_exclude 559292,6239\n"
+        "  • To include only specific taxonomy IDs:\n"
+        "      --taxonomy_ids_included_exclusively 9606,10090\n"
+        "  • To activate recursive filtering (descendants):\n"
+        "      --get_descendants true\n\n"
+        "Note: These filters can also be defined in the YAML config.\n"
+        "CLI values always override YAML."
     )
 
     return parser

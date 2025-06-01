@@ -10,10 +10,11 @@ from datetime import datetime
 from protein_metamorphisms_is.helpers.logger.logger import setup_logger
 
 from fantasia.src.embedder import SequenceEmbedder
-from fantasia.src.helpers.helpers import download_embeddings, load_dump_to_db, parse_unknown_args, check_services
+from fantasia.src.helpers.helpers import download_embeddings, load_dump_to_db, parse_unknown_args
 from fantasia.src.lookup import EmbeddingLookUp
 from protein_metamorphisms_is.helpers.config.yaml import read_yaml_config
 import protein_metamorphisms_is.sql.model.model  # noqa: F401
+from protein_metamorphisms_is.helpers.services.services import check_services
 
 from fantasia.src.helpers.parser import build_parser
 
@@ -129,6 +130,23 @@ def load_and_merge_config(args, unknown_args):
         model for model, settings in conf["embedding"].get("models", {}).items()
         if settings.get("enabled", False)
     ]
+
+    def sanitize_taxonomy_lists(conf):
+        for key in ["taxonomy_ids_to_exclude", "taxonomy_ids_included_exclusively"]:
+            val = conf.get(key)
+
+            if isinstance(val, list):
+                # Asegura que todos los elementos sean enteros válidos
+                conf[key] = [int(v) for v in val if str(v).isdigit()]
+            elif isinstance(val, str):
+                # Soporta override tipo --taxonomy_ids_to_exclude 559292,6239
+                conf[key] = [int(v.strip()) for v in val.split(",") if v.strip().isdigit()]
+            elif val is False or val is None:
+                conf[key] = []
+            else:
+                raise ValueError(f"Invalid format for {key}: expected list, string or False.")
+
+    sanitize_taxonomy_lists(conf)
 
     return conf
 

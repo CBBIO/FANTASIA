@@ -592,12 +592,16 @@ class EmbeddingLookUp(BaseTaskInitializer):
             limit_execution = self.conf.get("limit_execution")
             get_descendants = self.conf.get("get_descendants", False)
 
-            # Procesar filtros de taxonomía
             def expand_tax_ids(key):
                 ids = self.conf.get(key, [])
-                if get_descendants and ids:
-                    return get_descendant_ids([int(tid) for tid in ids])
-                return [str(tid) for tid in ids]
+                if not isinstance(ids, list):
+                    self.logger.warning(f"Expected list for '{key}', got {type(ids)}. Forcing empty list.")
+                    return []
+
+                clean_ids = [int(tid) for tid in ids if isinstance(tid, int) or str(tid).isdigit()]
+                if get_descendants and clean_ids:
+                    return [str(tid) for tid in get_descendant_ids(clean_ids)]
+                return clean_ids
 
             exclude_taxon_ids = expand_tax_ids("taxonomy_ids_to_exclude")
             include_taxon_ids = expand_tax_ids("taxonomy_ids_included_exclusively")
@@ -687,6 +691,25 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 self.go_annotations.setdefault(row.sequence_id, []).append(entry)
 
     def post_process_results(self):
+        """
+        Post-processes raw GO annotation results after embedding-based lookup.
+
+        This method computes reliability indices, filters redundant GO terms using
+        ontology hierarchy, deduplicates identical GO annotations by keeping only
+        the one with the highest reliability index, and computes sequence alignment
+        metrics only for the final annotations.
+
+        It also calculates collapsed term support and outputs clean results in
+        CSV and optional TopGO-compatible formats.
+
+        Notes
+        -----
+        - The column `support_count` indicates how many neighbors contributed
+          the same GO term to a given entry (accession, model_name, go_id).
+        - Collapsed GO terms are recorded in `collapsed_terms` and quantified
+          in `collapsed_support` and `n_collapsed_terms`.
+        - Alignment metrics are computed only after deduplication.
+        """
         if not os.path.exists(self.raw_results_path):
             self.logger.warning("No raw results found for post-processing.")
             return
@@ -696,6 +719,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
         df = pd.read_csv(self.raw_results_path)
 
+        # Compute reliability index based on the selected distance metric
         start_reliability = time.perf_counter()
         if self.distance_metric == "cosine":
             df["reliability_index"] = 1 - df["distance"]
@@ -703,19 +727,18 @@ class EmbeddingLookUp(BaseTaskInitializer):
             df["reliability_index"] = 0.5 / (0.5 + df["distance"])
         end_reliability = time.perf_counter()
 
-        start_alignment = time.perf_counter()
-        unique_pairs = df[["sequence_query", "sequence_reference"]].drop_duplicates()
-        with ProcessPoolExecutor(max_workers=self.conf.get("store_workers", 4)) as executor:
-            metrics_list = list(executor.map(compute_metrics, unique_pairs.to_dict("records")))
-        metrics_df = pd.DataFrame(metrics_list)
-        df = df.merge(metrics_df, on=["sequence_query", "sequence_reference"], how="left")
-        end_alignment = time.perf_counter()
-
-        df = df.drop(columns=["sequence_query", "sequence_reference"], errors="ignore")
+        # Cache for GO ancestry lookups
+        ancestor_cache = {}
 
         def is_ancestor(go_dag, parent, child):
-            return child in go_dag and parent in go_dag[child].get_all_parents()
+            key = (parent, child)
+            if key in ancestor_cache:
+                return ancestor_cache[key]
+            result = child in go_dag and parent in go_dag[child].get_all_parents()
+            ancestor_cache[key] = result
+            return result
 
+        # Count how many times each GO term appears per accession/model
         df["support_count"] = df.groupby(["accession", "model_name", "go_id"])["go_id"].transform("count")
 
         rows = []
@@ -727,6 +750,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
             leaf_terms = []
             collapsed_terms = {}
 
+            # Identify leaf terms and collapse ancestors
             for go_id in all_go_ids:
                 is_leaf = not any(
                     go_id != other and is_ancestor(self.go, go_id, other)
@@ -741,20 +765,33 @@ class EmbeddingLookUp(BaseTaskInitializer):
                             collapsed_terms[lt]["collapsed_support"] += support_map.get(go_id, 1)
                             collapsed_terms[lt]["terms"].add(go_id)
 
+            # For each leaf term, keep only the annotation with highest reliability
             for go_id in leaf_terms:
                 subset = group[group["go_id"] == go_id].copy()
                 info = collapsed_terms.get(go_id, {})
                 subset["collapsed_support"] = info.get("collapsed_support", 0)
                 subset["n_collapsed_terms"] = len(info.get("terms", []))
                 subset["collapsed_terms"] = ", ".join(sorted(info.get("terms", []))) if info.get("terms") else ""
-                rows.extend(subset.to_dict("records"))
+                rows.append(subset.sort_values("reliability_index", ascending=False).iloc[0])
 
         df = pd.DataFrame(rows)
+
+        # Compute alignment metrics for unique query-reference pairs after filtering
+        start_alignment = time.perf_counter()
+        unique_pairs = df[["sequence_query", "sequence_reference"]].drop_duplicates()
+        with ProcessPoolExecutor(max_workers=self.conf.get("store_workers", 4)) as executor:
+            metrics_list = list(executor.map(compute_metrics, unique_pairs.to_dict("records")))
+        metrics_df = pd.DataFrame(metrics_list)
+        df = df.merge(metrics_df, on=["sequence_query", "sequence_reference"], how="left")
+        end_alignment = time.perf_counter()
+
+        # Drop raw sequences to reduce output size
+        df = df.drop(columns=["sequence_query", "sequence_reference"], errors="ignore")
 
         df = df.sort_values(by=["accession", "go_id", "model_name", "reliability_index"],
                             ascending=[True, True, True, False])
 
-        # Redondear columnas numéricas para mejor presentación
+        # Round numeric columns for cleaner output
         columns_to_round = ["distance", "identity", "similarity", "alignment_score", "gaps_percentage",
                             "reliability_index"]
         for col in columns_to_round:
@@ -807,3 +844,5 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 f"reliability={end_reliability - start_reliability:.2f}s | "
                 f"alignment={end_alignment - start_alignment:.2f}s"
             )
+
+
