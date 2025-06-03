@@ -31,18 +31,18 @@ import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor
 
-from protein_metamorphisms_is.tasks.base import BaseTaskInitializer
+from protein_information_system.tasks.base import BaseTaskInitializer
 
 import numpy as np
 import pandas as pd
 from goatools.base import get_godag
-from protein_metamorphisms_is.sql.model.entities.sequence.sequence import Sequence
+from protein_information_system.sql.model.entities.sequence.sequence import Sequence
 
 from sqlalchemy import text
 import h5py
-from protein_metamorphisms_is.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType, \
+from protein_information_system.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType, \
     SequenceEmbedding
-from protein_metamorphisms_is.sql.model.entities.protein.protein import Protein
+from protein_information_system.sql.model.entities.protein.protein import Protein
 
 from fantasia.src.helpers.helpers import run_needle_from_strings, get_descendant_ids
 
@@ -267,7 +267,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 continue
 
             try:
-                base_module_path = "protein_metamorphisms_is.operation.embedding.proccess.sequence"
+                base_module_path = "protein_information_system.operation.embedding.proccess.sequence"
                 module_name = f"{base_module_path}.{task_name}"
                 module = importlib.import_module(module_name)
 
@@ -598,10 +598,13 @@ class EmbeddingLookUp(BaseTaskInitializer):
                     self.logger.warning(f"Expected list for '{key}', got {type(ids)}. Forcing empty list.")
                     return []
 
-                clean_ids = [int(tid) for tid in ids if isinstance(tid, int) or str(tid).isdigit()]
+                clean_ids = [int(tid) for tid in ids if str(tid).isdigit()]
+
                 if get_descendants and clean_ids:
-                    return [str(tid) for tid in get_descendant_ids(clean_ids)]
-                return clean_ids
+                    expanded = get_descendant_ids(clean_ids)  # devuelve ints
+                    return [str(tid) for tid in expanded]
+
+                return [str(tid) for tid in clean_ids]
 
             exclude_taxon_ids = expand_tax_ids("taxonomy_ids_to_exclude")
             include_taxon_ids = expand_tax_ids("taxonomy_ids_included_exclusively")
