@@ -14,7 +14,7 @@ This version of FANTASIA builds upon previous work from:
 - `GoPredSim <https://github.com/Rostlab/goPredSim>`_
   A similarity-based approach for Gene Ontology annotation.
 
-- `protein-metamorphisms-is <https://github.com/CBBIO/protein-metamorphisms-is>`_
+- `protein-information-system <https://github.com/CBBIO/protein-information-system>`_
   Serves as the **reference biological information system**, providing a robust data model and curated datasets for protein structural and functional analysis.
 
 We also extend our gratitude to **LifeHUB-CSIC** for inspiring this initiative and fostering innovation in computational biology.

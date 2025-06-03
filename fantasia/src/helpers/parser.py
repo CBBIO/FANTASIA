@@ -133,6 +133,16 @@ Supported models include ProtT5, ProstT5, and ESM2.
                             help="Limit the number of retrieved reference entries per query.")
     run_parser.add_argument("--device", type=str, choices=["cuda", "cpu"], help="Device to use for embedding models.")
     run_parser.add_argument("--log_path", type=str, help="Path to the log file.")
+    run_parser.add_argument(
+        "--taxonomy_ids_to_exclude",
+        nargs='+',
+        type=str,
+        help=(
+            "List of taxonomy IDs to exclude (as strings). Space-separated.\n"
+            "Example: --taxonomy_ids_to_exclude 559292 6239\n"
+            "Note: Matches are performed as string values against the 'taxonomy_id' field."
+        )
+    )
 
     run_parser.epilog = (
         "Example usage:\n"

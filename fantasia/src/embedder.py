@@ -33,8 +33,8 @@ from Bio import SeqIO
 
 import h5py
 
-from protein_metamorphisms_is.operation.embedding.sequence_embedding import SequenceEmbeddingManager
-from protein_metamorphisms_is.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType
+from protein_information_system.operation.embedding.sequence_embedding import SequenceEmbeddingManager
+from protein_information_system.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType
 
 
 class SequenceEmbedder(SequenceEmbeddingManager):
@@ -100,7 +100,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         self.results = []
 
         # Load models and configurations
-        self.base_module_path = "protein_metamorphisms_is.operation.embedding.proccess.sequence"
+        self.base_module_path = "protein_information_system.operation.embedding.proccess.sequence"
         self.fetch_models_info()
 
         # Input and output paths

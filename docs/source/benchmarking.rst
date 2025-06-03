@@ -54,7 +54,7 @@ Configuration Parameters
 Pipeline Configuration
 ^^^^^^^^^^^^^^^^^^^^^^
 
-Below, copy the code to a **`benchmark_config.yaml`** file in a text editor. The full configuration file, including additional essential system parameters, can be found at [`protein-metamorphisms-is/config/config.yaml`](https://github.com/CBBIO/protein-metamorphisms-is/blob/main/protein_metamorphisms_is/config/config.yaml).
+Below, copy the code to a **`benchmark_config.yaml`** file in a text editor. The full configuration file, including additional essential system parameters, can be found at [`protein-information-system/config/config.yaml`](https://github.com/CBBIO/protein-information-system/blob/main/protein_information_system/config/config.yaml).
 
 .. code-block:: yaml
 

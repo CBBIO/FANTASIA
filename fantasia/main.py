@@ -7,14 +7,14 @@ import yaml
 import logging
 from datetime import datetime
 
-from protein_metamorphisms_is.helpers.logger.logger import setup_logger
+from protein_information_system.helpers.logger.logger import setup_logger
 
 from fantasia.src.embedder import SequenceEmbedder
 from fantasia.src.helpers.helpers import download_embeddings, load_dump_to_db, parse_unknown_args
 from fantasia.src.lookup import EmbeddingLookUp
-from protein_metamorphisms_is.helpers.config.yaml import read_yaml_config
-import protein_metamorphisms_is.sql.model.model  # noqa: F401
-from protein_metamorphisms_is.helpers.services.services import check_services
+from protein_information_system.helpers.config.yaml import read_yaml_config
+import protein_information_system.sql.model.model  # noqa: F401
+from protein_information_system.helpers.services.services import check_services
 
 from fantasia.src.helpers.parser import build_parser
 
@@ -131,20 +131,36 @@ def load_and_merge_config(args, unknown_args):
         if settings.get("enabled", False)
     ]
 
+    import re
+
     def sanitize_taxonomy_lists(conf):
+        """
+        Ensures taxonomy ID fields are always lists of numeric strings (e.g., ["559292", "6239"]).
+        Accepts input as list or single string, with space/comma/mixed separators.
+        """
         for key in ["taxonomy_ids_to_exclude", "taxonomy_ids_included_exclusively"]:
             val = conf.get(key)
 
             if isinstance(val, list):
-                # Asegura que todos los elementos sean enteros válidos
-                conf[key] = [int(v) for v in val if str(v).isdigit()]
+                # Asegura que todos los elementos sean strings de dígitos
+                cleaned = []
+                for item in val:
+                    if isinstance(item, str):
+                        tokens = re.split(r"[,\s]+", item.strip())
+                        cleaned.extend(t for t in tokens if t.isdigit())
+                    elif isinstance(item, int):
+                        cleaned.append(str(item))
+                conf[key] = cleaned
+
             elif isinstance(val, str):
-                # Soporta override tipo --taxonomy_ids_to_exclude 559292,6239
-                conf[key] = [int(v.strip()) for v in val.split(",") if v.strip().isdigit()]
-            elif val is False or val is None:
+                # Soporta separadores por espacio, coma o mezcla
+                conf[key] = [t for t in re.split(r"[,\s]+", val.strip()) if t.isdigit()]
+
+            elif val is None or val is False:
                 conf[key] = []
+
             else:
-                raise ValueError(f"Invalid format for {key}: expected list, string or False.")
+                raise ValueError(f"Invalid format for {key}: expected list, string, or None.")
 
     sanitize_taxonomy_lists(conf)
 
