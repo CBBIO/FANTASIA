@@ -41,8 +41,11 @@ Performance Analysis
 All experiments queried a shared reference table containing **126,582 sequence embeddings** and **623,134 GO term annotations**, corresponding exclusively to proteins with **experimental evidence** (i.e., excluding annotations inferred electronically).
 
 The number of neighbors (`k`) used during the lookup step has a direct impact on execution time, especially in the **post-processing phase**. Increasing `k` results in:
+
 - More hits to evaluate per query.
+
 - Greater redundancy in annotations.
+
 - A larger number of pairwise alignments.
 
 A clear linear trend is observed in the **lookup** and **post-processing** durations as `k` increases from 1 to 5, while the **embedding generation time** remains unaffected.
