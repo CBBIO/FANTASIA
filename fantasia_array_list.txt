@@ -1,36 +1,8 @@
-proteomes_uniprot/UP000000589.fasta	UP000000589_nr100	--redundancy_filter 1.0
-proteomes_uniprot/UP000037136.fasta	UP000037136_nr100	--redundancy_filter 1.0
-proteomes_uniprot/UP000002485.fasta	UP000002485_nr100	--redundancy_filter 1.0
-proteomes_uniprot/UP000006548.fasta	UP000006548_nr100	--redundancy_filter 1.0
-proteomes_uniprot/UP000000803.fasta	UP000000803_nr100	--redundancy_filter 1.0
-proteomes_uniprot/UP000001940.fasta	UP000001940_nr100	--redundancy_filter 1.0
-proteomes_uniprot/UP000002311.fasta	UP000002311_nr100	--redundancy_filter 1.0
-proteomes_uniprot/UP000000589.fasta	UP000000589_nr95	--redundancy_filter 0.95
-proteomes_uniprot/UP000037136.fasta	UP000037136_nr95	--redundancy_filter 0.95
-proteomes_uniprot/UP000002485.fasta	UP000002485_nr95	--redundancy_filter 0.95
-proteomes_uniprot/UP000006548.fasta	UP000006548_nr95	--redundancy_filter 0.95
-proteomes_uniprot/UP000000803.fasta	UP000000803_nr95	--redundancy_filter 0.95
-proteomes_uniprot/UP000001940.fasta	UP000001940_nr95	--redundancy_filter 0.95
-proteomes_uniprot/UP000002311.fasta	UP000002311_nr95	--redundancy_filter 0.95
-non_model/DFRU1_longiso.pep	DFRU1_nr0_k1
-non_model/ESIG1_longiso.pep	ESIG1_nr0_k1
-non_model/IPUL1_longiso.pep	IPUL1_nr0_k1
-non_model/SPAN1_longiso.pep	SPAN1_nr0_k1
-non_model/DFRU1_longiso.pep	DFRU1_nr0_k10	--limit_per_entry 10
-non_model/ESIG1_longiso.pep	ESIG1_nr0_k10	--limit_per_entry 10
-non_model/IPUL1_longiso.pep	IPUL1_nr0_k10	--limit_per_entry 10
-non_model/SPAN1_longiso.pep	SPAN1_nr0_k10	--limit_per_entry 10
-proteomes_uniprot/UP000000589.fasta	UP000000589_nr100_k10   --redundancy_filter 1.0 --limit_per_entry 10
-proteomes_uniprot/UP000037136.fasta	UP000037136_nr100_k10	--redundancy_filter 1.0 --limit_per_entry 10
-proteomes_uniprot/UP000002485.fasta	UP000002485_nr100_k10	--redundancy_filter 1.0 --limit_per_entry 10
-proteomes_uniprot/UP000006548.fasta	UP000006548_nr100_k10	--redundancy_filter 1.0 --limit_per_entry 10
-proteomes_uniprot/UP000000803.fasta	UP000000803_nr100_k10	--redundancy_filter 1.0 --limit_per_entry 10
-proteomes_uniprot/UP000001940.fasta	UP000001940_nr100_k10	--redundancy_filter 1.0 --limit_per_entry 10
-proteomes_uniprot/UP000002311.fasta	UP000002311_nr100_k10	--redundancy_filter 1.0 --limit_per_entry 10
-proteomes_uniprot/UP000000589.fasta	UP000000589_nr95_k10	--redundancy_filter 0.95 --limit_per_entry 10
-proteomes_uniprot/UP000037136.fasta	UP000037136_nr95_k10	--redundancy_filter 0.95 --limit_per_entry 10
-proteomes_uniprot/UP000002485.fasta	UP000002485_nr95_k10	--redundancy_filter 0.95 --limit_per_entry 10
-proteomes_uniprot/UP000006548.fasta	UP000006548_nr95_k10	--redundancy_filter 0.95 --limit_per_entry 10
-proteomes_uniprot/UP000000803.fasta	UP000000803_nr95_k10	--redundancy_filter 0.95 --limit_per_entry 10
-proteomes_uniprot/UP000001940.fasta	UP000001940_nr95_k10	--redundancy_filter 0.95 --limit_per_entry 10
-proteomes_uniprot/UP000002311.fasta	UP000002311_nr95_k10	--redundancy_filter 0.95 --limit_per_entry 10
+proteomes_uniprot/UP000000589.fasta	MOUSE_nr100_k1	--redundancy_filter 1.0 --taxonomy_ids_to_exclude 10090,9606
+proteomes_uniprot/UP000002311.fasta	YEAST_nr100_k1	--redundancy_filter 1.0 --taxonomy_ids_to_exclude 559292
+proteomes_uniprot/UP000000803.fasta	DROME_nr100_k1	--redundancy_filter 1.0 --taxonomy_ids_to_exclude 7227
+proteomes_uniprot/UP000006548.fasta	ARATH_nr100_k1	--redundancy_filter 1.0 --taxonomy_ids_to_exclude 3702
+proteomes_uniprot/UP000000589.fasta	MOUSE_nr100_k5	--redundancy_filter 1.0 --limit_per_entry 5 --taxonomy_ids_to_exclude 10090,9606
+proteomes_uniprot/UP000002311.fasta	YEAST_nr100_k5	--redundancy_filter 1.0 --limit_per_entry 5 --taxonomy_ids_to_exclude 559292
+proteomes_uniprot/UP000000803.fasta	DROME_nr100_k5	--redundancy_filter 1.0 --limit_per_entry 5 --taxonomy_ids_to_exclude 7227
+proteomes_uniprot/UP000006548.fasta	ARATH_nr100_k5	--redundancy_filter 1.0 --limit_per_entry 5 --taxonomy_ids_to_exclude 3702
