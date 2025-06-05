@@ -36,7 +36,7 @@ The following table summarizes execution times for FANTASIA functional annotatio
 
 
 Performance Analysis
-====================
+--------------------
 
 All experiments queried a shared reference table containing **126,582 sequence embeddings** and **623,134 GO term annotations**, corresponding exclusively to proteins with **experimental evidence** (i.e., excluding annotations inferred electronically).
 
@@ -59,7 +59,7 @@ This suggests a trade-off between **annotation depth** (more neighbors = more GO
 
 
 General Statistics
-==================
+------------------
 
 The following metrics summarize the computational scope and cost of the full set of benchmarking experiments:
 

@@ -29,8 +29,8 @@ FANTASIA is an advanced pipeline designed for automatic functional annotation of
    :maxdepth: 2
    :caption: Deployment
 
-   deployment
-   hpc_deployment
+   dev_deployment
+   prod_deployment
    docker_publish
    slurm
 

@@ -1,9 +1,21 @@
 .. _methods:
 
 Method
-=======
+======
 
-FANTASIA is a reimplementation of the original GOPredSim algorithm [1]_ for full proteome annotation, executing GO transference based on protein embedding similarity. Building on the original method, our pipeline enhances usability by **improving scalability** for full proteomes, streamlining installation with **minimized dependency conflicts**, and providing an intuitive command-line interface that simplifies parameter customization.
+FANTASIA is a modular pipeline for protein function annotation based on deep learning embeddings. Inspired by the GOPredSim algorithm [1]_, it performs large-scale GO term transfer by comparing learned vector representations of proteins, rather than relying on sequence alignment or homology alone.
+
+The method is organized into three main stages:
+
+1. **Embedding Computation**: Input protein sequences are transformed into high-dimensional vectors using pretrained protein language models (PLMs). Each model captures distinct biochemical and structural properties, enabling generalization beyond traditional sequence similarity.
+
+2. **Similarity Search and Annotation Transfer**: The computed embeddings are compared to a reference database of experimentally annotated proteins. Functional annotations (GO terms) are transferred from the most similar entries, based on a learned distance metric. Optional redundancy and taxonomy filters can be applied to fine-tune the reference space.
+
+3. **Post-processing and Filtering**: FANTASIA assigns a Reliability Index to each prediction, collapses redundant GO terms based on ontology structure, and optionally computes pairwise global alignments to assess sequence-level similarity. The results are then filtered, deduplicated, and structured for downstream analysis.
+
+The pipeline is designed to be reproducible, extensible, and interpretable, suitable for both exploratory use and high-throughput functional annotation projects.
+
+
 
 .. figure:: _static/pipeline.png
    :alt: FANTASIA Pipeline Overview
@@ -13,223 +25,146 @@ FANTASIA is a reimplementation of the original GOPredSim algorithm [1]_ for full
 Step 1: Setup and Input File Preprocessing
 ------------------------------------------
 
-**NOTE**: In the original implementation, sequences longer than 5000 amino acids had to be removed when using the ProtTrans model. While this requirement no longer applies in FANTASIA, we still provide this option. Users can choose to remove long sequences if desired.
+Before computing embeddings, FANTASIA prepares the working environment and validates the input data. This step ensures that all dependencies are active, configuration parameters are correctly parsed, and the experiment directory is ready to store outputs.
 
-**If redundancy removal is required in the lookup table**, sequence similarity-based filtering can be applied using the widely acknowledged tool **CD-HIT** [2]_, with a minimum identity threshold of 50%. We do not recommend using thresholds below this limit, as the intended use is to exclude sequences that are overly very similar to those in the annotated reference database.
+The pipeline accepts a FASTA-formatted file containing one or more amino acid sequences. These sequences are parsed using BioPython and can be optionally filtered by length, according to the configuration. The input file is then split into batches that are distributed across the enabled protein language models (PLMs), such as ProtT5 [3]_, ESM2 [4]_, or ProstT5 [5]_.
 
-Before computing distances between embeddings, the query input dataset is concatenated with the reference table, and clustering is performed. Then, for each query embedding, a comparison is made against the entire reference table. During this process, embeddings corresponding to sequences belonging to the same cluster as the query are excluded, ensuring that no matches (hits) occur with proteins that exceed the specified sequence identity threshold.
+Internally, this step performs the following actions:
 
-**IMPORTANT**: The use of these options depends on the intended application. Sequence similarity-based removal is recommended for benchmarking procedures but should not be performed for proteome functional annotation. For details on parameter selection for different applications, refer to the pipeline documentation.
+- Loads and merges the base configuration file (`.yaml`) with any overrides passed via command-line arguments.
+- Creates a timestamped directory for the current experiment, where all intermediate and final outputs will be stored.
+- Initializes the embedding environment by loading the selected PLMs and their tokenizers dynamically.
+- Parses and batches the input sequences, applying optional filters such as maximum length or execution limits.
+
+Once the setup is complete and the sequence batches are prepared, the pipeline proceeds to compute embeddings using the specified PLMs (see Step 2).
 
 Step 2: Embedding Computation
 -----------------------------
 
-FANTASIA supports batch processing of protein sequences to leverage GPU efficiency during embedding computation. However, to ensure maximum embedding fidelity, especially with transformer-based protein language models (PLMs), embeddings are computed with batch_size = 1 by default. This decision avoids the introduction of artifacts caused by sequence padding and special tokens, which can distort representations when multiple sequences are processed together. Each protein is therefore embedded in isolation, producing clean and context-independent vectors. Supported models include ProtT5 [3]_, ESM2 [4]_, and ProstT5 [5]_, and results are stored in HDF5 format for later use.
+In this stage, FANTASIA generates numerical representations (embeddings) for each input protein sequence using one or more pretrained protein language models (PLMs). These embeddings serve as the foundation for downstream functional annotation.
 
-Step 3: Embedding Similarity
-----------------------------
+Each model is applied independently, and sequences are embedded individually to avoid artifacts caused by padding or batching effects (Configurable, but we found strange behaviours when batching). The embeddings are extracted from the final hidden layer of each model and stored in a shared HDF5 file, which also retains the original sequences for consistency and traceability.
 
-FANTASIA then computes the distance between each input sequence embedding and those in the reference vector database [6]_. The reference database is managed with PostgreSQL, allowing fast retrieval of results. It contains, for each reference protein, its metadata, GO term annotations, amino acid sequence, and precomputed embeddings for the supported pLMs.
+This embedding file becomes the central data structure for the annotation process. It is reused later during similarity search and annotation transfer, and may also be archived or shared for reproducibility.
 
-By default, Euclidean distance (:math:`d_e`) between embeddings :math:`n` and :math:`m` for a model with an embedding dimensionality :math:`s` is computed with the following formula:
+Internally, this step includes:
 
-.. math::
-   d_e(n, m) = \sum_{i=1}^{s} (n_i - m_i)^2
+- Tokenizing each amino acid sequence according to the vocabulary of the corresponding PLM.
+- Forward-passing the sequences through each model to obtain per-residue and per-sequence representations.
+- Storing the resulting vectors efficiently in an HDF5 structure, grouped by model and sequence.
 
-where :math:`s` represents the number of dimensions in the embedding space, which varies depending on the selected protein language model: :math:`s = 1024` for ProtT5 and ProstT5, and :math:`s = 320` for ESM2.
+This step is executed automatically unless a precomputed embedding file is provided (in which case the pipeline skips directly to the annotation phase).
 
-Alternatively, cosine similarity (:math:`d_c`) can be selected as a parameter, using the formula:
+Step 3: Reference Loading, Filtering and Annotation Transfer
+------------------------------------------------------------
 
-.. math::
-   d_c(n, m) = \frac{\sum_{i=1}^{s} n_i m_i}{\sqrt{\sum_{i=1}^{s} n_i^2} \cdot \sqrt{\sum_{i=1}^{s} m_i^2}}
+In this stage, FANTASIA compares the query embeddings against a curated reference database [6]_  of experimentally annotated proteins in order to transfer functional annotations (GO terms).
 
+The process begins by loading two reference tables from the internal PostgreSQL database:
 
-Redundancy Filtering
---------------------
+- **Embedding table**: Contains high-dimensional vectors previously computed for proteins with experimental GO annotations.
+- **Annotation table**: Contains GO terms (excluding electronic inferences) associated with the proteins in the embedding table.
 
-To prevent redundant hits and reduce annotation bias, FANTASIA applies an optional **redundancy filter**
-over the reference database. This step uses **MMSeqs2** to remove protein entries that exceed a defined
-sequence identity threshold and lack sufficient alignment coverage.
+Once these are loaded, FANTASIA applies two optional filters to refine the reference set:
 
-This process ensures that near-identical proteins are collapsed, especially useful in highly redundant
-organisms or datasets (e.g. human, yeast).
+1. **Taxonomy filtering**: Entries from specific organisms can be excluded or explicitly included based on NCBI taxonomy IDs. This is useful for benchmarking scenarios where cross-species contamination must be avoided.
 
-- **Configuration:**
+2. **Redundancy filtering**: To prevent inflated performance due to highly similar sequences, MMseqs2 [2]_ is used to cluster the query and reference sequences. For each query, any reference entries within the same cluster (i.e., exceeding a given identity and coverage threshold) are excluded from the annotation search.
 
-.. code-block:: yaml
+After filtering, the functional transfer proceeds:
 
-   redundancy_filter: 0.95      # Remove sequences ≥95% identity
-   alignment_coverage: 0.7      # Minimum coverage required for clustering
+- **Distance computation**: FANTASIA computes the similarity between each query embedding and the remaining reference embeddings, model by model, using a chosen distance metric (e.g., cosine or Euclidean).
 
-A threshold of `0` disables redundancy filtering completely.
+- **Neighbor selection**: For each query and model, the top-k most similar entries are selected (typically `k = 1` or `k = 5`). A distance threshold ensures that only close-enough matches are used.
 
-Taxonomy-Based Filtering
---------------------------
+- **GO term transfer**: The GO terms associated with the selected reference proteins are transferred to the query, forming the initial set of functional predictions.
 
-FANTASIA allows restricting the reference database by **taxonomic criteria**, supporting two mutually
-exclusive modes:
+At this point, all predictions are aggregated and stored for post-processing. Each prediction retains metadata including the matched reference, model used, embedding distance, and raw GO term list.
 
-1. **Exclude list**: Remove specific organisms from the reference database.
-2. **Include exclusively**: Retain only a predefined set of taxa.
-
-Additionally, the user may enable **descendant expansion**, including all child taxa under a given ID
-according to the NCBI taxonomy.
-
-- **Configuration:**
-
-.. code-block:: yaml
-
-   taxonomy_ids_to_exclude: [559292, 6239]
-   taxonomy_ids_included_exclusively: []
-   get_descendants: true
-
-- `559292` = *S. cerevisiae*, `6239` = *C. elegans*
-- Setting both lists empty disables taxonomic filtering.
-
-This step is essential when building reference sets restricted to specific clades (e.g., fungi, mammals)
-or when excluding over-represented organisms.
-
-Filters can also be provided via CLI:
-
-.. code-block:: bash
-
-   --taxonomy_ids_to_exclude 559292,6239 --get_descendants true
+This stage is the core of the FANTASIA pipeline, as it determines the candidate functions for each protein based solely on learned representations rather than sequence alignment.
 
 
 
-Step 4: GO Transfer
--------------------
-
-By default, only the **closest hit** is used for each selected model. This behavior is controlled by the `limit_per_entry`
-parameter in the configuration file. Setting `limit_per_entry: 1` restricts the transfer to a single nearest neighbor;
-increasing it allows annotations from multiple top hits to be considered.
-
-Each model can also define its own **distance threshold**, which acts as a cutoff to reject hits that are too distant
-in embedding space. These thresholds are specified for each model under the `embedding.models` configuration block.
-
-Note: The thresholds are not fully optimized and should be adapted depending on the embedding model and use case.
-
-
-Step 5: Annotation Post-processing and Output Filtering
+Step 4: Annotation Post-processing and Output Generation
 --------------------------------------------------------
 
-The output of FANTASIA consists of a comma-separated values (CSV) file named `results.csv`, containing the **functional annotations** predicted for each query sequence. The table includes the following columns:
-
-1. `accession`: Sequence identifier of the query protein.
-2. `go_id`: Gene Ontology (GO) term identifier.
-3. `category`: GO domain (F: Molecular Function, P: Biological Process, C: Cellular Component).
-4. `evidence_code`: Evidence code of the reference annotation (e.g., EXP, IDA, TAS).
-5. `go_description`: Description of the GO term.
-6. `distance`: Embedding distance between query and reference (either Euclidean or cosine).
-7. `reliability_index`: Confidence score computed from the distance metric (see below).
-8. `model_name`: Name of the embedding model used (e.g., prot_t5, esm).
-9. `protein_id`: Internal ID of the reference protein providing the annotation.
-10. `organism`: Scientific name of the reference protein's organism.
-11. `gene_name`: Gene name (if available) of the reference protein.
-12. `identity`: Percentage identity from global alignment (Parasail).
-13. `similarity`: Percentage similarity from global alignment (Parasail).
-14. `alignment_score`: Raw alignment score.
-15. `gaps_percentage`: Proportion of gaps in the alignment.
-16. `alignment_length`: Length of aligned region.
-17. `length_query`: Length of the query sequence.
-18. `length_reference`: Length of the reference sequence.
-19. `support_count`: Number of times this GO term was supported across hits for the query.
-20. `collapsed_support`: Support inherited from more general (ancestor) GO terms.
-21. `n_collapsed_terms`: Number of collapsed terms grouped under the selected leaf.
-22. `collapsed_terms`: List of collapsed GO terms grouped under this annotation (if any).
-
-Each row corresponds to a **leaf GO term** identified for a given query, and is **filtered to retain only the highest reliability annotation** per `(accession, go_id, model)` triplet.
-
-Optional outputs:
-
-- `results_topgo.tsv`: TSV file with one row per query, containing comma-separated GO terms, compatible with `topGO`.
-- `raw_results.csv`: Raw unfiltered annotation table prior to RI filtering and GO collapsing.
-- `embeddings.h5`: Embeddings and sequence data used for the lookup process.
-
-All output files are stored in a timestamped subdirectory under `~/fantasia/experiments/`.
-
-
+After functional transfer, FANTASIA performs a comprehensive post-processing step to enhance prediction quality, interpretability, and downstream usability.
 
 Reliability Index (RI)
-^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The reliability index (RI) is a transformation of the distance into a similarity scale, making it easier to "interpret the confidence" in the functional annotation. This approach of scaling distance into a similarity metric follows principles previously established in Littmann et al. (2021) _[1]. FANTASIA supports two distinct RI formulations, depending on the selected distance metric:
+FANTASIA assigns a **Reliability Index (RI)** to each predicted GO term based on its embedding distance to the reference:
 
-- If using the **direct similarity measure**, applied to cosine similarity (:math:`d_c`), RI is computed as:
+- **Cosine distance**:
 
   .. math::
      RI = 1 - d_c(q, n_i)
 
-  where :math:`d_c(q, n_i)` represents the cosine distance between the query embedding :math:`q` and its closest reference :math:`n_i`.
-
-- If using the **inverse similarity transformation**, applied to Euclidean distance (:math:`d_e`), RI is defined as:
+- **Euclidean distance**:
 
   .. math::
      RI = \frac{0.5}{0.5 + d_e(q, n_i)}
 
-  where lower Euclidean distances yield higher confidence scores.
+These scores range from 0 to 1 but are **not comparable across metrics**. Euclidean-based RI values are model-dependent, while cosine-based RI is better suited for inter-model comparison.
 
-While both formulations produce values ranging from 0 to 1, they are **NOT directly comparable**, as they capture confidence in different ways. Users should **exercise CAUTION when interpreting RI** scores across different similarity metrics.
+GO Term Prioritization and Filtering
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Additionally, **the Euclidean distance IS NOT inherently comparable across different protein language models**, as it depends on the magnitude of the embedding vectors generated by each model. In contrast, the **cosine similarity metric** is more suitable for cross-model comparisons, as it primarily captures the relative orientation of embeddings rather than their absolute magnitude.
+FANTASIA retains all predicted GO terms and uses the following metrics to prioritize annotations:
 
+- **Support count**: Number of top hits transferring the same GO term.
+- **RI**: Confidence score based on embedding similarity.
 
-GO Term Filtering
-^^^^^^^^^^^^^^^^^
+For each `(accession, go_id, model)` triplet, only the prediction with the highest RI is kept in the final table.
 
-After annotation, FANTASIA does **not** collapse annotations directly by `(accession, go_id)` pairs. Instead, it preserves all GO term predictions per query and embedding model, then calculates:
+Leaf Term Selection and Ontology Collapsing
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- **Support Count**: Number of hits that supported the same GO term.
-- **Reliability Index (RI)**: Confidence score derived from the embedding distance.
+To reduce redundancy and focus on specific functions, FANTASIA collapses ancestor GO terms under their most specific **leaf terms** using **GOATOOLS** [7]_. It uses the GO ontology graph to identify non-ancestor terms and aggregates broader terms under them:
 
-These metrics are used to prioritize the most informative annotations in later steps, but all predictions above the similarity threshold are retained for downstream processing.
+- `collapsed_support`: Total supporting hits from collapsed ancestors.
+- `n_collapsed_terms`: Number of collapsed GO terms.
+- `collapsed_terms`: List of absorbed GO terms.
 
-Leaf Term Selection and Collapsing
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-To improve annotation specificity, FANTASIA performs a **leaf term selection** per query and model. Using the GO graph structure ), it identifies GO terms that are **not ancestors** of any other predicted term in the same set—these are considered **leaf terms**.
-
-Once leaf terms are selected, broader (ancestor) terms are **collapsed** into the leaf they support. The contribution of these collapsed terms is quantified via:
-
-- **collapsed_support**: Total number of ancestor hits merged into the leaf.
-- **n_collapsed_terms**: Number of distinct GO terms collapsed.
-- **collapsed_terms**: List of the GO terms absorbed under the selected leaf.
-
-This process reduces redundancy and ensures that output annotations reflect the most specific, non-overlapping functional descriptions possible.
+This step ensures annotations are concise and biologically informative.
 
 Pairwise Sequence Alignment
-======================================
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To provide additional validation and interpretability of functional annotation results, FANTASIA includes an optional **global pairwise alignment** step using the `Parasail` library [9]_. For each predicted annotation, the system aligns the query and reference protein sequences using the **Needleman-Wunsch algorithm** with the following parameters:
+For interpretability, FANTASIA includes optional global sequence alignment using **Parasail** [9]_, applying:
 
+- **Needleman-Wunsch algorithm**
 - Substitution matrix: **BLOSUM62**
-- Gap open penalty: **10**
-- Gap extension penalty: **1**
+- Gap penalties: open = 10, extension = 1
 
-This alignment is performed via `parasail.nw_trace_striped_32`, an efficient SIMD-accelerated implementation of global alignment.
+The alignment quantifies sequence-level similarity between the query and reference proteins supporting a GO term but does **not affect annotation transfer**.
 
-Importantly, this alignment is **not used to decide functional transfer**, which is entirely based on embedding similarity. Instead, it serves to **quantify sequence-level agreement** between each query and the top-scoring reference supporting a GO term.
+Metrics stored include:
 
-The following alignment-derived metrics are computed and included in the `results.csv` output:
-
-- `identity`: Percentage of identical amino acids in the alignment.
-- `similarity`: Percentage of similar residues according to BLOSUM62 categories.
-- `alignment_score`: Raw alignment score assigned by Parasail.
-- `gaps_percentage`: Proportion of gaps in the alignment relative to its total length.
-- `alignment_length`: Total length of the aligned region.
-- `length_query` and `length_reference`: Original sequence lengths prior to alignment.
-
-This step is executed automatically during the post-processing stage and does **not require user configuration**. These metrics enable further filtering, interpretation of transfer reliability, or benchmarking against homology-based approaches.
+- `identity`, `similarity`, `alignment_score`
+- `gaps_percentage`, `alignment_length`
+- `length_query`, `length_reference`
 
 TopGO Compatibility
-~~~~~~~~~~~~~~~~~~~
-By default, FANTASIA also converts the standard output file into the input format required for [7]_'s GO enrichment analysis [8]_, facilitating its integration into broader biological workflows. This feature can be disabled by the user if desired.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+FANTASIA exports a TSV file (`results_topgo.tsv`) compatible with the **topGO** R package [8]_, listing comma-separated GO terms per query. This facilitates enrichment analysis in downstream workflows.
+
+Output Files
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+All outputs are stored under a timestamped folder in `~/fantasia/experiments/`.
+
+- `results.csv`: Final deduplicated annotations per query
+- `raw_results.csv`: All transferred annotations before filtering
+- `results_topgo.tsv`: Format for GO enrichment tools
+- `embeddings.h5`: Sequence and embedding data used in lookup
+
+These files include both prediction metadata and alignment statistics, allowing advanced filtering and reproducibility.
 
 
 
 
-References
---------------------------------------------------
 
 References
 ----------
