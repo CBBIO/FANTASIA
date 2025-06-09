@@ -110,17 +110,22 @@ embedding:
   models:
     esm:
       enabled: true
-      distance_threshold: 3
+      distance_threshold: 0
       batch_size: 1
 
     prost_t5:
       enabled: true
-      distance_threshold: 3
+      distance_threshold: 0
       batch_size: 1
 
     prot_t5:
       enabled: true
-      distance_threshold: 3
+      distance_threshold: 0
+      batch_size: 1
+
+    ankh:
+      enabled: true
+      distance_threshold: 0
       batch_size: 1
 
 # Enable GPU usage globally.

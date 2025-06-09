@@ -35,7 +35,7 @@ Input Data
 Input data must be **protein sequences in FASTA format**, as described here [5]_, concatenated into a single file.
 
 Example of **FILENAME_test.fasta**:
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: none
 

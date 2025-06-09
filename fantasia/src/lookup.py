@@ -160,11 +160,11 @@ class EmbeddingLookUp(BaseTaskInitializer):
     def start(self):
         self.logger.info("Starting embedding-based GO annotation process.")
 
-        self.logger.info("Preloading GO annotations from the database.")
-        self.preload_annotations()
-
         self.logger.info("Loading reference embeddings into memory.")
         self.lookup_table_into_memory()
+
+        self.logger.info("Preloading GO annotations from the database.")
+        self.preload_annotations()
 
         self.logger.info(f"Processing query embeddings from HDF5: {self.embeddings_path}")
         try:
@@ -435,7 +435,11 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 continue
 
             sorted_idx = np.argsort(distances)
-            selected_idx = sorted_idx[distances[sorted_idx] <= threshold][:limit]
+            if threshold == 0 or threshold is None:
+                selected_idx = sorted_idx[:limit]
+            else:
+                selected_idx = sorted_idx[distances[sorted_idx] <= threshold][:limit]
+
             total_neighbors += len(selected_idx)
 
             for idx in selected_idx:
@@ -608,8 +612,10 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
             exclude_taxon_ids = expand_tax_ids("taxonomy_ids_to_exclude")
             include_taxon_ids = expand_tax_ids("taxonomy_ids_included_exclusively")
+            self.exclude_taxon_ids = [str(tid) for tid in exclude_taxon_ids or []]
+            self.include_taxon_ids = [str(tid) for tid in include_taxon_ids or []]
 
-            if exclude_taxon_ids and include_taxon_ids:
+            if self.exclude_taxon_ids and self.include_taxon_ids:
                 self.logger.warning(
                     "⚠️ Both 'taxonomy_ids_to_exclude' and 'taxonomy_ids_included_exclusively' are set. This may lead to conflicting filters.")
 
@@ -671,6 +677,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
                           pgo.evidence_code,
                           p.id           AS protein_id,
                           p.organism,
+                          p.taxonomy_id,
                           p.gene_name
                    FROM sequence s
                             JOIN protein p ON s.id = p.sequence_id
@@ -681,17 +688,19 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
         with self.engine.connect() as connection:
             for row in connection.execute(sql):
-                entry = {
-                    "sequence": row.sequence,
-                    "go_id": row.go_id,
-                    "category": row.category,
-                    "evidence_code": row.evidence_code,
-                    "go_description": row.go_term_description,
-                    "protein_id": row.protein_id,
-                    "organism": row.organism,
-                    "gene_name": row.gene_name,
-                }
-                self.go_annotations.setdefault(row.sequence_id, []).append(entry)
+                if row.taxonomy_id not in self.exclude_taxon_ids:
+                    entry = {
+                        "sequence": row.sequence,
+                        "go_id": row.go_id,
+                        "category": row.category,
+                        "evidence_code": row.evidence_code,
+                        "go_description": row.go_term_description,
+                        "protein_id": row.protein_id,
+                        "organism": row.organism,
+                        "taxonomy_id": row.taxonomy_id,
+                        "gene_name": row.gene_name,
+                    }
+                    self.go_annotations.setdefault(row.sequence_id, []).append(entry)
 
     def post_process_results(self):
         """
