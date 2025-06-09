@@ -123,10 +123,6 @@ embedding:
       distance_threshold: 0
       batch_size: 1
 
-    ankh:
-      enabled: true
-      distance_threshold: 0
-      batch_size: 1
 
 # Enable GPU usage globally.
 use_gpu: true
