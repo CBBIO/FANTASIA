@@ -63,7 +63,7 @@ only_lookup: false
 batch_size: 512
 
 # Number of top matches to retrieve per query.
-limit_per_entry: 1
+limit_per_entry: 5
 
 # Prefix for output files.
 prefix: sample
