@@ -1,30 +1,32 @@
-FROM nvidia/cuda:12.6.1-base-ubuntu24.04
+FROM python:3.12-slim
 
-# Update and install required system packages
+# Install system dependencies required to build sentencepiece
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    cd-hit \
-    postgresql-client-16 \
-    postgresql-contrib \
-    emboss \
-    mmseqs2 \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    build-essential \
+    cmake \
+    pkg-config \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set up a virtual environment for Python
-RUN python3 -m venv /opt/venv
+# Install Poetry
+ENV POETRY_VERSION=1.8.2
+RUN pip install "poetry==$POETRY_VERSION"
 
-# Activate the virtual environment and install Python packages
-RUN /opt/venv/bin/pip install --upgrade pip \
-    && /opt/venv/bin/pip install fantasia --no-cache-dir
+# Set working directory
+WORKDIR /app
 
+# Copy project metadata
+COPY pyproject.toml poetry.lock ./
 
-# Add the virtual environment to the PATH
-ENV PATH="/opt/venv/bin:$PATH"
+# Install project dependencies (without dev)
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-dev --no-root
 
-# Copy application files and set the working directory
+# Copy project source code
+COPY . .
 
-# Default command to keep the container running
-ENTRYPOINT ["python3", "-m", "fantasia.main"]
+# Install project in editable mode (without dev)
+RUN poetry install --no-dev
 
+# Default command
+CMD ["python"]

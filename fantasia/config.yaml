@@ -41,7 +41,7 @@ rabbitmq_password: guest     # RabbitMQ password for authentication.
 # ====================================================================
 
 # URL to download the embeddings database dump used as reference.
-embeddings_url: "https://zenodo.org/records/15261639/files/BioData_backup_2025_hq.tar?download=1"
+embeddings_url: "https://zenodo.org/records/15705162/files/PIS_2025_ankh_exp.dump?download=1"
 
 # ==========================
 # 📂 Directory Configuration
@@ -122,6 +122,12 @@ embedding:
       enabled: true
       distance_threshold: 0
       batch_size: 1
+
+    ankh3:
+      enabled: true
+      distance_threshold: 0
+      batch_size: 1
+
 
 
 # Enable GPU usage globally.

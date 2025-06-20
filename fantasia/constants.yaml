@@ -1,19 +1,3 @@
-
-sequence_embedding_types:
-  - name: "ESM"
-    description: "Evolutionary Scale Modeling (ESM) embeddings are designed to capture the evolutionary information of protein sequences, utilizing deep learning to generate representations that enhance sequence analysis and prediction tasks."
-    task_name: "esm"
-    model_name: facebook/esm2_t6_8M_UR50D
-  - name: "Prost-T5"
-    description: "Prot-T5 embeddings leverage the capabilities of the T5 (Text-to-Text Transfer Transformer) model adapted for protein sequences, offering advanced sequence representation by considering both local and global sequence features."
-    task_name:  prost_t5
-    model_name: Rostlab/ProstT5
-  - name: "Prot-T5"
-    description: "Prot-T5 embeddings leverage the capabilities of the T5 (Text-to-Text Transfer Transformer) model adapted for protein sequences, offering advanced sequence representation by considering both local and global sequence features."
-    task_name: prot_t5
-    model_name: Rostlab/prot_t5_xl_uniref50
-
-
 structural_alignment_types:
   - name: "CE-align"
     description: "CE-align, or Combinatorial Extension, is a method for pairwise protein structure alignment. It focuses on aligning backbone atoms by identifying and extending aligned fragment pairs, offering insights into protein function and evolutionary history."
@@ -26,3 +10,39 @@ structural_alignment_types:
   - name: "FATCAT"
     description: "FATCAT (Flexible structure AlignmenT by Chaining Aligned fragment pairs allowing Twists), Protein structures are flexible and undergo structural rearrangements as part of their function. FATCAT (Flexible structure AlignmenT by Chaining Aligned fragment pairs allowing Twists) is an approach for flexible protein structure comparison. It simultaneously addresses the two major goals of flexible structure alignment; optimizing the alignment and minimizing the number of rigid-body movements (twists) around pivot points (hinges) introduced in the reference structure."
     task_name: fatcat
+
+structural_complexity_levels:
+  - name: "Protein Chains"
+    description: A protein chain refers to a single, linear sequence of amino acids that are covalently bonded together through peptide bonds. This chain, also known as a polypeptide, represents the primary structure of a protein. The sequence in which the amino acids are arranged dictates the protein's unique characteristics and functions. After synthesis, the protein chain undergoes folding, where it adopts a specific three-dimensional structure essential for its biological activity. Protein chains can function independently or combine with other chains (which can be identical or different) to form a functional protein complex. The term "protein chains" emphasizes the linear aspect of proteins before they fold into their functional conformations.
+
+  - name: "Secondary Structures"
+    description: Secondary structures refer to the local spatial arrangement of the protein's backbone, excluding the side chains of the amino acids. The two most common types of secondary structures are alpha-helices and beta-sheets. Alpha-helices are right-handed coils stabilized by hydrogen bonds between the backbone atoms, while beta-sheets consist of two or more strands aligned next to each other, forming a sheet-like structure also stabilized by hydrogen bonding. These structures are fundamental components of a protein's overall three-dimensional conformation and play critical roles in defining its function. Secondary structures are formed as a result of hydrogen bonds between the amide hydrogen and carbonyl oxygen atoms in the peptide backbone, and their formation is driven by the protein's primary sequence.
+
+sequence_embedding_types:
+  - name: "ESM"
+    description: "Evolutionary Scale Modeling (ESM) embeddings are designed to capture the evolutionary information of protein sequences, utilizing deep learning to generate representations that enhance sequence analysis and prediction tasks."
+    task_name: "esm"
+    model_name: facebook/esm2_t6_8M_UR50D
+  - name: "Prost-T5"
+    description: "Prot-T5 embeddings leverage the capabilities of the T5 (Text-to-Text Transfer Transformer) model adapted for protein sequences, offering advanced sequence representation by considering both local and global sequence features."
+    task_name: prost_t5
+    model_name: Rostlab/ProstT5
+  - name: "Prot-T5"
+    description: "Prot-T5 embeddings leverage the capabilities of the T5 (Text-to-Text Transfer Transformer) model adapted for protein sequences, offering advanced sequence representation by considering both local and global sequence features."
+    task_name: prot_t5
+    model_name: Rostlab/prot_t5_xl_uniref50
+  - name: "Ankh3-Large"
+    description: "Ankh3 is a T5-based protein language model optimized for accurate and efficient embeddings. Using the [NLU] prefix and trained on diverse protein data, it captures semantic and structural information relevant to protein function."
+    task_name: ankh3
+    model_name: ElnaggarLab/ankh3-large
+
+structure_embedding_types:
+  - name: "3di"
+    description: "Foldseek's 3di embeddings encode the 3D structure into sequences over a structural alphabet, capturing tertiary amino acid interactions."
+    task_name: "3di"
+    model_name: "mini3di"
+
+
+prediction_methods:
+  - name: "Cosine Similarity"
+    description: "Cosine similarity measures the cosine of the angle between two non-zero vectors of an inner product space. It is used to measure the similarity between two embedding spaces."
