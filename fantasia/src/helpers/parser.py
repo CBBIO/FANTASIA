@@ -14,7 +14,6 @@ functional annotations using pre-trained language models (PLMs). It supports:
   • ProstT5
   • ESM2
   • Ankh
-  
 
 This system processes protein sequences by embedding them with these models,
 storing the embeddings into an h5 Object, and performing efficient similarity searches over a vector database.
