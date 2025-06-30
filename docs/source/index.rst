@@ -35,3 +35,10 @@ FANTASIA is an advanced pipeline designed for automatic functional annotation of
    slurm
 
 
+.. toctree::
+   :maxdepth: 2
+   :caption: Help
+
+   faq
+
+

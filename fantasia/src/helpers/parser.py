@@ -13,6 +13,8 @@ functional annotations using pre-trained language models (PLMs). It supports:
   • ProtT5
   • ProstT5
   • ESM2
+  • Ankh
+  
 
 This system processes protein sequences by embedding them with these models,
 storing the embeddings into an h5 Object, and performing efficient similarity searches over a vector database.
@@ -23,15 +25,11 @@ kept up to date, while proteins from the 2022 dataset remain for benchmarking (e
 
 Reference Datasets:
 --------------------
-FANTASIA allows selecting between two datasets for reference annotation during the lookup stage:
+FANTASIA allows selecting between datasets for reference annotation during the lookup stage:
 
-1. **Default: UniProt 2024 + GOA full dump**
-   - File URL: https://zenodo.org/records/14864851/files/uniprot_embeddings_goa_2024_with_2022_tags.tar?download=1
-   - Zenodo page: https://zenodo.org/records/14864851
-
-2. **Benchmark mode: GoPredSim 2022 filtered dataset**
-   - File URL: https://zenodo.org/records/15095845/files/embeddings_fantasia_gopredsim_2022.dump?download=1
-   - Zenodo page: https://zenodo.org/records/15095845
+1. **Default: UniProt 2025 + GOA Experimental Evidence Codes full dump**
+   - File URL: https://zenodo.org/records/15705162/files/PIS_2025_ankh_exp.dump?download=1
+   - Zenodo page: https://zenodo.org/records/15705162
 
 Use the `--embeddings_url` flag in the `initialize` command to override the default.
 
@@ -60,7 +58,6 @@ The 'initialize' command prepares the system for operation by:
   • Setting up the necessary directories.
 
 By default, the configuration is loaded from './fantasia/config.yaml'.
-You can select between UniProt 2024 full GOA dump or a filtered benchmark version.
             """
         ),
         formatter_class=argparse.RawTextHelpFormatter
@@ -78,7 +75,7 @@ You can select between UniProt 2024 full GOA dump or a filtered benchmark versio
 
     init_parser.epilog = (
         "Examples:\n"
-        "  # Default (UniProt 2024 + GOA full mirror)\n"
+        "  # Default (UniProt 2025 Experimental Evidence Codes)\n"
         "  python fantasia/main.py initialize --config my_config.yaml\n\n"
         "  # Benchmark mode (GoPredSim 2022 subset)\n"
         "  python fantasia/main.py initialize \\\n"
