@@ -17,7 +17,7 @@ For full documentation, visit [FANTASIA Documentation](https://fantasia.readthed
 ## Key Features
 
 - **✅ Available Embedding Models**  
-  Supports protein language models: **ProtT5**, **ProstT5**, and **ESM2** for sequence representation.
+  Supports protein language models: **ProtT5**, **ProstT5**, **ESM2** and **Ankh** for sequence representation.
 
 - **🔍 Redundancy Filtering**  
   Filters out homologous sequences using **MMseqs2** in the lookup table, allowing controlled redundancy levels through an adjustable
@@ -37,7 +37,7 @@ For full documentation, visit [FANTASIA Documentation](https://fantasia.readthed
 ## Pipeline Overview (Simplified)
 
 1. **Embedding Generation**  
-   Computes protein embeddings using deep learning models (**ProtT5**, **ProstT5**, and **ESM2**).
+   Computes protein embeddings using deep learning models (**ProtT5**, **ProstT5**, **ESM2** and **Ankh**).
 
 2. **GO Term Lookup**  
    Performs vector similarity searches using **in-memory computations** to assign Gene Ontology terms. Reference

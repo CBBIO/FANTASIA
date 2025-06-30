@@ -168,6 +168,14 @@ def load_and_merge_config(args, unknown_args):
 
 
 def main():
+    # 🟡 Suppress SyntaxWarnings caused by invalid escape sequences in ete3
+    # Python 3.12 raises SyntaxWarnings when a string contains a backslash not forming a valid escape.
+    # Many regexes in ete3 mistakenly use normal strings ("...") instead of raw strings (r"...").
+    # These warnings are harmless but clutter the console with unnecessary messages.
+    # TODO: Remove this filter once ete3 fixes its improper regex string usage.
+    import warnings
+    warnings.filterwarnings("ignore", category=SyntaxWarning)
+    ###
     parser = build_parser()
     args, unknown_args = parser.parse_known_args()
 
