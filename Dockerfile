@@ -8,6 +8,13 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+RUN apt-get update && apt-get install -y --no-install-recommends wget gnupg lsb-release \
+    && echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Poetry
 ENV POETRY_VERSION=1.8.2
 RUN pip install "poetry==$POETRY_VERSION"
@@ -29,4 +36,4 @@ COPY . .
 RUN poetry install --no-dev
 
 # Default command
-CMD ["python"]
+CMD ["fantasia"]
