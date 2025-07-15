@@ -22,7 +22,7 @@ jobs:
           poetry-version: ${{ matrix.poetry-version }}
       - name: install dependecies
         run: |
-          poetry install
+          poetry install --only dev
 
       - name: flake8
         run: poetry run task lint
