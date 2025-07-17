@@ -1,7 +1,7 @@
 import warnings
 
-warnings.filterwarnings("ignore", category=SyntaxWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=SyntaxWarning)  # noqa: E402
+warnings.filterwarnings("ignore", category=UserWarning)  # noqa: E402
 
 import os
 import sys

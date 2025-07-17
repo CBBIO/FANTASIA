@@ -25,14 +25,19 @@ After installation, you can verify the CLI is available by running:
    fantasia --help
 
 
-Service Requirements
---------------------
+Dependencies
+------------
 
-FANTASIA depends on two external services:
+FANTASIA depends on the following external services and tools:
 
 - **PostgreSQL with pgvector**: used for storing and querying precomputed embeddings.
+- **RabbitMQ**: used as a task/message queue for asynchronous processing.
 - **MMseqs2**: used for redundancy filtering during benchmarking (optional).
 - **Parasail**: used for sequence alignment post-processing (optional but recommended).
+
+
+Service Requirements
+--------------------
 
 Start the required services using Docker:
 
@@ -45,6 +50,10 @@ Start the required services using Docker:
        -p 5432:5432 \
        pgvector/pgvector:pg16
 
+   docker run -d --name rabbitmq \
+       -p 5672:5672 -p 15672:15672 \
+       rabbitmq:3-management
+
 You may also install MMseqs2 and Parasail via APT:
 
 .. code-block:: bash
@@ -54,7 +63,7 @@ You may also install MMseqs2 and Parasail via APT:
 
 
 Directory Setup
-
+---------------
 
 FANTASIA expects several working directories to exist. You can create them with:
 
@@ -102,18 +111,19 @@ You have two options to provide these files:
 
 
 Running the Pipeline
-------------------------------------------------
-Once installed and configured, you can run the annotation pipeline with:
+--------------------
 
-.. code-block:: bash
-
-   fantasia run --input my_sequences.fasta
-
-You can also initialize the database (for embedding indexing):
+Once installed and configured, you can initialize the database (for embedding indexing):
 
 .. code-block:: bash
 
    fantasia initialize
+
+Then run the annotation pipeline with:
+
+.. code-block:: bash
+
+   fantasia run --input my_sequences.fasta
 
 For more options:
 

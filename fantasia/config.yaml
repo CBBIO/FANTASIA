@@ -95,7 +95,7 @@ taxonomy_ids_included_exclusively: [ ]
 get_descendants: False
 
 # Number of sequences per queue batch (for multiprocessing).
-sequence_queue_package: 512
+sequence_queue_package: 128
 
 # Remove existing queues before execution.
 delete_queues: true

@@ -814,11 +814,11 @@ class EmbeddingLookUp(BaseTaskInitializer):
             try:
                 val = eval(g)
                 if (
-                        isinstance(g, str)
-                        and g.startswith("[{")
-                        and isinstance(val, list)
-                        and len(val) > 0
-                        and "Name" in val[0]
+                        isinstance(g, str) and
+                        g.startswith("[{") and
+                        isinstance(val, list) and
+                        len(val) > 0 and
+                        "Name" in val[0]
                 ):
                     return val[0]["Name"]
             except Exception:
