@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "FANTASIA"
-version = "2.8.5"
+version = "2.8.6"
 description = "Functional ANnoTAtion based on embedding space SImilArity"
 authors = ["Francisco Miguel Pérez Canales <frapercan1@alum.us.es>"]
 readme = "README.md"
@@ -9,7 +9,7 @@ readme = "README.md"
 fantasia = "fantasia.main:main"
 
 [tool.poetry.dependencies]
-python = ">=3.11,<4.0"
+python = ">=3.12,<4.0"
 docopt = "^0.6.2"
 parasail = "^1.3.4"
 ete3 = "^3.1.3"
