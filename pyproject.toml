@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "FANTASIA"
-version = "2.8.6"
+version = "2.8.7"
 description = "Functional ANnoTAtion based on embedding space SImilArity"
 authors = ["Francisco Miguel Pérez Canales <frapercan1@alum.us.es>"]
 readme = "README.md"
