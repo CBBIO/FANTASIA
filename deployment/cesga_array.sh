@@ -1,0 +1,143 @@
+Running FANTASIA at CESGA (SLURM + Apptainer + GPU)
+===================================================
+
+This section describes how to execute the full **FANTASIA functional annotation pipeline** on the **CESGA supercomputer** using SLURM job arrays and GPU acceleration. All components (PostgreSQL, RabbitMQ, FANTASIA) are isolated via **Apptainer containers**, and run locally on each node without external dependencies.
+
+Job script overview
+-------------------
+
+The recommended SLURM script (`cesga_array.sh`) is designed to:
+
+- Read tab-separated parameters from a file (input FASTA, experiment name, and extra options)
+- Set up all persistent paths on LUSTRE
+- Launch services (PostgreSQL + RabbitMQ) inside containers
+- Run `fantasia initialize` and `fantasia run` inside the GPU container
+- Perform automated cleanup on exit
+
+### SLURM header
+
+.. code-block:: bash
+
+    #SBATCH -p gpu
+    #SBATCH --gres=gpu:a100:1
+    #SBATCH -c 32
+    #SBATCH --mem=64G
+    #SBATCH -t 08:00:00
+    #SBATCH --job-name=fantasia_job
+    #SBATCH --output=fantasia_%j.out
+    #SBATCH --error=fantasia_%j.err
+
+Requesting:
+- A GPU A100 node (`--gres=gpu:a100:1`)
+- 32 CPU cores
+- 64 GB of memory
+- Maximum walltime: 8 hours
+
+Parameter file format
+---------------------
+
+The script expects an input file (e.g., `fantasia_input_list.txt`) with **tab-separated** fields:
+
+.. code-block:: text
+
+    <input_fasta>    <output_prefix>    <extra_arguments>
+
+Example:
+
+.. code-block:: text
+
+    proteomes_uniprot/UP000000589.fasta    MOUSE_nr100_k1    --redundancy_filter 1.0 --taxonomy_ids_to_exclude 10090,9606
+
+This file must be located at `$HOME/fantasia_input_list.txt` (can be customized).
+
+Launching a job array
+---------------------
+
+Submit the job array with:
+
+.. code-block:: bash
+
+    sbatch --array=1-8%1 cesga_array.sh
+
+Explanation:
+
+- `--array=1-8`: launches 8 jobs corresponding to lines 1–8 of the parameter file
+- `%1`: restricts execution to **1 job at a time** (adjust based on GPU availability)
+
+Key persistent paths (LUSTRE)
+-----------------------------
+
+These directories are defined in the script and must be adapted to your CESGA account:
+
+.. code-block:: bash
+
+    LUSTRE_BASE="/mnt/lustre/scratch/nlsas/home/csic/cbb/fpc"
+
+    export TRANSFORMERS_CACHE="$LUSTRE_BASE/.transformers_cache"
+    export HF_HOME="$LUSTRE_BASE/.hf_cache"
+    export UDOCKER_DIR="$LUSTRE_BASE/.udocker_repo"
+    export APPTAINER_CACHEDIR="$LUSTRE_BASE/.singularity/cache"
+    export APPTAINER_TMPDIR="$LUSTRE_BASE/.singularity/tmp"
+    export APPTAINER_LOCALCACHEDIR="$LUSTRE_BASE/.singularity/local"
+    export PIP_CACHE_DIR="$LUSTRE_BASE/.pip_cache"
+
+These are used to cache containers, models (HuggingFace), Python packages, and avoid re-downloading.
+
+Execution paths and services
+----------------------------
+
+The script mounts or initializes:
+
+- `fantasia.sif`: GPU-enabled container with the full pipeline
+- `pgvector.sif`: container with PostgreSQL + pgvector
+- `rabbitmq.sif`: container with management-enabled RabbitMQ
+
+All services are launched in the background via `apptainer run` using bind mounts:
+
+.. code-block:: bash
+
+    apptainer run \
+      --env POSTGRES_USER=usuario \
+      --env POSTGRES_PASSWORD=clave \
+      --env POSTGRES_DB=BioData \
+      --bind $PGDATA_HOST:/var/lib/postgresql/data \
+      --bind $PG_RUN:/var/run/postgresql \
+      $PGVECTOR_IMAGE
+
+    apptainer run \
+      --bind $RABBITMQ_DATA_DIR:/var/lib/rabbitmq \
+      $RABBITMQ_IMAGE
+
+Pipeline execution
+------------------
+
+After a short delay (`sleep 15`), the pipeline is launched:
+
+.. code-block:: bash
+
+    apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
+        fantasia initialize
+
+    apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
+        fantasia run --input "$INPUT" --prefix "$OUTPUT" $EXTRA
+
+- The `--nv` flag enables GPU passthrough.
+- The output will be written under `$EXECUTION_DIR`.
+
+Cleanup
+-------
+
+Upon exit, the script runs a `cleanup()` function to kill background services and delete temporary data:
+
+.. code-block:: bash
+
+    pkill -f "$POSTGRESQL_DATA"
+    pkill -f "rabbitmq-server"
+    rm -rf "$SHARED_MEM_DIR"
+
+Logs
+----
+
+- SLURM output: `fantasia_<jobid>.out`
+- SLURM error: `fantasia_<jobid>.err`
+- PostgreSQL and RabbitMQ logs: `postgres.log`, `rabbitmq.log`

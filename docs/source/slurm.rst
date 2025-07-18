@@ -1,134 +1,84 @@
-.. _fantasia_slurm_job:
+Prepare the Job Script
+======================
 
-Running FANTASIA via SLURM
-===========================
+FANTASIA provides several ready-to-use SLURM job scripts for deployment on high-performance computing (HPC) systems. These scripts are available in the `deployment/` folder of the repository and are tailored to different infrastructures and container runtimes.
 
-This guide explains how to launch the FANTASIA tool through a SLURM job on an HPC environment. The process ensures proper directory configuration, leverages Singularity containers, and uses RAM-based PostgreSQL and in-memory loading for optimal performance.
-
-See the documentation for Singularity [SingularityDocs]_ and SLURM [SLURMdocs]_, or consult the FANTASIA repository [FANTASIArepo]_.
-
-Steps to Run FANTASIA on SLURM
-------------------------------
-
-1. Connect to the HPC Environment
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Begin by connecting to the remote server or HPC environment using SSH:
-
-.. code-block:: bash
-
-    ssh user@server
-
-2. Prepare the Job Script
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-There are **two ways** to prepare your working environment. Both will use the same `job.sh` script, but differ in how you retrieve it.
-
-**Option A: Download and run `job.sh` from the main repository**
-
-Use this if you haven’t cloned the repository yet:
-
-.. code-block:: bash
-
-    wget https://raw.githubusercontent.com/CBBIO/FANTASIA/main/job.sh
-    bash job.sh
-
-**Option B: Clone the repository manually and execute `job.sh` from there**
-
-This method launches a default test job using a set of **four sequences**, which is ideal for debugging and validating the full process on your target machine:
+To get started:
 
 .. code-block:: bash
 
     git clone https://github.com/CBBIO/FANTASIA.git
     cd FANTASIA
-    bash job.sh
 
-⚠️ **Important:** Make sure the environment variables `REPO_DIR` and `WORK_DIR` point to the **same directory** to avoid cloning the repository twice. The default values are:
+Choose the appropriate script based on your computing environment (e.g., CESGA or Greisenwald) and the desired workload (single job or job array). Each script launches PostgreSQL, RabbitMQ, and the FANTASIA pipeline inside containers using either **Apptainer** or **Singularity**, depending on the cluster. You can use these scripts as a template to adapt the workflow to your own HPC environment.
 
-.. code-block:: bash
+.. note::
 
-    REPO_DIR="$HOME/FANTASIA"
-    WORK_DIR="$HOME/FANTASIA"
+   Each script includes internal setup of containers, service initialization, and cleanup logic. You may customize them by editing execution parameters (e.g., input FASTA, number of neighbors, filtering options, output prefix, etc.).
 
-3. What `job.sh` Actually Does
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Configuration File and Runtime Options
+--------------------------------------
 
-The `job.sh` script performs the following actions:
-
-- Ensures the `FANTASIA` repository is present under ``$REPO_DIR``
-- Builds the required Singularity (`.sif`) images from the Docker containers
-- Loads the embeddings and metadata **directly into RAM**
-- Mounts the PostgreSQL database in shared memory (`/dev/shm`)
-- Submits the analysis job to SLURM using:
-
-.. code-block:: bash
-
-    sbatch job.sh
-
-This means the actual analysis is performed in a SLURM job, **not during the execution of `job.sh` itself**.
-
-4. Default Directory Structure
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-- Code and containers: ``$HOME/FANTASIA``
-- Output/results: ``$HOME/fantasia`` (note the lowercase)
-
-These defaults can be modified inside `job.sh` to suit your own directory structure.
-
-5. Database Configuration and Performance
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-FANTASIA mounts the internal PostgreSQL database under ``/dev/shm`` (shared memory), which provides faster I/O than disk-based storage.
-
-However, **most of the heavy lifting is done in RAM**: embeddings and associated metadata are loaded entirely into memory at the beginning of the process, significantly improving performance during distance computations and annotation transfer.
-
-The PostgreSQL configuration is also tuned for high-throughput performance, including:
-
-- Increased buffer sizes
-- Improved concurrency handling
-
-6. Modifying Execution Parameters
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-To customize how FANTASIA runs (number of workers, batch sizes, input sequences, etc.), you must edit the configuration file located in:
+FANTASIA is primarily configured via a YAML file located at:
 
 .. code-block:: bash
 
     config/config.yaml
 
-Set the parameters according to your environment and job size.
+This file allows you to specify key execution parameters, including:
 
-**Default SLURM resources** (defined in `job.sh`) are as follows:
+- Input FASTA path
+- Output prefix
+- Number of nearest neighbors (`limit_per_entry`)
+- Redundancy filters and taxonomy exclusions
+- Resource usage parameters (batch size, workers, etc.)
+
+.. note::
+
+   This configuration file is automatically loaded during the execution of ``fantasia run``.
+
+Alternatively, you may override specific parameters directly via the command-line interface (CLI) when invoking FANTASIA. Command-line arguments take precedence over values defined in the configuration file.
+
+Example:
 
 .. code-block:: bash
 
-    #!/bin/bash
-    #SBATCH --job-name=fantasia
-    #SBATCH --output=fantasia_%j.log
-    #SBATCH --error=fantasia_%j.err
-    #SBATCH --partition=vision
-    #SBATCH --gres=gpu:1
-    #SBATCH --cpus-per-task=128
-    #SBATCH --mem=128G
-    #SBATCH --time=1-00:00:00
-    #SBATCH --nodes=1
-    #SBATCH --ntasks=1
-
-Under this setup, the **recommended configuration** is:
-
-- **80 workers**
-- **Batch size of 200** for distance calculations
-- **Batch size of 128** for embedding generation
-
-Adjust these values in `config.yaml` depending on the available resources and the size of your dataset.
+    fantasia run --input my_proteins.fasta --prefix TEST_RUN --redundancy_filter 1.0 --taxonomy_ids_to_exclude 9606 --k 5
 
 
-References
---------------------------------------------------
+HPC Deployment Examples
+================================
 
-.. [FANTASIArepo] Ana Rojas Lab, *FANTASIA repository*, available at: https://github.com/CBBIO/FANTASIA.
+FANTASIA provides tailored SLURM job scripts for different HPC infrastructures. Each script adapts to the specific container engine (Apptainer or Singularity), available modules, storage layout, and GPU configuration.
 
-.. [SingularityDocs] Sylabs, *Singularity Documentation*, available at: https://sylabs.io/guides/.
+CESGA (single job)
+------------------
 
-.. [SLURMdocs] SchedMD, *SLURM Workload Manager Documentation*, available at: https://slurm.schedmd.com/documentation.html.
+Runs **PostgreSQL**, **RabbitMQ**, and the **FANTASIA pipeline** within isolated **Apptainer** containers. All persistent data, cache directories, and outputs are mounted on the **LUSTRE** parallel file system.
 
+📄 See: :doc:`deployment/cesga_job`
+
+CESGA (job array)
+-----------------
+
+Launches a SLURM array of jobs based on a tab-separated parameter file. Each task executes a separate FANTASIA run with GPU acceleration (A100) using **Apptainer**, with all caches and intermediate files stored under **LUSTRE**.
+
+📄 See: :doc:`deployment/cesga_array_job`
+
+Greisenwald (single job)
+------------------------
+
+Designed for high-memory, long-running jobs. Uses **Singularity** as container runtime along with pre-loaded environment modules (e.g., ``gcc``, ``hdf5``, ``singularity``). All services (PostgreSQL, RabbitMQ) and containers are launched locally.
+
+📄 See: :doc:`deployment/greisenwald_job`
+
+Greisenwald (job array)
+-----------------------
+
+Equivalent to the CESGA array version but adapted to **Greisenwald’s scheduler configuration** and Singularity runtime. It allows batch processing via SLURM arrays using HPC-appropriate paths and module setups.
+
+📄 See: :doc:`deployment/greisenwald_array_job`
+
+All deployment scripts can also be found in the official repository:
+
+🔗 https://github.com/CBBIO/FANTASIA/tree/main/deployment
