@@ -1,4 +1,4 @@
-Prepare the Job Script
+HPC - SLURM Deployment
 ======================
 
 FANTASIA provides several ready-to-use SLURM job scripts for deployment on high-performance computing (HPC) systems. These scripts are available in the `deployment/` folder of the repository and are tailored to different infrastructures and container runtimes.
