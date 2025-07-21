@@ -40,15 +40,8 @@ Resources requested:
 Input Parameters
 ----------------
 
-For single-job execution, input parameters are **hardcoded** within the script:
+For single-job execution, input parameters can be **hardcoded** within the script, or you can modify the configuration file.
 
-.. code-block:: bash
-
-   INPUT="proteomes_uniprot/UP000000589.fasta"
-   OUTPUT="MOUSE_nr100_k1"
-   EXTRA="--redundancy_filter 1.0 --taxonomy_ids_to_exclude 10090,9606"
-
-You can modify these variables directly at the beginning of the job script.
 
 Persistent Storage Paths (LUSTRE)
 ---------------------------------
@@ -104,7 +97,7 @@ After services are launched in the background, the FANTASIA pipeline is initiali
        fantasia initialize
 
    apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-       fantasia run --input "$INPUT" --prefix "$OUTPUT" $EXTRA
+       fantasia run
 
 - The ``--nv`` flag enables GPU passthrough.
 - All outputs are written under ``$EXECUTION_DIR``.
