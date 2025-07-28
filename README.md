@@ -14,6 +14,19 @@ FANTASIA is an advanced pipeline for the automatic functional annotation of prot
 
 For full documentation, visit [FANTASIA Documentation](https://fantasia.readthedocs.io/en/latest/).
 
+
+> ⚠️ **Important Notice (v3.0.0):**
+>
+> In previous versions of FANTASIA, all input sequences were **automatically truncated at 512 amino acids**, regardless of model capacity.  
+> This may have negatively affected the accuracy of functional annotation for long proteins by generating incomplete embeddings.
+>
+> Starting from version **3.0.0**, this limitation has been **removed**. The updated pipeline now processes the **full sequence length supported by each model**, resulting in more accurate and biologically meaningful representations.
+>
+> 🔄 **We strongly recommend updating to FANTASIA v3.0.0.**
+>
+> 💬 For questions or issues, please contact the CBBIO group.
+
+
 ## Key Features
 
 - **✅ Available Embedding Models**  
