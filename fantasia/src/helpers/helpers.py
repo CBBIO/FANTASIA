@@ -124,6 +124,23 @@ def parse_unknown_args(unknown_args):
     return result
 
 
+def compute_metrics(row):
+    seq1 = row["sequence_query"]
+    seq2 = row["sequence_reference"]
+    metrics = run_needle_from_strings(seq1, seq2)
+    return {
+        "sequence_query": seq1,
+        "sequence_reference": seq2,
+        "identity": metrics["identity_percentage"],
+        "similarity": metrics.get("similarity_percentage"),
+        "alignment_score": metrics["alignment_score"],
+        "gaps_percentage": metrics.get("gaps_percentage"),
+        "alignment_length": metrics["alignment_length"],
+        "length_query": len(seq1),
+        "length_reference": len(seq2),
+    }
+
+
 def run_needle_from_strings(seq1, seq2):
     """
     Alinea dos secuencias con Parasail (global alignment) y extrae métricas estilo EMBOSS.
