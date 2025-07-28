@@ -25,7 +25,6 @@ The system is designed for scalability, interpretability, and compatibility
 with downstream enrichment analysis tools.
 """
 
-import importlib
 import os
 import time
 import traceback
@@ -35,6 +34,9 @@ from protein_information_system.tasks.base import BaseTaskInitializer
 
 import numpy as np
 import pandas as pd
+import torch
+from scipy.spatial.distance import cdist
+
 from goatools.base import get_godag
 from protein_information_system.sql.model.entities.sequence.sequence import Sequence
 
@@ -44,81 +46,45 @@ from protein_information_system.sql.model.entities.embedding.sequence_embedding 
     SequenceEmbedding
 from protein_information_system.sql.model.entities.protein.protein import Protein
 
-from fantasia.src.helpers.helpers import run_needle_from_strings, get_descendant_ids
-
-
-def compute_metrics(row):
-    seq1 = row["sequence_query"]
-    seq2 = row["sequence_reference"]
-    metrics = run_needle_from_strings(seq1, seq2)
-    return {
-        "sequence_query": seq1,
-        "sequence_reference": seq2,
-        "identity": metrics["identity_percentage"],
-        "similarity": metrics.get("similarity_percentage"),
-        "alignment_score": metrics["alignment_score"],
-        "gaps_percentage": metrics.get("gaps_percentage"),
-        "alignment_length": metrics["alignment_length"],
-        "length_query": len(seq1),
-        "length_reference": len(seq2),
-    }
+from fantasia.src.helpers.helpers import get_descendant_ids, compute_metrics
 
 
 class EmbeddingLookUp(BaseTaskInitializer):
     """
-    EmbeddingLookUp handles the similarity-based annotation of proteins using precomputed embeddings.
+    EmbeddingLookUp performs GO annotation transfer using embedding similarity.
 
-    This class reads sequence embeddings from an HDF5 file, computes similarity to known embeddings
-    stored in a database, retrieves GO term annotations from similar sequences, and writes
-    the predicted annotations to a CSV file. It also supports optional redundancy filtering
-    via CD-HIT and generation of a TopGO-compatible TSV file.
+    Given a set of sequence embeddings in HDF5 format, it compares them against reference embeddings
+    stored in a database, retrieves GO annotations from similar sequences, and stores the results in
+    CSV and optionally TopGO format. The process includes:
+
+    - configurable filtering by taxonomy,
+    - redundancy-aware neighbor selection via MMseqs2 clusters,
+    - support for multiple embedding models with per-model distance thresholds,
+    - distance computation using GPU (via PyTorch) or CPU,
+    - optional sequence alignment postprocessing to compute identity/similarity.
 
     Parameters
     ----------
     conf : dict
-        Configuration dictionary with paths, thresholds, model definitions, and flags.
+        Configuration dictionary defining paths, thresholds, model settings, and processing options.
     current_date : str
-        Timestamp used to generate unique file names for outputs.
+        Timestamp used to version output files.
 
-    Attributes
-    ----------
-    experiment_path : str
-        Base path for output files and temporary data.
-    embeddings_path : str
-        Path to the input HDF5 file containing embeddings and sequences.
-    results_path : str
-        Path to write the final CSV file containing GO term predictions.
-    topgo_path : str
-        Path to write the optional TopGO-compatible TSV file.
-    topgo_enabled : bool
-        Flag indicating whether TopGO output should be generated.
-    limit_per_entry : int
-        Maximum number of neighbors considered per query during lookup.
-    distance_metric : str
-        Metric used to compute similarity between embeddings ("<->" or "<=>").
-    types : dict
-        Metadata and modules for each enabled embedding model.
-    lookup_tables : dict
-        Preloaded embeddings used for distance computations, organized by model.
-    go : GODag
-        Gene Ontology DAG loaded via goatools.
-    clusters : pandas.DataFrame, optional
-        Cluster assignments used for redundancy filtering (if enabled).
+    Notes
+    -----
+    - Supports cosine or euclidean distance metrics.
+    - Redundancy filtering uses MMseqs2 clustering based on sequence identity and coverage.
+    - GO annotations are preloaded from the relational database and filtered by taxonomy if requested.
     """
 
     def __init__(self, conf, current_date):
         """
-        Initializes the EmbeddingLookUp class with configuration, paths, model metadata,
-        and preloaded resources required for embedding-based GO annotation transfer.
-
-        Parameters
-        ----------
-        conf : dict
-            Configuration dictionary with paths, thresholds, and embedding model settings.
-        current_date : str
-            Timestamp used for uniquely identifying output files.
+        Prepares internal configuration, output paths, GO DAG, and optional MMseqs2 clustering.
         """
+
         super().__init__(conf)
+
+        self.types = None
 
         self.current_date = current_date
         self.logger.info("Initializing EmbeddingLookUp...")
@@ -135,9 +101,6 @@ class EmbeddingLookUp(BaseTaskInitializer):
         # Limits and optional features
         self.limit_per_entry = self.conf.get("limit_per_entry", 200)
         self.topgo_enabled = self.conf.get("topgo", False)
-
-        # Initialize embedding models
-        self.fetch_models_info()
 
         # Redundancy filtering setup
         redundancy_filter_threshold = self.conf.get("redundancy_filter", 0)
@@ -158,7 +121,26 @@ class EmbeddingLookUp(BaseTaskInitializer):
         self.logger.info("EmbeddingLookUp initialization complete.")
 
     def start(self):
+        """
+        Main execution method for the GO annotation pipeline.
+
+        Steps:
+        1. Load model definitions from config and database.
+        2. Load reference embeddings into memory.
+        3. Load GO annotations from the database.
+        4. Read query embeddings from HDF5 and group them into model-specific batches.
+        5. Process each batch to find neighbors and transfer GO terms.
+        6. Store raw predictions and run final post-processing (deduplication, alignment).
+
+        Raises
+        ------
+        Exception
+            If any error occurs during batch processing.
+        """
+
         self.logger.info("Starting embedding-based GO annotation process.")
+
+        self.load_model_definitions()
 
         self.logger.info("Loading reference embeddings into memory.")
         self.lookup_table_into_memory()
@@ -168,7 +150,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
         self.logger.info(f"Processing query embeddings from HDF5: {self.embeddings_path}")
         try:
-            batch_size = self.conf.get("batch_size", 4)
+            batch_size = self.conf.get("batch_size", 1)
             batches_by_model = {}
             total_batches = 0
 
@@ -190,12 +172,17 @@ class EmbeddingLookUp(BaseTaskInitializer):
                         if not item_name.startswith("type_") or "embedding" not in item_group:
                             continue
 
-                        model_key = item_name.replace("type_", "")
-                        if model_key not in self.types:
+                        model_id = int(item_name.replace("type_", ""))
+                        model_info = next(
+                            (info for info in self.types.values() if info["id"] == model_id),
+                            None
+                        )
+                        if model_info is None:
+                            self.logger.warning(f"No model config found for embedding type ID {model_id}, skipping.")
                             continue
 
                         embedding = item_group["embedding"][:]
-                        model_info = self.types[model_key]
+                        model_key = model_info["task_name"]
 
                         task_data = {
                             "accession": accession,
@@ -227,78 +214,70 @@ class EmbeddingLookUp(BaseTaskInitializer):
         self.post_process_results()
         self.logger.info("Embedding lookup pipeline completed.")
 
-    def fetch_models_info(self):
+    def load_model_definitions(self):
         """
-        Loads embedding model definitions from the database and dynamically imports associated modules.
+        Initializes `self.types` by matching embedding types from the database with
+        those defined in the configuration.
 
-        This method retrieves all embedding types stored in the `SequenceEmbeddingType` table and checks
-        which ones are enabled in the configuration. For each enabled model, it dynamically imports the
-        embedding module and stores the metadata in the `self.types` dictionary.
+        Only models present in both sources and marked as `enabled` are included.
+        Each entry contains model ID, model name, task name, distance threshold, and batch size.
 
-        Raises
-        ------
-        Exception
-            If the database query fails or a model module cannot be imported.
-
-        Notes
-        -----
-        - `self.types` stores metadata per model task_name, including embedding type ID, module reference,
-          and thresholds.
-        - ⚠ TODO: This method should be factorized into parent class to avoid duplications.
-
+        Logs warnings for models missing in config or explicitly disabled.
         """
-
-        try:
-            embedding_types = self.session.query(SequenceEmbeddingType).all()
-        except Exception as e:
-            self.logger.error(f"Error querying SequenceEmbeddingType table: {e}")
-            raise
 
         self.types = {}
-        enabled_models = self.conf.get("embedding", {}).get("models", {})
 
-        for embedding_type in embedding_types:
-            task_name = embedding_type.task_name
-            if task_name not in enabled_models:
+        try:
+            db_models = self.session.query(SequenceEmbeddingType).all()
+        except Exception as e:
+            self.logger.error(f"Failed to query SequenceEmbeddingType table: {e}")
+            raise
+
+        config_models = self.conf.get("embedding", {}).get("models", {})
+
+        for db_model in db_models:
+            task_name = db_model.name  # usamos el 'name' (no 'task_name') de la BD
+            config_models = self.conf.get("embedding", {}).get("models", {})
+
+            # Si el modelo está definido en la config (por nombre), lo usamos
+            matched_name = next((k for k in config_models if k.lower() == task_name.lower()), None)
+            if matched_name is None:
+                self.logger.warning(f"Model '{task_name}' exists in DB but not in config — skipping.")
                 continue
 
-            model_config = enabled_models[task_name]
-            if not model_config.get("enabled", False):
+            config = config_models[matched_name]
+            if not config.get("enabled", True):
+                self.logger.info(f"Model '{matched_name}' is disabled in config — skipping.")
                 continue
 
-            try:
-                base_module_path = "protein_information_system.operation.embedding.proccess.sequence"
-                module_name = f"{base_module_path}.{task_name}"
-                module = importlib.import_module(module_name)
+            self.types[matched_name] = {
+                "id": db_model.id,
+                "model_name": db_model.model_name,
+                "task_name": matched_name,
+                "distance_threshold": config.get("distance_threshold"),
+                "batch_size": config.get("batch_size"),
+            }
 
-                self.types[task_name] = {
-                    "module": module,
-                    "model_name": embedding_type.model_name,
-                    "id": embedding_type.id,
-                    "task_name": task_name,
-                    "distance_threshold": model_config.get("distance_threshold"),
-                    "batch_size": model_config.get("batch_size"),
-                }
-
-                self.logger.info(f"Loaded model: {task_name} ({embedding_type.model_name})")
-
-            except ImportError as e:
-                self.logger.error(f"Failed to import module '{module_name}': {e}")
-                raise
+        self.logger.info(f"Loaded {len(self.types)} model(s) from DB + config: {list(self.types.keys())}")
 
     def enqueue(self):
         """
-        Reads embeddings and sequences from an HDF5 file and enqueues tasks in batches.
+        Reads query sequences and embeddings from the HDF5 input file and publishes them as task batches.
 
-        Each task includes a protein accession, its amino acid sequence, and a set of embeddings
-        generated by one or more models. Embeddings are grouped by model type and published in
-        configurable batches for downstream processing.
+        Each task includes an accession, amino acid sequence, and an embedding linked to a known model.
+        Tasks are grouped by model type and published in batches defined by `batch_size`.
+
+        Only models defined in both the config and database (via `self.types`) are used.
 
         Raises
         ------
+        FileNotFoundError
+            If the specified HDF5 file is not found.
+
         Exception
-            If any error occurs while reading the HDF5 file or publishing tasks.
+            If any other error occurs during batch creation or task publication.
         """
+
         try:
             self.logger.info(f"Reading embeddings from HDF5: {self.embeddings_path}")
 
@@ -327,21 +306,27 @@ class EmbeddingLookUp(BaseTaskInitializer):
                         if not item_name.startswith("type_") or "embedding" not in item_group:
                             continue
 
-                        model_key = item_name.replace("type_", "")
-                        if model_key not in self.types:
+                        model_id_str = item_name.replace("type_", "")
+
+                        model_name_lookup = next(
+                            (task_name for task_name, info in self.types.items() if str(info["id"]) == model_id_str),
+                            None
+                        )
+                        if model_name_lookup is None:
                             self.logger.warning(
-                                f"Unrecognized model '{model_key}' for accession '{accession}'. Skipping.")
+                                f"No matching model found in config for type ID {model_id_str}, skipping.")
                             continue
 
+                        model_info = self.types[model_name_lookup]
+
                         embedding = item_group["embedding"][:]
-                        model_info = self.types[model_key]
 
                         task_data = {
                             "accession": accession,
                             "sequence": sequence,
                             "embedding": embedding,
                             "embedding_type_id": model_info["id"],
-                            "model_name": model_key,
+                            "model_name": model_name_lookup,
                             "distance_threshold": model_info["distance_threshold"]
                         }
                         batch.append(task_data)
@@ -370,9 +355,25 @@ class EmbeddingLookUp(BaseTaskInitializer):
             raise
 
     def process(self, task_data):
-        import torch
-        import numpy as np
-        from scipy.spatial.distance import cdist
+        """
+        Processes a batch of query embeddings for a given model.
+
+        Computes pairwise distances to reference embeddings, applies optional redundancy
+        filtering (via MMseqs2 clusters), selects nearest neighbors under a distance
+        threshold, and transfers GO annotations from the matched reference sequences.
+
+        Supports GPU acceleration and cosine/euclidean distances via PyTorch or CPU fallback.
+
+        Parameters
+        ----------
+        task_data : list of dict
+            Each entry contains an accession, sequence, embedding, and model metadata.
+
+        Returns
+        -------
+        list of dict
+            Transferred GO annotations with metadata for each query-reference match.
+        """
 
         task = task_data[0]
         model_id = task["embedding_type_id"]
@@ -473,6 +474,23 @@ class EmbeddingLookUp(BaseTaskInitializer):
         return go_terms
 
     def store_entry(self, annotations):
+        """
+        Appends raw GO annotation results to the CSV output file.
+
+        Writes all predicted annotations for a given batch to `self.raw_results_path`.
+        Automatically appends if the file already exists, and includes headers only on first write.
+
+        Parameters
+        ----------
+        annotations : list of dict
+            GO annotations produced by the lookup process.
+
+        Raises
+        ------
+        Exception
+            If writing to the output file fails.
+        """
+
         if not annotations:
             self.logger.info("No valid GO terms to store.")
             return
@@ -491,9 +509,25 @@ class EmbeddingLookUp(BaseTaskInitializer):
         """
         Generates non-redundant sequence clusters using MMseqs2.
 
-        This method replaces the CD-HIT clustering with MMseqs2, using only the
-        sequence IDs from the database and the HDF5 file as identifiers.
+        Combines protein sequences from the database and the HDF5 file into a temporary FASTA file,
+        then runs MMseqs2 clustering based on identity and coverage thresholds. The resulting cluster
+        assignments are stored in the following attributes:
+
+        - `self.clusters`: raw cluster assignment as a DataFrame.
+        - `self.clusters_by_id`: mapping from sequence ID to cluster ID.
+        - `self.clusters_by_cluster`: mapping from cluster ID to set of sequence IDs.
+
+        Configuration parameters:
+        - `redundancy_filter` → identity threshold.
+        - `alignment_coverage` → coverage threshold.
+        - `threads` → number of threads for MMseqs2.
+
+        Raises
+        ------
+        Exception
+            If MMseqs2 fails or any step in the clustering pipeline encounters an error.
         """
+
         import tempfile
         import subprocess
 
@@ -549,30 +583,19 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
     def retrieve_cluster_members(self, accession: str) -> set:
         """
-        Retrieve the set of cluster members associated with a given accession.
-
-        This method looks up the cluster ID corresponding to the provided accession
-        and returns the set of all sequence identifiers that belong to the same cluster.
+        Returns the set of sequence IDs that belong to the same MMseqs2 cluster as the given sequence.
 
         Parameters
         ----------
         accession : str
-            Accession string corresponding to a protein or sequence included in clustering.
+            Sequence ID used in the clustering (must match identifier used in FASTA header).
 
         Returns
         -------
-        set
-            Set of accession strings belonging to the same cluster as the input accession.
-            Returns an empty set if the accession is not found in any cluster.
-
-        Logs
-        ----
-        - A warning if the accession is not found in the clustering result.
-
-        Examples
-        --------
-        >>> members = lookup.retrieve_cluster_members("P12345")
+        set of str
+            Set of sequence IDs in the same cluster. Returns an empty set if not found.
         """
+
         try:
             cluster_id = self.clusters_by_id.loc[accession, "cluster"]
             members = self.clusters_by_cluster.get(cluster_id, set())
@@ -583,12 +606,19 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
     def lookup_table_into_memory(self):
         """
-        Loads sequence embeddings from the database into memory for each enabled embedding model.
+        Loads sequence embeddings into memory to build lookup tables for each enabled model.
 
-        This method constructs a lookup table per model by retrieving embeddings from the database.
-        It applies optional filtering by taxonomy (inclusion or exclusion lists), with support
-        for hierarchical filtering (i.e., inclusion of descendant taxa via the NCBI taxonomy tree).
+        Embeddings are retrieved from the database and filtered by optional taxonomy inclusion
+        or exclusion lists. The result is stored in `self.lookup_tables`, keyed by model ID.
+
+        Supports hierarchical filtering by NCBI taxonomy if `get_descendants` is enabled.
+
+        Configuration parameters:
+        - `taxonomy_ids_to_exclude`: list of taxonomy IDs to exclude.
+        - `taxonomy_ids_included_exclusively`: list of taxonomy IDs to include.
+        - `limit_execution`: optional SQL limit.
         """
+
         try:
             self.logger.info("🔄 Starting lookup table construction: loading embeddings into memory per model...")
 
@@ -668,6 +698,13 @@ class EmbeddingLookUp(BaseTaskInitializer):
             raise
 
     def preload_annotations(self):
+        """
+        Preloads GO annotations from the database and stores them in `self.go_annotations`.
+
+        Annotations are grouped by sequence ID and filtered using `self.exclude_taxon_ids`.
+        Each annotation includes GO ID, evidence code, category, and description.
+        """
+
         sql = text("""
                    SELECT s.id           AS sequence_id,
                           s.sequence,
@@ -704,24 +741,19 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
     def post_process_results(self):
         """
-        Post-processes raw GO annotation results after embedding-based lookup.
+        Post-processes raw GO annotation results: filters redundancy, deduplicates entries,
+        collapses GO terms using ontology ancestry, computes alignment metrics, and writes
+        final results to CSV and optionally TopGO format.
 
-        This method computes reliability indices, filters redundant GO terms using
-        ontology hierarchy, deduplicates identical GO annotations by keeping only
-        the one with the highest reliability index, and computes sequence alignment
-        metrics only for the final annotations.
+        Steps include:
+        - Reliability score computation based on distance.
+        - Leaf-term filtering using GO hierarchy.
+        - Collapsed term support calculation.
+        - Needleman-Wunsch alignment metrics for unique query-reference pairs.
 
-        It also calculates collapsed term support and outputs clean results in
-        CSV and optional TopGO-compatible formats.
-
-        Notes
-        -----
-        - The column `support_count` indicates how many neighbors contributed
-          the same GO term to a given entry (accession, model_name, go_id).
-        - Collapsed GO terms are recorded in `collapsed_terms` and quantified
-          in `collapsed_support` and `n_collapsed_terms`.
-        - Alignment metrics are computed only after deduplication.
+        Results are saved to `self.results_path` and optionally `self.topgo_path`.
         """
+
         if not os.path.exists(self.raw_results_path):
             self.logger.warning("No raw results found for post-processing.")
             return
@@ -832,13 +864,23 @@ class EmbeddingLookUp(BaseTaskInitializer):
         df.to_csv(self.results_path, mode=write_mode, index=False, header=(write_mode == "w"))
 
         if self.topgo_enabled:
-            df_topgo = (
-                df.groupby("accession")["go_id"]
-                .apply(lambda x: ", ".join(x))
-                .reset_index()
-            )
-            with open(self.topgo_path, "a") as f:
-                df_topgo.to_csv(f, sep="\t", index=False, header=False)
+            self.logger.info("📁 Generating TopGO-compatible outputs per model and category...")
+            base_dir = os.path.join(self.experiment_path, "topgo")
+            os.makedirs(base_dir, exist_ok=True)
+
+            for (model_name, category), group in df.groupby(["model_name", "category"]):
+                out_dir = os.path.join(base_dir, model_name)
+                os.makedirs(out_dir, exist_ok=True)
+
+                df_topgo = (
+                    group.groupby("accession")["go_id"]
+                    .apply(lambda x: ", ".join(sorted(set(x))))
+                    .reset_index()
+                )
+
+                out_path = os.path.join(out_dir, f"{category}.tsv")
+                df_topgo.to_csv(out_path, sep="\t", index=False, header=False)
+                self.logger.info(f"📝 TopGO file written: {out_path} ({len(df_topgo)} entries)")
 
         end_total = time.perf_counter()
         total_alignment_time = metrics_df["alignment_time"].sum() if "alignment_time" in metrics_df else None
