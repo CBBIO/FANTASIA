@@ -19,13 +19,12 @@ Enhancements include:
 - Efficient batch-level task handling and queuing.
 - Dynamic model loading via modular architecture.
 - Integration with a SQL-based model registry (SequenceEmbeddingType).
-- Optional redundancy filtering support (via CD-HIT, managed externally).
+- Optional redundancy filtering support via MMSeqs2.
 
 This component is intended to serve as the first stage of a larger embedding-based
 functional annotation pipeline.
 """
 
-import importlib
 import os
 import traceback
 
@@ -34,7 +33,6 @@ from Bio import SeqIO
 import h5py
 
 from protein_information_system.operation.embedding.sequence_embedding import SequenceEmbeddingManager
-from protein_information_system.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType
 
 
 class SequenceEmbedder(SequenceEmbeddingManager):
@@ -93,82 +91,14 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         # Debug mode
         self.limit_execution = conf.get("limit_execution")
 
-        # Internal storage
-        self.model_instances = {}
-        self.tokenizer_instances = {}
-        self.types = {}
-        self.results = []
-
-        # Load models and configurations
-        self.base_module_path = "protein_information_system.operation.embedding.proccess.sequence"
-        self.fetch_models_info()
-
         # Input and output paths
         self.fasta_path = conf.get("input")  # Actual input FASTA
         self.experiment_path = conf.get("experiment_path")
 
         # Optional batch and filtering settings
         self.batch_sizes = conf.get("embedding", {}).get("batch_size", {})
-        self.sequence_queue_package = conf.get("sequence_queue_package")
-        self.length_filter = conf.get("length_filter")
-
-    def fetch_models_info(self):
-        """
-        Loads metadata and modules for all enabled embedding models.
-
-        This method queries the database for all available embedding types and checks which
-        ones are enabled in the configuration. For each enabled model, it dynamically imports
-        the corresponding Python module and stores relevant metadata in `self.types`.
-
-        Raises
-        ------
-        Exception
-            If an error occurs while querying the database or importing a model module.
-
-        Notes
-        -----
-        - `self.types` maps each task_name to its metadata and module.
-        - ⚠ TODO: Move this method to a shared base class to avoid duplication
-          across embedding-related components (e.g. SequenceEmbedder, EmbeddingLookUp).
-        """
-        self.types = {}
-        enabled_models = self.conf.get("embedding", {}).get("models", {})
-
-        try:
-            self.session_init()
-            embedding_types = self.session.query(SequenceEmbeddingType).all()
-        except Exception as e:
-            self.logger.error(f"Error querying SequenceEmbeddingType table: {e}")
-            raise
-        finally:
-            self.session.close()
-            del self.engine
-
-        for embedding_type in embedding_types:
-            task_name = embedding_type.task_name
-
-            model_config = enabled_models.get(task_name)
-            if not model_config or not model_config.get("enabled", False):
-                continue
-
-            try:
-                module_name = f"{self.base_module_path}.{task_name}"
-                module = importlib.import_module(module_name)
-
-                self.types[task_name] = {
-                    "module": module,
-                    "model_name": embedding_type.model_name,
-                    "id": embedding_type.id,
-                    "task_name": task_name,
-                    "distance_threshold": model_config.get("distance_threshold"),
-                    "batch_size": model_config.get("batch_size"),
-                }
-
-                self.logger.info(f"Loaded model: {task_name} ({embedding_type.model_name})")
-
-            except ImportError as e:
-                self.logger.error(f"Failed to import module '{module_name}': {e}")
-                raise
+        self.queue_batch_size = conf.get('embedding', {}).get("queue_batch_size", 1)
+        self.length_filter = conf.get("embedding", {}).get("max_sequence_length", 0)
 
     def enqueue(self):
         """
@@ -186,21 +116,8 @@ class SequenceEmbedder(SequenceEmbeddingManager):
             If the input FASTA file does not exist.
         Exception
             For any unexpected errors during file parsing or batching.
-
-        Notes
-        -----
-        - The batch size for all models is currently defined by the global `sequence_queue_package` value,
-          which may override model-specific `batch_size` settings.
-        - Each task entry includes: `sequence`, `accession`, `model_name`, and `embedding_type_id`.
-
-        Example
-        -------
-        >>> embedder = SequenceEmbedder(conf, current_date)
-        >>> embedder.enqueue()
-        INFO: Starting embedding enqueue process.
-        INFO: Published batch with 32 sequences to model type esm.
-        INFO: Published batch with 32 sequences to model type prot_t5.
         """
+
         try:
             self.logger.info("Starting embedding enqueue process.")
 
@@ -220,16 +137,20 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 self.logger.warning("No sequences found. Finishing embedding enqueue process.")
                 return
 
-            for model_id in self.conf["embedding"]["types"]:
-                model_info = self.types.get(model_id)
+            for model_name in self.conf["embedding"]["models"]:
+                model_info = self.types.get(model_name)
+
                 if model_info is None:
-                    self.logger.warning(f"Model '{model_id}' not found in loaded types. Skipping.")
+                    self.logger.warning(f"Model '{model_name}' not found in loaded types. Skipping.")
                     continue
 
-                batch_size = self.sequence_queue_package
+                if not self.conf["embedding"]["models"][model_name]["enabled"]:
+                    continue
+
+                queue_batch_size = self.queue_batch_size
                 sequence_batches = [
-                    sequences[i:i + batch_size]
-                    for i in range(0, len(sequences), batch_size)
+                    sequences[i:i + queue_batch_size]
+                    for i in range(0, len(sequences), queue_batch_size)
                 ]
 
                 for batch in sequence_batches:
@@ -238,14 +159,14 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                             "sequence": str(seq_record.seq),
                             "accession": seq_record.id,
                             "model_name": model_info["model_name"],
-                            "embedding_type_id": model_id
+                            "embedding_type_id": model_info["id"]
                         }
                         for seq_record in batch
                     ]
 
-                    self.publish_task(task_batch, model_id)
+                    self.publish_task(task_batch, model_info["name"])
                     self.logger.info(
-                        f"Published batch with {len(task_batch)} sequences to model '{model_id}'."
+                        f"Published batch with {len(task_batch)} sequences to model '{model_info["id"]}'."
                     )
 
         except FileNotFoundError as e:
@@ -295,12 +216,15 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 raise ValueError("All tasks in the batch must have the same embedding_type_id.")
 
             # Load model, tokenizer and embedding logic
-            model = self.model_instances[embedding_type_id]
-            tokenizer = self.tokenizer_instances[embedding_type_id]
-            module = self.types[embedding_type_id]["module"]
+
+            model_type = self.types_by_id[embedding_type_id]['name']
+            model = self.model_instances[model_type]
+            tokenizer = self.tokenizer_instances[model_type]
+            module = self.types[model_type]['module']
 
             device = self.conf["embedding"].get("device", "cuda")
-            batch_size = self.types[embedding_type_id]["batch_size"]
+
+            batch_size = self.types[model_type]["batch_size"]
 
             # Prepare input: list of {'sequence', 'sequence_id'}
             sequence_batch = [
