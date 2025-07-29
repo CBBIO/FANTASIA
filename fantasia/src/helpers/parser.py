@@ -152,7 +152,6 @@ Supported models include ProtT5, ProstT5, and ESM2.
         "     --models esm,prot \\\n"
         "     --distance_threshold esm:0.4,prot:0.6 \\\n"
         "     --batch_size esm:32,prot:64 \\\n"
-        "     --sequence_queue_package 100 \\\n"
         "     --limit_per_entry 5 \\\n"
         "     --device cuda \\\n"
         "     --log_path ~/fantasia/fantasia.log\n\n"
