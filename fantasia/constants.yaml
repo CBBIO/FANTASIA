@@ -20,21 +20,36 @@ structural_complexity_levels:
 
 sequence_embedding_types:
   - name: "ESM"
-    description: "Evolutionary Scale Modeling (ESM) embeddings are designed to capture the evolutionary information of protein sequences, utilizing deep learning to generate representations that enhance sequence analysis and prediction tasks."
-    task_name: "esm"
-    model_name: facebook/esm2_t6_8M_UR50D
+    description: >
+      ESM-2 (650M parameters) is a transformer-based protein language model trained with masked language modeling on UniRef50. It learns evolutionary and functional features directly from raw sequences without requiring multiple sequence alignments. With 33 layers and 650M parameters, this model is optimized for accurate structure and function prediction and is widely used for embedding extraction, contact map prediction, and unsupervised learning of protein features.
+    task_name: esm
+    model_name: facebook/esm2_t33_650M_UR50D
+
   - name: "Prost-T5"
-    description: "Prot-T5 embeddings leverage the capabilities of the T5 (Text-to-Text Transfer Transformer) model adapted for protein sequences, offering advanced sequence representation by considering both local and global sequence features."
-    task_name: prost_t5
+    description: >
+      ProstT5 is a multi-modal protein language model built on top of ProtT5 (encoder-decoder, T5-style). It is designed to encode protein sequences and jointly predict 3Di structural representations. The model leverages sequence-to-sequence translation between amino acid sequences and coarse-grained structural states, learning from both structure and sequence. ProstT5 enables improved representation for downstream tasks such as contact prediction, functional annotation, and classification, and has approximately 1.2 billion parameters.
+    task_name: t5
     model_name: Rostlab/ProstT5
+
   - name: "Prot-T5"
-    description: "Prot-T5 embeddings leverage the capabilities of the T5 (Text-to-Text Transfer Transformer) model adapted for protein sequences, offering advanced sequence representation by considering both local and global sequence features."
-    task_name: prot_t5
+    description: >
+      ProtT5-XL-UniRef50 (approx. 1.2B parameters) is a large-scale transformer encoder-decoder model trained on UniRef50 using the T5 architecture. It generates high-dimensional representations of protein sequences by leveraging both local and global sequence dependencies. The model was trained in a self-supervised fashion using masked span prediction and is known for its high transferability across a range of structure and function prediction tasks.
+    task_name: t5
     model_name: Rostlab/prot_t5_xl_uniref50
+
   - name: "Ankh3-Large"
-    description: "Ankh3 is a T5-based protein language model optimized for accurate and efficient embeddings. Using the [NLU] prefix and trained on diverse protein data, it captures semantic and structural information relevant to protein function."
+    description: >
+      Ankh3-Large is a 620M parameter encoder-only transformer model pre-trained using the T5 architecture with the [NLU] prefix. It is optimized for protein understanding tasks via masked span prediction. Trained on a diverse protein sequence corpus, Ankh3 encodes both semantic and structural protein information. Its architecture supports efficient inference and it serves as a drop-in replacement for ProtT5 in many protein ML pipelines.
     task_name: ankh3
     model_name: ElnaggarLab/ankh3-large
+
+  - name: "ESM3c"
+    description: >
+      ESM Cambrian 600M is part of the ESM C model family, a new generation of protein language models trained at scale on UniRef, MGnify, and JGI datasets. With 600M parameters, 36 layers, and rotary embeddings, ESM C is optimized for masked language modeling over protein sequences. It delivers improved contact precision, scalability, and efficiency over ESM-2, enabling high-quality structural and functional embeddings without alignments. ESM C embeddings capture biological priors learned directly from sequence data through unsupervised learning, setting a new state of the art in protein representation learning.
+    task_name: esm3c
+    model_name: esmc_600m
+
+
 
 structure_embedding_types:
   - name: "3di"
@@ -46,3 +61,4 @@ structure_embedding_types:
 prediction_methods:
   - name: "Cosine Similarity"
     description: "Cosine similarity measures the cosine of the angle between two non-zero vectors of an inner product space. It is used to measure the similarity between two embedding spaces."
+

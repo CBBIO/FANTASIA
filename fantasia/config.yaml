@@ -41,7 +41,7 @@ rabbitmq_password: guest     # RabbitMQ password for authentication.
 # ====================================================================
 
 # URL to download the embeddings database dump used as reference.
-embeddings_url: "https://zenodo.org/records/15705162/files/PIS_2025_ankh_exp.dump?download=1"
+embeddings_url: "https://zenodo.org/records/16547685/files/lookup_table_exp_v3.tar?download=1"
 
 # ==========================
 # 📂 Directory Configuration
@@ -72,7 +72,7 @@ prefix: sample
 length_filter: 5000000
 
 # Redundancy filtering threshold (e.g., 0.95 = 95% identity); 0 disables it.
-redundancy_filter: 0.95
+redundancy_filter: 0
 
 # Minimum coverage for redundancy alignment.
 alignment_coverage: 0.7
@@ -83,7 +83,7 @@ alignment_coverage: 0.7
 
 # Taxonomy IDs to exclude from the reference database.
 
-taxonomy_ids_to_exclude: [ ] # Empty List for no filtering
+taxonomy_ids_to_exclude:  [] # Empty List for no filtering
 # Example: 559292 = S. cerevisiae, 6239 = C. elegans
 #  - 559292   # Saccharomyces cerevisiae
 #  - 6239     # Caenorhabditis elegans
@@ -104,30 +104,35 @@ delete_queues: true
 # 🧬 Embedding Configuration
 # ==========================
 embedding:
-  device: cuda  # Options: "cpu", "cuda", or "cuda:N"
-  distance_metric: cosine  # Options: "euclidean", "cosine"
+  device: cuda
+  queue_batch_size: 10
+  max_sequence_length: 0
 
   models:
-    esm:
-      enabled: false
-      distance_threshold: 0
+    ESM:
+      enabled: True
       batch_size: 1
-
-    prost_t5:
-      enabled: false
       distance_threshold: 0
-      batch_size: 1
 
-    prot_t5:
-      enabled: false
+    Prost-T5:
+      enabled: True
+      batch_size: 1
       distance_threshold: 0
-      batch_size: 1
 
-    ankh3:
+    Prot-T5:
+      enabled: True
+      batch_size: 1
+      distance_threshold: 0
+
+    Ankh3-Large:
+      enabled: True
+      batch_size: 1
+      distance_threshold: 0
+
+    ESM3c:
       enabled: true
-      distance_threshold: 0
       batch_size: 1
-
+      distance_threshold: 0
 
 
 # Enable GPU usage globally.
