@@ -50,7 +50,7 @@ For full documentation, visit [FANTASIA Documentation](https://fantasia.readthed
 ## Pipeline Overview (Simplified)
 
 1. **Embedding Generation**  
-   Computes protein embeddings using deep learning models (**ProtT5**, **ProstT5**, **ESM2** and **Ankh**).
+   Computes protein embeddings using deep learning models (**ProtT5**, **ProstT5**, **ESM2**, **Ankh**, and **ESM3c**).
 
 2. **GO Term Lookup**  
    Performs vector similarity searches using **in-memory computations** to assign Gene Ontology terms. Reference
