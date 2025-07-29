@@ -56,6 +56,17 @@ For full documentation, visit [FANTASIA Documentation](https://fantasia.readthed
    Performs vector similarity searches using **in-memory computations** to assign Gene Ontology terms. Reference
    embeddings are retrieved from a **PostgreSQL database with pgvector**. Only experimental evidence codes are used for transfer.
 
+## 📚 Supported Embedding Models
+
+| Name         | Model ID                                 | Params | Architecture      | Description                                                                 |
+|--------------|-------------------------------------------|--------|-------------------|-----------------------------------------------------------------------------|
+| **ESM-2**     | `facebook/esm2_t33_650M_UR50D`            | 650M   | Encoder (33L)     | Learns structure/function from UniRef50. No MSAs. Optimized for accuracy.  |
+| **ProtT5**    | `Rostlab/prot_t5_xl_uniref50`             | 1.2B   | Encoder-Decoder   | Trained on UniRef50. Strong transfer for structure/function tasks.         |
+| **ProstT5**   | `Rostlab/ProstT5`                         | 1.2B   | Multi-modal T5     | Learns 3Di structural states + function. Enhances contact/function tasks.  |
+| **Ankh3-Large** | `ElnaggarLab/ankh3-large`              | 620M   | Encoder (T5-style)| Fast inference. Good semantic/structural representation.                   |
+| **ESM3c**     | `esmc_600m`                               | 600M   | Encoder (36L)     | New gen. model trained on UniRef + MGnify + JGI. High precision & speed.   |
+
+
 ## Acknowledgments
 
 FANTASIA is the result of a collaborative effort between **Ana Rojas’ Lab (CBBIO)** (Andalusian Center for Developmental
