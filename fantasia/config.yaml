@@ -41,7 +41,7 @@ rabbitmq_password: guest     # RabbitMQ password for authentication.
 # ====================================================================
 
 # URL to download the embeddings database dump used as reference.
-embeddings_url: "https://zenodo.org/records/15705162/files/PIS_2025_ankh_exp.dump?download=1"
+embeddings_url: "https://zenodo.org/records/16547685/files/lookup_table_exp_v3.tar?download=1"
 
 # ==========================
 # 📂 Directory Configuration
