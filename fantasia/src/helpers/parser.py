@@ -14,21 +14,22 @@ functional annotations using pre-trained language models (PLMs). It supports:
   • ProstT5
   • ESM2
   • Ankh
+  * ESM3c
 
 This system processes protein sequences by embedding them with these models,
 storing the embeddings into an h5 Object, and performing efficient similarity searches over a vector database.
 
-Pre-configured with UniProt 2024 data, FANTASIA integrates with an information system
+Pre-configured with UniProt 2025 data, FANTASIA integrates with an information system
 for seamless data management. Protein data and Gene Ontology annotations (GOA) are
-kept up to date, while proteins from the 2022 dataset remain for benchmarking (e.g., CAFA).
+kept up to date.
 
 Reference Datasets:
 --------------------
 FANTASIA allows selecting between datasets for reference annotation during the lookup stage:
 
 1. **Default: UniProt 2025 + GOA Experimental Evidence Codes full dump**
-   - File URL: https://zenodo.org/records/15705162/files/PIS_2025_ankh_exp.dump?download=1
-   - Zenodo page: https://zenodo.org/records/15705162
+   - File URL: https://zenodo.org/records/16582433/files/lookup_table_exp_v3.tar?download=1
+   - Zenodo page: https://zenodo.org/records/16582433
 
 Use the `--embeddings_url` flag in the `initialize` command to override the default.
 
@@ -76,12 +77,7 @@ By default, the configuration is loaded from './fantasia/config.yaml'.
         "Examples:\n"
         "  # Default (UniProt 2025 Experimental Evidence Codes)\n"
         "  python fantasia/main.py initialize --config my_config.yaml\n\n"
-        "  # Benchmark mode (GoPredSim 2022 subset)\n"
-        "  python fantasia/main.py initialize \\\n"
-        "     --embeddings_url https://zenodo.org/records/15095845/files/embeddings_fantasia_gopredsim_2022.dump?download=1\n\n"
-        "  # Explore Zenodo dataset documentation:\n"
-        "  UniProt+GOA: https://zenodo.org/records/14864851\n"
-        "  GoPredSim2022: https://zenodo.org/records/15095845"
+
     )
 
     # Subparser: run
