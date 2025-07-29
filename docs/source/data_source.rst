@@ -1,27 +1,12 @@
 Data Source
-============
+===========
 
-FANTASIA **requires** two different data: 
+FANTASIA requires two types of data:
 
-- The **input** data (query), which is the user's query data. 
-- The **reference**  (or lookup table) data used in FANTASIA. This is generated in the **Protein Information System (PIS)** at CBBIO [1]_, a structured and publicly available information system designed to facilitate large-scale functional annotation and protein-related analyses. 
+- The input data, provided by the user (protein sequences in FASTA format).
+- The reference data (lookup table), which contains precomputed embeddings and GO annotations used for nearest-neighbor annotation transfer.
 
-
-Three different **reference**  datasets are available in FANTASIA  containing UniProt protein entries and their corresponding Gene Ontology (GO) annotations:
-
-- The **GOA2022 dataset**: Derived from the goPredSim project, it contains over 2 million annotations, including those inferred electronically (IEA). It is kept for benchmarking purposes [2]_.
-- **GOA2024 dataset**: Contains UniProt entries with embeddings generated using ProtT5 and ESM2 models. It stores all UniProt entries and their computationally predicted annotations corresponding to GOA2024 [3]_.
-- **GOA2025 dataset**: This is the **DEFAULT** lookup table used in FANTASIA. It includes **only** annotations supported by experimental evidence (e.g., EXP, IDA, IPI, IMP, IGI, IEP, TAS, IC), extracted directly from the UniProt API in April 2025. This ensures a high-confidence annotation set for downstream benchmarking and interpretation for the latest data [4]_.
-
-
-The system to create **reference tables** is accessible at [1]_, and it is based on a **relational databases** framework since it offers several advantages:
-
-
-- **Enhanced Data Traceability**: Metadata integration enables provenance tracking and reproducibility.
-- **Relational Algebra Support**: Structured data allows advanced queries and relationship-based analyses.
-- **Scalability & Expandability**: The system can integrate new data sources (e.g., structural, evolutionary, or experimental).
-- **Cross-Referencing with Structural Data**: Enables combined sequence- and structure-based functional analyses.
-
+This reference table was generated using the Protein Information System (PIS) [1]_, an integrated and automated platform that extracts protein data from UniProt, PDB, and GOA, and computes protein embeddings using modern Protein Language Models (PLMs).
 
 
 .. figure:: _static/PIS.png
@@ -29,11 +14,66 @@ The system to create **reference tables** is accessible at [1]_, and it is based
    :align: center
    :width: 80%
 
+   Embeddings from multiple models are computed for each protein sequence.
+
+
+Default Reference Dataset – FANTASIA V3
+---------------------------------------
+
+The lookup table used by FANTASIA V3 was generated in **late July 2025** using version **2.0.0** of the `Protein Information System (PIS) <https://github.com/frapercan/protein_information_system>`_.
+
+It consists of a **PostgreSQL database backup** using the `pgvector <https://github.com/pgvector/pgvector>`_ extension to store protein embeddings.
+
+This reference includes only **experimentally supported annotations**, extracted directly from UniProt. It is the default and recommended dataset for functional annotation in FANTASIA.
+
+Key improvements over previous versions (GOA2022, GOA2024, GOA2025 APRIL):
+
+- Fixed a bug that truncated embeddings to 512 dimensions.
+- Expanded model coverage from 3 to 5 PLMs, now including **Ankh3-Large** and **ESM3c**.
+- Replaced **ESM-1b (8M parameters)** with **ESM-2 (650M parameters)**.
+- Removed computational annotations; includes only **GO terms with experimental evidence codes**.
+
+
+Dataset Details
+---------------
+
+- Total proteins: 127,546
+- Total sequences: 124,397
+- Total embeddings: 621,849
+- Total GO annotations: 627,932
+
+Included GO evidence codes (experimental only):
+
+- `EXP` – Inferred from Experiment
+- `IDA` – Inferred from Direct Assay
+- `IPI` – Inferred from Physical Interaction
+- `IMP` – Inferred from Mutant Phenotype
+- `IGI` – Inferred from Genetic Interaction
+- `IEP` – Inferred from Expression Pattern
+- `TAS` – Traceable Author Statement
+- `IC` – Inferred by Curator
+
+
+Supported Embedding Models
+--------------------------
+
+- ESM-2 (650M parameters)
+- ProtT5-XL-UniRef50 (~1.2B parameters)
+- ProstT5 (~1.2B parameters)
+- Ankh3-Large (620M parameters)
+- ESM3c (Cambrian 600M)
+
+Each model provides high-dimensional representations of protein sequences used for functional similarity comparisons.
+
+
+Missing Proteins
+----------------
+
+A small number of proteins could not be processed on the Finisterrae III (CESGA) supercomputer due to memory limitations on 40 GB A100 GPUs.
+
 
 References
-^^^^^^^^^^
+----------
 
-.. [1] Protein Information System (PIS) GitHub Repository, available at: `GitHub <https://github.com/frapercan/protein_information_system>`_.
-.. [2] Reference database for GOA2022, available at: `Zenodo GOA2022 <https://zenodo.org/records/15095845>`_.
-.. [3] Reference database for GOA2024, available at: `Zenodo GOA2024 <https://zenodo.org/records/14864851>`_.
-.. [4] Reference database for GOA2025, available at: `Zenodo GOA2025 <https://zenodo.org/records/15261639>`_.
+.. [1] Protein Information System (PIS): https://github.com/frapercan/protein_information_system
+.. [2] GOA2025 reference database (default): https://zenodo.org/records/16582433

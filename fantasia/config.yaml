@@ -41,7 +41,7 @@ rabbitmq_password: guest     # RabbitMQ password for authentication.
 # ====================================================================
 
 # URL to download the embeddings database dump used as reference.
-embeddings_url: "https://zenodo.org/records/16547685/files/lookup_table_exp_v3.tar?download=1"
+embeddings_url: "https://zenodo.org/records/16582433/files/lookup_table_exp_v3.tar?download=1"
 
 # ==========================
 # 📂 Directory Configuration
@@ -94,8 +94,6 @@ taxonomy_ids_included_exclusively: [ ]
 # Set to true to include descendants of the given taxonomy IDs.
 get_descendants: False
 
-# Number of sequences per queue batch (for multiprocessing).
-sequence_queue_package: 64
 
 # Remove existing queues before execution.
 delete_queues: true

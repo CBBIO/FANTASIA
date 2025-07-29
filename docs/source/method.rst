@@ -179,7 +179,7 @@ References
 
 .. [5] M. Heinzinger et al., "Bilingual language model for protein sequence and structure," *NARGAB*, 6(4), (2024). https://doi.org/10.1093/nargab/lqae059
 
-.. [6] FANTASIA Reference Database. Zenodo repository (2024). https://zenodo.org/records/14864851
+.. [6] F. M. Pérez-Canales and A. Rojas, "FANTASIA V3 – LookUp Table – UniProt July 2025 – Experimental Evidence Code Only," Zenodo, July 2025. https://zenodo.org/records/16582433
 
 .. [7] T. Tang et al., "GOATOOLS: A Python library for Gene Ontology analyses", https://github.com/tanghaibao/goatools
 
