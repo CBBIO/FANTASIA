@@ -865,22 +865,77 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
         if self.topgo_enabled:
             self.logger.info("📁 Generating TopGO-compatible outputs per model and category...")
+
+            # Versión clásica
             base_dir = os.path.join(self.experiment_path, "topgo")
             os.makedirs(base_dir, exist_ok=True)
 
+            # Versión extendida (una anotación por línea)
+            base_dir_scores = os.path.join(self.experiment_path, "topgo_with_scores")
+            os.makedirs(base_dir_scores, exist_ok=True)
+
             for (model_name, category), group in df.groupby(["model_name", "category"]):
+                # === TopGO clásico ===
                 out_dir = os.path.join(base_dir, model_name)
                 os.makedirs(out_dir, exist_ok=True)
 
-                df_topgo = (
-                    group.groupby("accession")["go_id"]
+                df_topgo_classic = (
+                    group.sort_values("reliability_index", ascending=False)
+                    .groupby("accession")["go_id"]
                     .apply(lambda x: ", ".join(sorted(set(x))))
                     .reset_index()
                 )
 
-                out_path = os.path.join(out_dir, f"{category}.tsv")
-                df_topgo.to_csv(out_path, sep="\t", index=False, header=False)
-                self.logger.info(f"📝 TopGO file written: {out_path} ({len(df_topgo)} entries)")
+                out_path_classic = os.path.join(out_dir, f"{category}.tsv")
+                df_topgo_classic.to_csv(out_path_classic, sep="\t", index=False, header=False)
+                self.logger.info(
+                    f"📝 TopGO (classic) file written: {out_path_classic} ({len(df_topgo_classic)} entries)")
+
+                # === TopGO con reliability_index (una anotación por línea) ===
+                out_dir_scores = os.path.join(base_dir_scores, model_name)
+                os.makedirs(out_dir_scores, exist_ok=True)
+
+                group_sorted = (
+                    group.sort_values(["accession", "reliability_index"], ascending=[True, False])
+                    .drop_duplicates(subset=["accession", "go_id"])
+                )
+
+                df_topgo_scores = group_sorted[["accession", "go_id", "reliability_index"]]
+                out_path_scores = os.path.join(out_dir_scores, f"{category}.tsv")
+                df_topgo_scores.to_csv(out_path_scores, sep="\t", index=False, header=False)
+                self.logger.info(
+                    f"📝 TopGO (with scores, one per line) file written: {out_path_scores} ({len(df_topgo_scores)} entries)")
+            # === Ensamblado entre modelos ===
+            out_dir_ensemble_classic = os.path.join(base_dir, "ensemble")
+            os.makedirs(out_dir_ensemble_classic, exist_ok=True)
+
+            out_dir_ensemble_scores = os.path.join(base_dir_scores, "ensemble")
+            os.makedirs(out_dir_ensemble_scores, exist_ok=True)
+
+            for category, group in df.groupby("category"):
+                # === Ensamblado clásico ===
+                df_ens_classic = (
+                    group.groupby("accession")["go_id"]
+                    .apply(lambda x: ", ".join(sorted(set(x))))
+                    .reset_index()
+                )
+                out_path_ens_classic = os.path.join(out_dir_ensemble_classic, f"{category}.tsv")
+                df_ens_classic.to_csv(out_path_ens_classic, sep="\t", index=False, header=False)
+                self.logger.info(
+                    f"📦 TopGO ensemble (classic) file written: {out_path_ens_classic} ({len(df_ens_classic)} entries)")
+
+                # === Ensamblado con reliability promedio ===
+                group_avg = (
+                    group.groupby(["accession", "go_id"])
+                    .agg({"reliability_index": "mean"})
+                    .reset_index()
+                    .sort_values(["accession", "reliability_index"], ascending=[True, False])
+                    .drop_duplicates(subset=["accession", "go_id"])
+                )
+                out_path_ens_scores = os.path.join(out_dir_ensemble_scores, f"{category}.tsv")
+                group_avg.to_csv(out_path_ens_scores, sep="\t", index=False, header=False)
+                self.logger.info(
+                    f"📦 TopGO ensemble (with scores) file written: {out_path_ens_scores} ({len(group_avg)} entries)")
 
         end_total = time.perf_counter()
         total_alignment_time = metrics_df["alignment_time"].sum() if "alignment_time" in metrics_df else None
