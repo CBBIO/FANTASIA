@@ -12,10 +12,10 @@ constants: "./fantasia/constants.yaml"
 monitor_interval: 10
 
 # Debug feature: limits the number of input samples processed if set > 0.
-limit_execution: 0
+limit_execution: 100
 
 # Path to the log file or directory.
-log_path: ~/fantasia/logs/
+log_path: "logs"
 
 # ==========================
 # 🗄️ Database (PostgreSQL)
@@ -41,20 +41,22 @@ rabbitmq_password: guest     # RabbitMQ password for authentication.
 # ====================================================================
 
 # URL to download the embeddings database dump used as reference.
+# embeddings_url: "https://zenodo.org/records/15705162/files/PIS_2025_ankh_exp.dump?download=1"
 embeddings_url: "https://zenodo.org/records/16547685/files/lookup_table_exp_v3.tar?download=1"
 
 # ==========================
 # 📂 Directory Configuration
 # ==========================
 
-base_directory: ~/fantasia/
+base_directory: "."
 
 # ==========================
 # 🔬 Pipeline Configuration
 # ==========================
 
 # Path to the input file: FASTA for full pipeline or HDF5 if only_lookup is true.
-input: data_sample/sample.fasta
+input: data_sample/s_cerevisiae.fasta
+# input: data_sample/c_elegans.fasta
 
 # Set to true to skip embedding generation and use precomputed HDF5 file.
 only_lookup: false
@@ -66,7 +68,8 @@ batch_size: 512
 limit_per_entry: 5
 
 # Prefix for output files.
-prefix: sample
+prefix: s_cerevisiae
+# prefix: c_elegans
 
 # Maximum allowed sequence length.
 length_filter: 5000000
@@ -83,7 +86,8 @@ alignment_coverage: 0.7
 
 # Taxonomy IDs to exclude from the reference database.
 
-taxonomy_ids_to_exclude:  [] # Empty List for no filtering
+taxonomy_ids_to_exclude:  [559292] # Empty List for no filtering
+# taxonomy_ids_to_exclude:  [6239]
 # Example: 559292 = S. cerevisiae, 6239 = C. elegans
 #  - 559292   # Saccharomyces cerevisiae
 #  - 6239     # Caenorhabditis elegans
@@ -110,22 +114,22 @@ embedding:
 
   models:
     ESM:
-      enabled: True
+      enabled: true
       batch_size: 1
       distance_threshold: 0
 
     Prost-T5:
-      enabled: True
+      enabled: true
       batch_size: 1
       distance_threshold: 0
 
     Prot-T5:
-      enabled: True
+      enabled: true
       batch_size: 1
       distance_threshold: 0
 
     Ankh3-Large:
-      enabled: True
+      enabled: true
       batch_size: 1
       distance_threshold: 0
 
