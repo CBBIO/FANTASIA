@@ -107,6 +107,7 @@ embedding:
   device: cuda
   queue_batch_size: 10
   max_sequence_length: 0
+  distance_metric: cosine # Options: "euclidean", "cosine"
 
   models:
     ESM:
