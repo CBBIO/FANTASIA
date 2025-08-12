@@ -23,8 +23,21 @@ For full documentation, visit [FANTASIA Documentation](https://fantasia.readthed
 > Starting from version **3.0.0**, this limitation has been **removed**. The updated pipeline now processes the **full sequence length supported by each model**, resulting in more accurate and biologically meaningful representations.
 >
 > 🔄 **We strongly recommend updating to FANTASIA v3.0.0.**
->
+>  https://zenodo.org/records/16582433
 > 💬 For questions or issues, please contact the CBBIO group.
+
+
+## 📌 Current Lookup Table
+
+The **lookup table** used by FANTASIA — along with its **detailed description and specifications** — is available in the official Zenodo record:  
+🔗 [https://zenodo.org/records/16582433](https://zenodo.org/records/16582433)
+
+We recommend checking this record to:
+
+- **Download the latest lookup table**
+- **Understand its structure and fields**
+- **Ensure compatibility with your workflows**
+
 
 
 ## Key Features
