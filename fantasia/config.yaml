@@ -54,19 +54,19 @@ base_directory: ~/fantasia/
 # ==========================
 
 # Path to the input file: FASTA for full pipeline or HDF5 if only_lookup is true.
-input: data_sample/sample.fasta
+input: /home/frapercan/PycharmProjects/FANTASIA/data_sample/type1.fasta
 
 # Set to true to skip embedding generation and use precomputed HDF5 file.
-only_lookup: false
+only_lookup: False
 
 # Number of sequences per batch during embedding or lookup.
-batch_size: 512
+batch_size: 1024
 
 # Number of top matches to retrieve per query.
 limit_per_entry: 5
 
 # Prefix for output files.
-prefix: sample
+prefix: target1
 
 # Maximum allowed sequence length.
 length_filter: 5000000
@@ -105,7 +105,7 @@ delete_queues: true
 # ==========================
 embedding:
   device: cuda
-  queue_batch_size: 10
+  queue_batch_size: 5
   max_sequence_length: 0
   distance_metric: cosine # Options: "euclidean", "cosine"
 
@@ -113,38 +113,58 @@ embedding:
     ESM:
       enabled: True
       batch_size: 1
+      layer_index: [0, 1, 2]      # capa 1 (0.376) y capa 2 (0.374) fueron las mejores
       distance_threshold: 0
 
-    Prost-T5:
+    ESM3c:
       enabled: True
       batch_size: 1
-      distance_threshold: 0
-
-    Prot-T5:
-      enabled: True
-      batch_size: 1
+      layer_index: [0,1,2]
       distance_threshold: 0
 
     Ankh3-Large:
       enabled: True
       batch_size: 1
+      layer_index: [0,1,2]
       distance_threshold: 0
 
-    ESM3c:
-      enabled: true
+    Prot-T5:
+      enabled: True
       batch_size: 1
+      layer_index: [0,1, 2]
       distance_threshold: 0
+
+    Prost-T5:
+      enabled: True
+      batch_size: 1
+      layer_index: [0,1, 2]
+      distance_threshold: 0
+
+
 
 
 # Enable GPU usage globally.
 use_gpu: true
 
-# Number of workers for postprocessing (pairwise sequence alignment).
-store_workers: 1
 
 # ==========================
-# 🧠 Functional Analysis
+# 🧮 Postprocess Weights & Options
 # ==========================
+postprocess:
+  keep_sequences: false   # true si quieres mantener sequence_query/sequence_reference en los CSV
+
+  weights:
+    alignment_norm: 0.16
+    collapsed_support_norm: 0.16
+    layer_support_norm: 0.16
+    model_consistency: 0.16
+    reliability_index: 0.16
+    support_count_norm: 0.16
+
+
+
+# Number of workers for postprocessing (pairwise sequence alignment).
+store_workers: 10
 
 # Enable TopGO-compatible output format.
 topgo: true

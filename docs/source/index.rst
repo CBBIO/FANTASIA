@@ -19,6 +19,12 @@ FANTASIA is an advanced pipeline designed for automatic functional annotation of
 
 .. toctree::
    :maxdepth: 2
+   :caption: Api
+
+   api
+
+.. toctree::
+   :maxdepth: 2
    :caption: Use cases
 
    benchmarking
