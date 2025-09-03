@@ -562,18 +562,51 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
     def lookup_table_into_memory(self):
         """
-        Loads sequence embeddings into memory to build lookup tables for each enabled model.
+        Load sequence embeddings into memory to build lookup tables for each enabled model,
+        honoring (optional) taxonomy filters, SQL limiting, and per-model layer selection.
 
-        Embeddings are retrieved from the database and filtered by optional taxonomy inclusion
-        or exclusion lists. The result is stored in `self.lookup_tables`, keyed by model ID.
+        ────────────────────────────────────────────────────────────────────────────────
+        CONFIG KEYS (YAML):
+          - taxonomy_ids_to_exclude: list[str|int]
+              Protein.taxonomy_id values to exclude from the reference set.
+          - taxonomy_ids_included_exclusively: list[str|int]
+              Protein.taxonomy_id values to include (exclusive filter).
+          - get_descendants: bool
+              If True, expand taxonomy lists with their NCBI descendant IDs.
+          - limit_execution: int
+              If > 0, apply an SQL LIMIT to the reference query (useful for debugging).
+          - embedding.models.<TaskName>.layer_index: list[int]
+              Optional list of ESM/PLM layer indices to load from DB for that model.
+              If omitted or empty, ALL available layers for the model will be loaded.
+              Example:
+                embedding:
+                  models:
+                    ESM:
+                      layer_index: [16]
+        ────────────────────────────────────────────────────────────────────────────────
 
-        Supports hierarchical filtering by NCBI taxonomy if `get_descendants` is enabled.
+        OUTPUT (self.lookup_tables):
+          A dict keyed by embedding_type_id:
+            {
+              "ids":        np.ndarray[int]    # shape (N,), Sequence.id per row in 'embeddings'
+              "embeddings": np.ndarray[float]  # shape (N, D), stacked row-wise
+              "layers":     np.ndarray[int]    # shape (N,), SequenceEmbedding.layer_index per row
+            }
 
-        Configuration parameters:
-        - `taxonomy_ids_to_exclude`: list of taxonomy IDs to exclude.
-        - `taxonomy_ids_included_exclusively`: list of taxonomy IDs to include.
-        - `limit_execution`: optional SQL limit.
+          NOTE: 'layers' is NEW and optional for downstream consumers. Existing code that
+          only reads 'ids' and 'embeddings' continues to work unchanged.
+
+        RATIONALE:
+          - Prior code filtered only by embedding_type_id (and optional taxonomy / limit).
+            That inadvertently loaded ALL available layers for each sequence/model, which
+            inflates the reference table and can cause GPU OOM when the entire table is
+            moved to CUDA in later steps.
+          - This implementation adds an optional DB-side filter on SequenceEmbedding.layer_index
+            driven by YAML config, significantly reducing reference size if you only need a
+            subset of layers (e.g., [16]).
         """
+        import traceback
+        import numpy as np
 
         try:
             self.logger.info("🔄 Starting lookup table construction: loading embeddings into memory per model...")
@@ -582,69 +615,126 @@ class EmbeddingLookUp(BaseTaskInitializer):
             limit_execution = self.conf.get("limit_execution")
             get_descendants = self.conf.get("get_descendants", False)
 
-            def expand_tax_ids(key):
+            # ── Helpers ──────────────────────────────────────────────────────────────
+            def expand_tax_ids(key: str):
+                """
+                Read a taxonomy list from config, clean/cast to ints, and optionally
+                expand with NCBI descendants if get_descendants=True.
+                """
                 ids = self.conf.get(key, [])
                 if not isinstance(ids, list):
                     self.logger.warning(f"Expected list for '{key}', got {type(ids)}. Forcing empty list.")
                     return []
 
+                # Coerce valid numeric strings/ints to ints
                 clean_ids = [int(tid) for tid in ids if str(tid).isdigit()]
 
                 if get_descendants and clean_ids:
-                    expanded = get_descendant_ids(clean_ids)  # devuelve ints
+                    expanded = get_descendant_ids(clean_ids)  # provided elsewhere in your codebase
+                    # Serialize back to strings for consistent comparison/logging
                     return [str(tid) for tid in expanded]
 
                 return [str(tid) for tid in clean_ids]
 
             exclude_taxon_ids = expand_tax_ids("taxonomy_ids_to_exclude")
             include_taxon_ids = expand_tax_ids("taxonomy_ids_included_exclusively")
-            self.exclude_taxon_ids = [str(tid) for tid in exclude_taxon_ids or []]
-            self.include_taxon_ids = [str(tid) for tid in include_taxon_ids or []]
+            self.exclude_taxon_ids = [str(tid) for tid in (exclude_taxon_ids or [])]
+            self.include_taxon_ids = [str(tid) for tid in (include_taxon_ids or [])]
 
             if self.exclude_taxon_ids and self.include_taxon_ids:
                 self.logger.warning(
-                    "⚠️ Both 'taxonomy_ids_to_exclude' and 'taxonomy_ids_included_exclusively' are set. This may lead to conflicting filters.")
+                    "⚠️ Both 'taxonomy_ids_to_exclude' and 'taxonomy_ids_included_exclusively' are set. "
+                    "This may lead to conflicting filters."
+                )
 
             self.logger.info(
-                f"🧬 Taxonomy filters — Exclude: {exclude_taxon_ids}, Include: {include_taxon_ids}, Descendants: {get_descendants}")
+                f"🧬 Taxonomy filters — Exclude: {exclude_taxon_ids}, Include: {include_taxon_ids}, "
+                f"Descendants: {get_descendants}"
+            )
 
+            # ── Main loop over enabled models/types ──────────────────────────────────
             for task_name, model_info in self.types.items():
                 embedding_type_id = model_info["id"]
                 self.logger.info(f"📥 Model '{task_name}' (ID: {embedding_type_id}): retrieving embeddings...")
 
+                # Read per-model layer filter from config:
+                # embedding.models.<TaskName>.layer_index: [int, ...]
+                model_cfg = (self.conf.get("embedding", {}).get("models", {}) or {}).get(task_name, {}) or {}
+                raw_layers = model_cfg.get("layer_index", [])
+                allowed_layers = []
+                if raw_layers:
+                    try:
+                        allowed_layers = [int(x) for x in raw_layers if str(x).isdigit()]
+                    except Exception:
+                        self.logger.warning(
+                            f"Invalid 'layer_index' list for model '{task_name}' in config. Ignoring layer filter."
+                        )
+                        allowed_layers = []
+
+                if allowed_layers:
+                    self.logger.info(
+                        f"🎯 Reference filter for '{task_name}': layer_index IN {sorted(set(allowed_layers))}")
+                else:
+                    self.logger.info(f"🎯 Reference filter for '{task_name}': NO layer filter (all layers).")
+
+                # Build base query; SELECT layer_index as well (for auditing/logging)
                 query = (
                     self.session
-                    .query(Sequence.id, SequenceEmbedding.embedding)
+                    .query(
+                        Sequence.id,  # 0
+                        SequenceEmbedding.embedding,  # 1
+                        SequenceEmbedding.layer_index  # 2  <-- new: we will log/return it
+                    )
                     .join(Sequence, Sequence.id == SequenceEmbedding.sequence_id)
                     .join(Protein, Sequence.id == Protein.sequence_id)
                     .filter(SequenceEmbedding.embedding_type_id == embedding_type_id)
                 )
 
+                # Apply optional per-model layer filter
+                if allowed_layers:
+                    query = query.filter(SequenceEmbedding.layer_index.in_(allowed_layers))
+
+                # Apply taxonomy filters (if any)
                 if exclude_taxon_ids:
                     query = query.filter(~Protein.taxonomy_id.in_(exclude_taxon_ids))
                 if include_taxon_ids:
                     query = query.filter(Protein.taxonomy_id.in_(include_taxon_ids))
+
+                # Optional global SQL LIMIT (debug/probing)
                 if isinstance(limit_execution, int) and limit_execution > 0:
                     self.logger.info(f"⛔ SQL limit applied: {limit_execution} entries for model '{task_name}'")
                     query = query.limit(limit_execution)
 
+                # Execute
                 results = query.all()
                 if not results:
                     self.logger.warning(f"⚠️ No embeddings found for model '{task_name}' (ID: {embedding_type_id})")
                     continue
 
-                sequence_ids = np.array([row[0] for row in results])
+                # Materialize arrays
+                # NOTE: Each row corresponds to a (sequence_id, layer_index) pair for this model.
+                #       It is OK to have repeated 'sequence_id' across different layers if the
+                #       layer filter is broad or unspecified.
+                sequence_ids = np.fromiter((row[0] for row in results), dtype=int, count=len(results))
+                layers = np.fromiter((int(row[2]) for row in results), dtype=int, count=len(results))
+
+                # Stack the embedding vectors row-wise
+                # Assumes 'row[1]' implements .to_numpy() (e.g., pgvector) => 1D numpy array of dimension D.
                 embeddings = np.vstack([row[1].to_numpy() for row in results])
                 mem_mb = embeddings.nbytes / (1024 ** 2)
 
+                # Persist in memory
                 self.lookup_tables[embedding_type_id] = {
                     "ids": sequence_ids,
-                    "embeddings": embeddings
+                    "embeddings": embeddings,
+                    "layers": layers,  # NEW: harmless for existing consumers; useful for auditing
                 }
 
+                # Logging
+                loaded_layers = sorted(set(layers.tolist()))
                 self.logger.info(
-                    f"✅ Model '{task_name}': loaded {len(sequence_ids)} embeddings "
-                    f"with shape {embeddings.shape} (~{mem_mb:.2f} MB in memory)."
+                    f"✅ Model '{task_name}': loaded {len(sequence_ids)} rows "
+                    f"(layers={loaded_layers}) with shape {embeddings.shape} (~{mem_mb:.2f} MB in RAM)."
                 )
 
             self.logger.info(f"🏁 Lookup table construction completed for {len(self.lookup_tables)} model(s).")
