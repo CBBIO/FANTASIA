@@ -12,7 +12,7 @@ The development environment includes the full backend required to run, test and 
 
 - PostgreSQL database with `pgvector` extension
 - RabbitMQ message broker
-- External services: MMseqs2, Parasail
+- System Dependencies: MMseqs2, Parasail, postgres client 16
 - A Python environment managed by Poetry
 
 We recommend using **PyCharm** for development, as it integrates seamlessly with Poetry and provides a rich debugging and navigation experience.
