@@ -26,17 +26,8 @@ with downstream enrichment analysis tools.
 """
 
 import os
-import time
-import traceback
-from concurrent.futures import ProcessPoolExecutor
-
-from protein_information_system.tasks.base import BaseTaskInitializer
-
-import numpy as np
 import pandas as pd
-import torch
-from scipy.spatial.distance import cdist
-
+from protein_information_system.tasks.gpu import GPUTaskInitializer
 from goatools.base import get_godag
 from protein_information_system.sql.model.entities.sequence.sequence import Sequence
 
@@ -49,133 +40,239 @@ from protein_information_system.sql.model.entities.protein.protein import Protei
 from fantasia.src.helpers.helpers import get_descendant_ids, compute_metrics
 
 
-class EmbeddingLookUp(BaseTaskInitializer):
+class EmbeddingLookUp(GPUTaskInitializer):
     """
-    EmbeddingLookUp performs GO annotation transfer using embedding similarity.
+    GO annotation transfer via embedding similarity.
 
-    Given a set of sequence embeddings in HDF5 format, it compares them against reference embeddings
-    stored in a database, retrieves GO annotations from similar sequences, and stores the results in
-    CSV and optionally TopGO format. The process includes:
+    This component reads query embeddings (HDF5) and compares them against reference
+    embeddings stored in a vector-aware relational database. For the closest reference
+    sequences, it retrieves GO annotations and writes results to CSV (and optionally
+    TopGO-ready TSV). It supports:
 
-    - configurable filtering by taxonomy,
-    - redundancy-aware neighbor selection via MMseqs2 clusters,
-    - support for multiple embedding models with per-model distance thresholds,
-    - distance computation using GPU (via PyTorch) or CPU,
-    - optional sequence alignment postprocessing to compute identity/similarity.
+      • Taxonomy-based filtering (include/exclude, with optional descendant expansion)
+      • Redundancy-aware neighbor selection (MMseqs2 clusters)
+      • Multiple embedding models with per-model distance thresholds
+      • Distance computation on GPU (PyTorch) or CPU
+      • Optional pairwise alignment post-processing (identity/similarity)
 
     Parameters
     ----------
     conf : dict
-        Configuration dictionary defining paths, thresholds, model settings, and processing options.
+        Configuration including paths, thresholds, model settings, and processing options.
     current_date : str
-        Timestamp used to version output files.
+        Timestamp suffix used to version output artifacts.
 
     Notes
     -----
-    - Supports cosine or euclidean distance metrics.
-    - Redundancy filtering uses MMseqs2 clustering based on sequence identity and coverage.
-    - GO annotations are preloaded from the relational database and filtered by taxonomy if requested.
+    - Supported distance metrics: 'euclidean' and 'cosine' (default: 'euclidean').
+    - Redundancy filtering is based on MMseqs2 identity/coverage thresholds.
+    - GO annotations are preloaded once and can be filtered by taxonomy.
     """
 
     def __init__(self, conf, current_date):
         """
-        Prepares internal configuration, output paths, GO DAG, and optional MMseqs2 clustering.
+        Initialize configuration, paths, GO DAG, optional MMseqs2 clustering,
+        and lazy reference lookup infrastructure.
         """
-
         super().__init__(conf)
 
+        # --- NEW: adaptar referencias desde conf['lookup'] ---------------------
+        lk = self.conf.get("lookup", {}) or {}
+
+        # Copiar opciones directas si no estaban ya en raíz
+        for k in ("use_gpu", "batch_size", "limit_per_entry", "topgo", "lookup_cache_max"):
+            if k not in self.conf and k in lk:
+                self.conf[k] = lk[k]
+
+        # distance_metric: permitir lookup.distance_metric además de embedding.distance_metric
+        if "distance_metric" in lk:
+            emb = self.conf.setdefault("embedding", {})
+            emb.setdefault("distance_metric", lk["distance_metric"])
+
+        # Redundancia: mapear lookup.redundancy -> llaves planas esperadas
+        r = lk.get("redundancy") or {}
+        if "redundancy_filter" not in self.conf and "identity" in r:
+            self.conf["redundancy_filter"] = r["identity"]
+        if "alignment_coverage" not in self.conf and "coverage" in r:
+            self.conf["alignment_coverage"] = r["coverage"]
+        if "threads" not in self.conf and "threads" in r:
+            self.conf["threads"] = r["threads"]
+
+        # Taxonomía: mapear lookup.taxonomy -> llaves planas esperadas
+        t = lk.get("taxonomy") or {}
+        if "exclude" in t and not self.conf.get("taxonomy_ids_to_exclude"):
+            self.conf["taxonomy_ids_to_exclude"] = t["exclude"]
+        if "include_only" in t and not self.conf.get("taxonomy_ids_included_exclusively"):
+            self.conf["taxonomy_ids_included_exclusively"] = t["include_only"]
+        if "get_descendants" in t and self.conf.get("get_descendants") in (None, ""):
+            self.conf["get_descendants"] = t["get_descendants"]
+
+        # ----------------------------------------------------------------------
+
         self.types = None
-
         self.current_date = current_date
-        self.logger.info("Initializing EmbeddingLookUp...")
+        self.logger.info("EmbeddingLookUp: initializing component…")
 
-        # Paths
+        # ---- Paths ---------------------------------------------------------
         self.experiment_path = self.conf.get("experiment_path")
-
         self.embeddings_path = self.conf.get("embeddings_path") or os.path.join(self.experiment_path, "embeddings.h5")
-
         self.raw_results_path = os.path.join(self.experiment_path, "raw_results.csv")
         self.results_path = os.path.join(self.experiment_path, "results.csv")
         self.topgo_path = os.path.join(self.experiment_path, "results_topgo.tsv")
 
-        # Limits and optional features
+        # ---- Limits & options ----------------------------------------------
         self.limit_per_entry = self.conf.get("limit_per_entry", 200)
         self.topgo_enabled = self.conf.get("topgo", False)
+        self.batch_size = self.conf.get("batch_size", 1)
 
-        # Redundancy filtering setup
+        # ---- Optional redundancy filtering --------------------------------
         redundancy_filter_threshold = self.conf.get("redundancy_filter", 0)
         if redundancy_filter_threshold > 0:
+            self.logger.info(
+                "Redundancy filter enabled (MMseqs2): identity>=%.3f, coverage>=%.3f, threads=%s",
+                float(self.conf.get("redundancy_filter", 0)),
+                float(self.conf.get("alignment_coverage", 0)),
+                int(self.conf.get("threads", 12)),
+            )
             self.generate_clusters()
+        else:
+            self.logger.info("Redundancy filter disabled.")
 
-        # Load GO ontology
+        # ---- GO ontology ---------------------------------------------------
         self.go = get_godag("go-basic.obo", optional_attrs="relationship")
+        self.logger.info("GO DAG loaded (go-basic.obo).")
 
-        # Select distance metric
-        self.distance_metric = self.conf.get("embedding", {}).get("distance_metric", "euclidean")
+        # ---- Distance metric -----------------------------------------------
+        self.distance_metric = self.conf.get("embedding", {}).get("distance_metric", "cosine")
         if self.distance_metric not in ("euclidean", "cosine"):
             self.logger.warning(
-                f"Invalid distance metric '{self.distance_metric}', defaulting to 'euclidean'."
+                "Unsupported distance metric '%s'; falling back to 'cosine'.", self.distance_metric
             )
-            self.distance_metric = "euclidean"
+            self.distance_metric = "cosine"
+        self.logger.info("Distance metric: %s", self.distance_metric)
 
-        self.logger.info("EmbeddingLookUp initialization complete.")
+        # ---- Taxonomy filters (integers; optional descendant expansion) ----
+        def _expand_tax_ids(ids):
+            ids = ids or []
+            clean = [int(t) for t in ids if str(t).isdigit()]
+            if self.conf.get("get_descendants", False) and clean:
+                return [int(t) for t in get_descendant_ids(clean)]
+            return clean
 
-    def start(self):
-        """
-        Main execution method for the GO annotation pipeline (layer-aware).
+        self.exclude_taxon_ids = _expand_tax_ids(self.conf.get("taxonomy_ids_to_exclude"))
+        self.include_taxon_ids = _expand_tax_ids(self.conf.get("taxonomy_ids_included_exclusively"))
+        self.logger.info(
+            "Taxonomy filters initialized | exclude=%s | include=%s | expand_descendants=%s",
+            self.exclude_taxon_ids or "[]",
+            self.include_taxon_ids or "[]",
+            bool(self.conf.get("get_descendants", False)),
+        )
 
-        Soporta:
-          - NUEVO: /accession_*/type_*/layer_*/embedding (+ attr 'shape' en layer_*)
-          - ANTIGUO: /accession_*/type_*/embedding
-        """
-        self.logger.info("Starting embedding-based GO annotation process.")
+        # ---- Lazy reference lookup cache ----------------------------------
+        # key: (model_id: int, layer_index: Optional[int]) -> {"ids": np.ndarray, "embeddings": np.ndarray, "layers": np.ndarray}
+        self._lookup_cache: dict[tuple[int, int | None], dict] = {}
+        self._lookup_cache_max = int(self.conf.get("lookup_cache_max", 4))
+        self.logger.info(
+            "Reference lookup will be loaded lazily per (model, layer) with an in-memory cache of max %d entry(ies).",
+            self._lookup_cache_max,
+        )
 
+        # ---- Load model definitions & preload GO annotations ---------------
         self.load_model_definitions()
-        self.logger.info("Loading reference embeddings into memory.")
-        self.lookup_table_into_memory()
-        self.logger.info("Preloading GO annotations from the database.")
+        self.logger.info("Loaded %d model definitions from DB+config: %s",
+                         len(self.types or {}), list(self.types.keys()) if self.types else [])
+        self.logger.info("Preloading GO annotations from the database…")
         self.preload_annotations()
+        self.logger.info("GO annotations cached: %d sequences with annotations.",
+                         len(getattr(self, "go_annotations", {})))
 
+        self.logger.info("EmbeddingLookUp initialization completed successfully.")
+
+    def enqueue(self):
+        """
+        Encola tareas por lotes homogéneos **(modelo, capa)**.
+
+        - Recorre el HDF5 una sola vez (acceso perezoso).
+        - Mantiene buffers por clave (embedding_type_id, layer_index).
+        - Cuando un buffer alcanza batch_size -> publica el lote y limpia el buffer.
+        - Al final, publica los restos de cada buffer.
+        - Compatibilidad: si no hay capas, layer_index=None.
+        """
+        import h5py
+        from collections import defaultdict
+
+        self.logger.info("Starting embedding-based GO annotation process.")
         self.logger.info(f"Processing query embeddings from HDF5: {self.embeddings_path}")
+
+        if not os.path.exists(self.embeddings_path):
+            raise FileNotFoundError(
+                f"HDF5 file not found: {self.embeddings_path}. "
+                f"Ensure embeddings have been generated prior to annotation."
+            )
+
+        batch_size = int(self.batch_size)
+        total_entries = 0
+        total_batches = 0
+
+        # buffers[(embedding_type_id, layer_index)] = [task_data, ...]
+        buffers = defaultdict(list)
+
+        # Mapa rápido id->info y id->nombre (para evitar búsquedas lineales por accesión)
+        # self.types tiene keys por task_name, con info {'id', 'task_name', 'distance_threshold', ...}
+        by_id = {info["id"]: info for info in self.types.values()}
+
+        def flush(key):
+            """Publica el buffer de 'key' en lotes de batch_size."""
+            nonlocal total_batches
+            buf = buffers[key]
+            if not buf:
+                return
+            for i in range(0, len(buf), batch_size):
+                chunk = buf[i:i + batch_size]
+                # Todos comparten embedding_type_id y layer_index por construcción
+                model_id = chunk[0]["embedding_type_id"]
+                layer_index = chunk[0].get("layer_index")
+                payload = {
+                    "model_id": model_id,
+                    "layer_index": layer_index,
+                    "tasks": chunk,
+                }
+                model_type = chunk[0]["model_name"]  # p.ej. "esm2", "prott5", etc.
+                self.publish_task(payload, model_type=model_type)
+                total_batches += 1
+            buffers[key].clear()
+
         try:
-            batch_size = self.conf.get("batch_size", 1)
-            batches_by_model = {}
-            total_batches = 0
-
-            if not os.path.exists(self.embeddings_path):
-                raise FileNotFoundError(
-                    f"HDF5 file not found: {self.embeddings_path}. "
-                    f"Ensure embeddings have been generated prior to annotation."
-                )
-
-            import h5py
             with h5py.File(self.embeddings_path, "r") as h5file:
                 for accession, group in h5file.items():
                     if "sequence" not in group:
                         self.logger.warning(f"Sequence missing for accession '{accession}'. Skipping.")
                         continue
 
-                    sequence = group["sequence"][()].decode("utf-8")
+                    raw_seq = group["sequence"][()]
+                    sequence = raw_seq.decode("utf-8") if hasattr(raw_seq, "decode") else str(raw_seq)
 
-                    # Recorremos los tipos disponibles
+                    # Recorremos tipos (type_<id>)
                     for type_key, type_grp in group.items():
                         if not type_key.startswith("type_"):
                             continue
 
                         try:
-                            model_id = int(type_key.replace("type_", ""))
+                            model_id = int(type_key.split("_", 1)[1])
                         except Exception:
                             self.logger.warning(f"Malformed type group '{type_key}'. Skipping.")
                             continue
 
-                        # Resolver modelo por ID (cargado en load_model_definitions)
-                        model_info = next((info for info in self.types.values() if info["id"] == model_id), None)
+                        model_info = by_id.get(model_id)
                         if model_info is None:
-                            self.logger.warning(f"No model config found for embedding type ID {model_id}, skipping.")
+                            # Modelo no habilitado en config o no cargado en self.types
+                            self.logger.info(f"Model id {model_id} not enabled/loaded — skipping.")
                             continue
-                        model_key = model_info["task_name"]
 
-                        # --- NUEVO: leer por capas si existen ---
+                        model_name = model_info["task_name"]
+                        distance_threshold = model_info.get("distance_threshold")
+
+                        # ¿Hay capas?
                         layer_keys = [k for k in type_grp.keys() if k.startswith("layer_")]
 
                         if layer_keys:
@@ -189,166 +286,292 @@ class EmbeddingLookUp(BaseTaskInitializer):
                                     self.logger.warning(f"Malformed layer group '{lk}' under {type_key}. Skipping.")
                                     continue
 
-                                embedding = layer_grp["embedding"][:]
-                                task_data = {
-                                    "accession": accession,
-                                    "sequence": sequence,
-                                    "embedding": embedding,
-                                    "embedding_type_id": model_info["id"],
-                                    "model_name": model_key,
-                                    "distance_threshold": model_info["distance_threshold"],
-                                    "layer_index": layer_index,  # ← trazabilidad de la capa del QUERY
+                                embedding = layer_grp["embedding"][:]  # carga solo este embedding
+                                task = {
+                                    "h5_path": self.embeddings_path,  # para abrir el archivo en process
+                                    "h5_group": f"{accession}/{type_key}/{lk}",  # ruta interna hasta layer_*
+                                    "embedding_type_id": model_id,
+                                    "model_name": model_name,
+                                    "distance_threshold": distance_threshold,
+                                    "layer_index": layer_index,
                                 }
-                                batches_by_model.setdefault(model_key, []).append(task_data)
-                        else:
-                            # Compatibilidad con formato antiguo (sin capas)
-                            if "embedding" not in type_grp:
-                                continue
-                            embedding = type_grp["embedding"][:]
-                            task_data = {
-                                "accession": accession,
-                                "sequence": sequence,
-                                "embedding": embedding,
-                                "embedding_type_id": model_info["id"],
-                                "model_name": model_key,
-                                "distance_threshold": model_info["distance_threshold"],
-                                # sin layer_index en formato antiguo
-                            }
-                            batches_by_model.setdefault(model_key, []).append(task_data)
 
-            # Procesar por modelo en lotes
-            for model_key, tasks in batches_by_model.items():
-                for i in range(0, len(tasks), batch_size):
-                    batch = tasks[i:i + batch_size]
-                    annotations = self.process(batch)  # process ya es layer-aware
-                    self.store_entry(annotations)
-                    total_batches += 1
-                    self.logger.info(
-                        f"Processed batch {total_batches} for model '{model_key}' with {len(batch)} entries."
-                    )
+                                key = (model_id, layer_index)
+                                buffers[key].append(task)
+                                total_entries += 1
 
-            self.logger.info(f"All batches completed successfully. Total batches: {total_batches}.")
+                                # Flush si alcanzamos batch_size
+                                if len(buffers[key]) >= batch_size:
+                                    flush(key)
+            # Publica los restos
+            for key in list(buffers.keys()):
+                flush(key)
+
+            self.logger.info(
+                f"📮 Enqueued {total_entries} queries in {total_batches} homogeneous batches "
+                f"(grouped by model & layer; batch_size={batch_size})."
+            )
 
         except Exception as e:
-            self.logger.error(f"Unexpected error during batch processing: {e}", exc_info=True)
+            self.logger.error(f"Unexpected error during enqueue: {e}", exc_info=True)
             raise
-
-        self.logger.info("Starting post-processing of annotation results.")
-        self.post_process_results()
-        self.logger.info("Embedding lookup pipeline completed.")
 
     def load_model_definitions(self):
         """
-        Initializes `self.types` by matching embedding types from the database with
-        those defined in the configuration.
+        Initialize `self.types` by matching DB embedding types with configuration.
+        Only models present in both and marked as enabled are kept.
 
-        Only models present in both sources and marked as `enabled` are included.
-        Each entry contains model ID, model name, task name, distance threshold, and batch size.
-
-        Logs warnings for models missing in config or explicitly disabled.
+        Logs, once per model (no duplicates):
+          - model name and DB id
+          - distance_threshold (config)
+          - enabled_layers (config)
+          - available_layers_in_h5 (scan of HDF5)
+          - effective_layers (intersection or ALL if config is not restricting)
         """
-
         self.types = {}
 
         try:
             db_models = self.session.query(SequenceEmbeddingType).all()
         except Exception as e:
-            self.logger.error(f"Failed to query SequenceEmbeddingType table: {e}")
+            self.logger.error("Failed to query SequenceEmbeddingType table: %s", e)
             raise
 
-        config_models = self.conf.get("embedding", {}).get("models", {})
+        cfg_models = self.conf.get("embedding", {}).get("models", {})
 
+        # 1) Build self.types
         for db_model in db_models:
-            task_name = db_model.name  # usamos el 'name' (no 'task_name') de la BD
-            config_models = self.conf.get("embedding", {}).get("models", {})
-
-            # Si el modelo está definido en la config (por nombre), lo usamos
-            matched_name = next((k for k in config_models if k.lower() == task_name.lower()), None)
+            task_name = db_model.name  # DB display name
+            matched_name = next((k for k in cfg_models if k.lower() == task_name.lower()), None)
             if matched_name is None:
-                self.logger.warning(f"Model '{task_name}' exists in DB but not in config — skipping.")
+                self.logger.warning("Model '%s' exists in DB but not in config — skipping.", task_name)
                 continue
 
-            config = config_models[matched_name]
-            if not config.get("enabled", True):
-                self.logger.info(f"Model '{matched_name}' is disabled in config — skipping.")
+            cfg = cfg_models[matched_name]
+            if not cfg.get("enabled", True):
+                self.logger.info("Model '%s' is disabled in config — skipping.", matched_name)
                 continue
 
             self.types[matched_name] = {
                 "id": db_model.id,
                 "model_name": db_model.model_name,
                 "task_name": matched_name,
-                "distance_threshold": config.get("distance_threshold"),
-                "batch_size": config.get("batch_size"),
+                "distance_threshold": cfg.get("distance_threshold"),
+                "batch_size": cfg.get("batch_size"),
+                "enabled_layers": cfg.get("enabled_layers"),  # may be None/absent
             }
 
-        self.logger.info(f"Loaded {len(self.types)} model(s) from DB + config: {list(self.types.keys())}")
+        # 2) Detailed, single-pass logging (prevents duplicates)
+        if not self.types:
+            self.logger.warning("No enabled models found after matching DB and config.")
+            return
 
-    def process(self, task_data):
-        """
-        Processes a batch of query embeddings (layer-aware).
+        # Sort for deterministic output
+        for name in sorted(self.types.keys(), key=str.lower):
+            info = self.types[name]
+            model_id = info["id"]
+            threshold = info.get("distance_threshold")
+            enabled_layers = info.get("enabled_layers")
 
-        Cada entrada de task_data puede incluir 'layer_index' (int). Este método
-        conserva ese índice y lo añade a cada transferencia GO resultante.
+            # HDF5 scan (may be empty if file or groups are missing)
+            available_layers = self._h5_available_layers(model_id)
+
+            # Effective layers = intersection if config restricts; else "ALL"
+            if enabled_layers and isinstance(enabled_layers, (list, tuple)):
+                eff = sorted(set(enabled_layers) & set(available_layers)) if available_layers else sorted(
+                    set(enabled_layers))
+                effective_layers = eff
+            else:
+                effective_layers = "ALL" if available_layers else "[]"
+
+            self.logger.info(
+                "Model '%s' (id=%s): threshold=%s | enabled_layers=%s | available_layers_in_h5=%s | effective_layers=%s",
+                name, model_id, threshold if threshold is not None else "None",
+                enabled_layers if enabled_layers else "ALL",
+                available_layers if available_layers else "[]",
+                effective_layers
+            )
+
+        self.logger.info("Loaded %d model(s) from DB+config: %s",
+                         len(self.types), list(sorted(self.types.keys(), key=str.lower)))
+
+    def process(self, payload: dict) -> list[dict]:
         """
+        Process a homogeneous batch of queries for a single (model_id, layer_index),
+        returning *compact neighbor hits* only (no GO expansion, no sequences).
+
+        Input payload schema
+        --------------------
+        payload : dict
+            {
+              "model_id": int,
+              "layer_index": int | None,
+              "tasks": list[dict]
+                # Each task is EITHER:
+                #   a) lightweight (recommended):
+                #      {"h5_path": str, "h5_group": str, "model_name": str, "distance_threshold": float|None, "layer_index": int|None}
+                #   b) legacy (discouraged due to payload size):
+                #      {"embedding": np.ndarray, "accession": str, "sequence": str, "model_name": str, "distance_threshold": float|None, "layer_index": None}
+            }
+
+        Output (compact) schema
+        -----------------------
+        Returns a list of *hits* with one record per selected neighbor:
+            {
+              "accession": str,              # query identifier (without 'accession_' prefix)
+              "ref_sequence_id": int,        # DB sequence.id of the reference neighbor
+              "distance": float,             # distance to the neighbor (metric per self.distance_metric)
+              "model_name": str,             # logical model key (e.g., "esm2", "prott5")
+              "embedding_type_id": int,      # embedding type id from DB
+              "layer_index": int | None      # layer shared by the batch or None for legacy
+            }
+
+        Rationale
+        ---------
+        - This method intentionally does NOT expand neighbors into GO annotations.
+          It avoids building large payloads (neighbors × GO terms), keeping messages
+          small and robust even when `limit_per_entry` > 1.
+        - GO expansion is deferred to `store_entry()` using `self.go_annotations`
+          (preloaded from the database), and sequences are read lazily only if needed
+          by configuration.
+
+        Notes
+        -----
+        - GPU distance is used when `conf['use_gpu']` is True (default), otherwise CPU (SciPy).
+        - Redundancy filtering (MMseqs2 clusters) is applied when configured.
+        - `limit_per_entry` and optional `distance_threshold` control neighbor selection.
+
+        Returns
+        -------
+        list[dict]
+            Compact hits. May be empty if no neighbors match.
+        """
+        import time
+        from collections import defaultdict
+        import numpy as np
+        import h5py
+        from scipy.spatial.distance import cdist
+        import torch
+
+        t_start = time.perf_counter()
+
         try:
-            if not task_data:
-                self.logger.warning("No task data provided for lookup. Skipping batch.")
+            # --- Validate payload ------------------------------------------------
+            if not isinstance(payload, dict):
+                self.logger.error("process(payload): expected dict with keys ['model_id','layer_index','tasks'].")
                 return []
 
-            # --- Metadatos del batch (se asume mismo embedding_type_id) ---
-            model_id = task_data[0]["embedding_type_id"]
-            model_name = task_data[0]["model_name"]
-            threshold = task_data[0].get("distance_threshold", self.conf.get("distance_threshold"))
-            use_gpu = self.conf.get("use_gpu", True)
+            model_id = payload.get("model_id")
+            layer_index_batch = payload.get("layer_index")
+            batch = payload.get("tasks") or []
+
+            if model_id is None or not isinstance(batch, list) or not batch:
+                self.logger.error("process(payload): invalid or empty payload.")
+                return []
+
+            # Optional metadata from tasks/conf
+            model_name = next((t.get("model_name") for t in batch if "model_name" in t), None)
+            threshold = next((t.get("distance_threshold") for t in batch if "distance_threshold" in t),
+                             self.conf.get("distance_threshold"))
+            use_gpu = bool(self.conf.get("use_gpu", True))
             limit = int(self.conf.get("limit_per_entry", 1000))
 
-            # Tabla de referencia para este tipo de embedding
-            lookup = self.lookup_tables.get(model_id)
-            if lookup is None:
-                self.logger.warning(f"No lookup table for embedding_type_id {model_id}. Skipping batch.")
+            self.logger.info(
+                "Batch start | model_id=%s (%s) | layer_index=%s | tasks=%d | metric=%s | threshold=%s | limit=%d | gpu=%s",
+                model_id, model_name or "unknown", layer_index_batch, len(batch),
+                self.distance_metric, threshold if threshold is not None else "None", limit, use_gpu
+            )
+
+            # --- Reference lookup (lazy, cached) ---------------------------------
+            lookup = self._get_lookup_for_batch(model_id, layer_index_batch)
+            if not lookup:
+                self.logger.warning(
+                    "process(payload): no reference lookup for model_id=%s, layer_index=%s — skipping.",
+                    model_id, layer_index_batch
+                )
                 return []
 
-            # --- Preparación de consultas ---
-            embeddings = np.stack([np.asarray(t["embedding"]) for t in task_data])
-            accessions = [t["accession"].removeprefix("accession_") for t in task_data]
-            sequences = {t["accession"].removeprefix("accession_"): t["sequence"] for t in task_data}
-            layer_indices = [t.get("layer_index") for t in task_data]  # puede contener None si formato antiguo
+            # --- Materialize query embeddings ------------------------------------
+            embeddings_list = []
+            accessions_list = []
 
-            # --- Distancias (GPU/CPU) ---
+            # Group tasks by file to minimize HDF5 opens
+            by_h5 = defaultdict(list)
+            for t in batch:
+                if "h5_path" in t and "h5_group" in t:
+                    by_h5[t["h5_path"]].append(t)
+                else:
+                    by_h5[None].append(t)
+
+            for h5_path, items in by_h5.items():
+                with h5py.File(h5_path, "r") as h5:
+                    for t in items:
+                        grp_path = t["h5_group"]  # e.g., "accession_X/type_1/layer_16" or ".../type_1" (legacy)
+                        # Load only the embedding; skip sequences here to keep IO minimal
+                        emb = h5[grp_path]["embedding"][:]
+                        embeddings_list.append(np.asarray(emb))
+                        # Accession (top-level node name)
+                        acc_node = grp_path.split("/", 1)[0]  # "accession_X"
+                        acc = acc_node.removeprefix("accession_")
+                        accessions_list.append(acc)
+
+            if not embeddings_list:
+                self.logger.warning("process(payload): no query embeddings materialized — skipping batch.")
+                return []
+
+            embeddings = np.stack(embeddings_list)  # (N, D)
+            accessions = accessions_list
+            layer_indices = [layer_index_batch] * len(accessions)
+
+            self.logger.info(
+                "Queries materialized | N=%d | dim=%s",
+                len(embeddings), tuple(embeddings.shape[1:])
+            )
+
+            # --- Distance computation (GPU/CPU) -----------------------------------
+            t_dist = time.perf_counter()
             if use_gpu:
-                queries = torch.tensor(embeddings, dtype=torch.float32).cuda()
-                targets = torch.tensor(lookup["embeddings"], dtype=torch.float32).cuda()
+                queries = torch.tensor(embeddings, dtype=torch.float32).cuda(non_blocking=True)
+                targets = torch.tensor(lookup["embeddings"], dtype=torch.float32).cuda(non_blocking=True)
 
                 if self.distance_metric == "euclidean":
                     q2 = (queries ** 2).sum(dim=1, keepdim=True)
                     t2 = (targets ** 2).sum(dim=1).unsqueeze(0)
                     d2 = q2 + t2 - 2 * (queries @ targets.T)
                     dist_matrix = torch.sqrt(torch.clamp(d2, min=0.0)).cpu().numpy()
-
                 elif self.distance_metric == "cosine":
                     qn = torch.nn.functional.normalize(queries, p=2, dim=1)
                     tn = torch.nn.functional.normalize(targets, p=2, dim=1)
                     dist_matrix = (1 - (qn @ tn.T)).cpu().numpy()
-
                 else:
                     raise ValueError(f"Unsupported distance metric: {self.distance_metric}")
+
+                self.logger.info(
+                    "Distances computed on GPU | queries=%s | refs=%s | elapsed=%.2fs",
+                    tuple(queries.shape), tuple(targets.shape), time.perf_counter() - t_dist
+                )
             else:
                 dist_matrix = cdist(embeddings, lookup["embeddings"], metric=self.distance_metric)
+                self.logger.info(
+                    "Distances computed on CPU | queries=%s | refs=%s | elapsed=%.2fs",
+                    embeddings.shape, lookup["embeddings"].shape, time.perf_counter() - t_dist
+                )
 
-            # --- Redundancia opcional ---
+            # --- Optional redundancy filter --------------------------------------
             redundancy = int(self.conf.get("redundancy_filter", 0))
-            redundant_ids = {}
+            redundant_ids: dict[str, set] = {}
             if redundancy > 0:
                 for acc in accessions:
                     redundant_ids[acc] = self.retrieve_cluster_members(acc)
+                self.logger.info(
+                    "Redundancy filter active | threshold=%.3f | accessions_with_clusters=%d",
+                    float(redundancy), sum(1 for acc in accessions if redundant_ids.get(acc))
+                )
 
-            go_annotations = self.go_annotations
-            go_terms = []
-            total_transfers = 0
+            # --- Neighbor selection → COMPACT HITS -------------------------------
+            hits: list[dict] = []
             total_neighbors = 0
-
-            # --- Selección de vecinos y transferencia ---
             ids_ref = lookup["ids"]
+
             for i, accession in enumerate(accessions):
                 distances_all = dist_matrix[i]
                 ids_all = ids_ref
@@ -365,26 +588,157 @@ class EmbeddingLookUp(BaseTaskInitializer):
                     continue
 
                 order = np.argsort(distances)
-                if not threshold:
+                if threshold is None or threshold == 0:
                     selected = order[:limit]
                 else:
                     selected = order[distances[order] <= float(threshold)][:limit]
 
                 total_neighbors += len(selected)
-                li = layer_indices[i]  # puede ser None si viene del formato antiguo
+                li = layer_indices[i]
 
                 for idx in selected:
-                    ref_id = seq_ids[idx]
-                    anns = go_annotations.get(ref_id)
+                    ref_id = int(seq_ids[idx])
+                    d = float(distances[idx])
+                    hits.append({
+                        "accession": accession,
+                        "ref_sequence_id": ref_id,
+                        "distance": d,
+                        "model_name": model_name,
+                        "embedding_type_id": model_id,
+                        "layer_index": li,
+                    })
+
+            elapsed = time.perf_counter() - t_start
+            avg_neighbors = (total_neighbors / len(accessions)) if accessions else 0.0
+            self.logger.info(
+                "Batch done | queries=%d | layer=%s | neighbors=%d (avg=%.2f) | hits=%d | elapsed=%.2fs",
+                len(accessions), layer_index_batch, total_neighbors, avg_neighbors, len(hits), elapsed
+            )
+
+            return hits
+
+        except Exception as e:
+            import traceback
+            self.logger.error("process(payload) failed: %s\n%s", e, traceback.format_exc())
+            raise
+
+    def store_entry(self, annotations_or_hits: list[dict]) -> None:
+        """
+        Persist results to disk. Accepts EITHER:
+          a) legacy expanded annotations (full rows), OR
+          b) compact neighbor hits (new flow, with 'ref_sequence_id').
+
+        Behavior
+        --------
+        - If input are *hits*, expand them to GO annotations using `self.go_annotations`
+          (preloaded DB cache keyed by reference sequence_id).
+        - Query and reference sequences are included ONLY when
+          `conf['postprocess']['keep_sequences']` is True (lazy HDF5 read).
+        - Compact the expanded data within the batch using `_compact_annotations_df`
+          to reduce on-disk size and accelerate downstream post-processing.
+        - Write to layered raw CSVs when `layer_index` is present:
+            <experiment_path>/raw_results_layer_{L}.csv
+          or to <experiment_path>/raw_results.csv for legacy/no-layer.
+
+        Input schemas
+        -------------
+        Legacy expanded annotations (kept for backward compatibility):
+            {
+              "accession": str,
+              "sequence_query": str | None,
+              "sequence_reference": str | None,
+              "go_id": str,
+              "category": str,
+              "evidence_code": str,
+              "go_description": str,
+              "distance": float,
+              "model_name": str,
+              "embedding_type_id": int,
+              "layer_index": int | None,
+              "protein_id": int,
+              "organism": str,
+              "gene_name": str | None,
+              ...
+            }
+
+        Compact neighbor hits (preferred, output of process()):
+            {
+              "accession": str,
+              "ref_sequence_id": int,
+              "distance": float,
+              "model_name": str,
+              "embedding_type_id": int,
+              "layer_index": int | None
+            }
+
+        Notes
+        -----
+        - Expansion fan-out is (hits × GO terms) but it happens server-side where memory
+          and I/O are controlled; queue messages remain small.
+        - The compact step is idempotent and safe to apply even if upstream has already
+          reduced duplicates.
+
+        Raises
+        ------
+        Exception
+            Propagates unexpected IO or DataFrame errors after logging.
+        """
+        import os
+        import pandas as pd
+
+        items = annotations_or_hits or []
+        if not items:
+            self.logger.info("store_entry: no annotations/hits to persist.")
+            return
+
+        try:
+            os.makedirs(self.experiment_path, exist_ok=True)
+
+            # Detect compact-hits mode
+            is_hits = items and isinstance(items[0], dict) and ("ref_sequence_id" in items[0])
+
+            if is_hits:
+                keep_seq = (self.conf.get("postprocess", {}) or {}).get("keep_sequences", False)
+                h5 = None
+
+                # Lazy HDF5 open only if we actually plan to read sequences
+                if keep_seq and os.path.exists(self.embeddings_path):
+                    import h5py
+                    try:
+                        h5 = h5py.File(self.embeddings_path, "r")
+                    except Exception as e:
+                        self.logger.warning("store_entry: could not open HDF5 for sequence read: %s", e)
+                        h5 = None
+
+                expanded_rows = []
+                for hit in items:
+                    acc = hit["accession"]
+                    ref_id = int(hit["ref_sequence_id"])
+                    d = float(hit["distance"])
+                    model_name = hit["model_name"]
+                    model_id = int(hit["embedding_type_id"])
+                    li = hit.get("layer_index")
+
+                    anns = self.go_annotations.get(ref_id, [])
                     if not anns:
                         continue
 
-                    d = float(distances[idx])
+                    # Optionally load query sequence (once per hit) if keep_seq is enabled
+                    seq_query = None
+                    if keep_seq and h5 is not None:
+                        acc_node = f"accession_{acc}"
+                        try:
+                            if acc_node in h5 and "sequence" in h5[acc_node]:
+                                raw_seq = h5[acc_node]["sequence"][()]
+                                seq_query = raw_seq.decode("utf-8") if hasattr(raw_seq, "decode") else str(raw_seq)
+                        except Exception:
+                            seq_query = None
+
                     for ann in anns:
-                        go_terms.append({
-                            "accession": accession,
-                            "sequence_query": sequences[accession],
-                            "sequence_reference": ann["sequence"],
+                        expanded_rows.append({
+                            "accession": acc,
+                            "sequence_query": seq_query if keep_seq else None,
+                            "sequence_reference": ann.get("sequence") if keep_seq else None,
                             "go_id": ann["go_id"],
                             "category": ann["category"],
                             "evidence_code": ann["evidence_code"],
@@ -392,73 +746,66 @@ class EmbeddingLookUp(BaseTaskInitializer):
                             "distance": d,
                             "model_name": model_name,
                             "embedding_type_id": model_id,
-                            "layer_index": li,  # ← trazabilidad de la capa del QUERY
+                            "layer_index": li,
                             "protein_id": ann["protein_id"],
                             "organism": ann["organism"],
                             "gene_name": ann["gene_name"],
                         })
-                        total_transfers += 1
 
-            self.logger.info(
-                f"✅ Batch processed ({len(accessions)} queries; layers: "
-                f"{sorted({li for li in layer_indices if li is not None}) or ['legacy']}). "
-                f"{total_neighbors} neighbors, {total_transfers} GO transfers."
-            )
-            return go_terms
+                # Ensure we close HDF5 handle if opened
+                if h5 is not None:
+                    try:
+                        h5.close()
+                    except Exception:
+                        pass
 
-        except Exception as e:
-            self.logger.error(f"Error during lookup process: {e}\n{traceback.format_exc()}")
-            raise
+                if not expanded_rows:
+                    self.logger.info("store_entry: expanded rows empty; nothing to write.")
+                    return
 
-    def store_entry(self, annotations):
-        """
-        Guarda resultados RAW *compactados* para reducir tamaño y acelerar el post-procesado.
+                df = pd.DataFrame(expanded_rows)
 
-        - Colapsa por (accession, model_name, embedding_type_id, layer_index, go_id, ...).
-        - 'support_count' queda ya calculado (nº de vecinos que respaldan el GO en el batch).
-        - Conserva el vecino de menor 'distance' como representante (para alineamiento, etc.).
-        - Si hay 'layer_index', escribe por capa en: raw_results_layer_{L}.csv
-          (mejor IO y lectura selectiva después). Si no, usa raw_results.csv (legacy).
-
-        Formato guardado (cabecera base):
-          accession,model_name,embedding_type_id,layer_index,go_id,category,evidence_code,
-          go_description,distance,sequence_query,sequence_reference,protein_id,organism,
-          gene_name,support_count
-        """
-        if not annotations:
-            self.logger.info("No valid GO terms to store.")
-            return
-
-        try:
-            df = pd.DataFrame(annotations)
-            # Asegura 'layer_index' por compatibilidad
-            if "layer_index" not in df.columns:
-                df["layer_index"] = None
-
-            # --- COMPACTA antes de guardar ---
+            # Compact within-batch to cut duplicates and shrink output
             df_compact = self._compact_annotations_df(df)
+            if df_compact.empty:
+                self.logger.info("store_entry: compact DataFrame is empty; nothing to write.")
+                return
 
-            # ¿Escritura por capa?
-            write_layered = True  # activa escritura por capa por defecto
-            if write_layered and "layer_index" in df_compact.columns and df_compact["layer_index"].notna().any():
+            # Layer-aware writing strategy
+            write_layered = df_compact["layer_index"].notna().any()
+            if write_layered:
+                total_rows = 0
                 for layer_val, chunk in df_compact.groupby("layer_index", dropna=False):
                     if pd.isna(layer_val):
-                        # legacy (sin capa): manda a raw_results.csv
-                        out_path = self.raw_results_path
+                        out_path = self.raw_results_path  # legacy bucket for null layer
                     else:
                         out_path = os.path.join(self.experiment_path, f"raw_results_layer_{int(layer_val)}.csv")
 
                     write_header = not os.path.exists(out_path)
                     chunk.to_csv(out_path, mode="a", index=False, header=write_header)
-                    self.logger.info(f"Stored {len(chunk)} compact rows → {os.path.basename(out_path)}")
+                    total_rows += len(chunk)
+
+                    self.logger.info(
+                        "store_entry: wrote %d compact rows → %s (header=%s)",
+                        len(chunk), os.path.basename(out_path), write_header
+                    )
+
+                self.logger.info(
+                    "store_entry: layered write completed | layers=%s | total_rows=%d",
+                    sorted({int(l) for l in df_compact['layer_index'].dropna().unique()}) or ["legacy"], total_rows
+                )
             else:
                 out_path = self.raw_results_path
                 write_header = not os.path.exists(out_path)
                 df_compact.to_csv(out_path, mode="a", index=False, header=write_header)
-                self.logger.info(f"Stored {len(df_compact)} compact rows → {os.path.basename(out_path)}")
+
+                self.logger.info(
+                    "store_entry: wrote %d compact rows → %s (header=%s)",
+                    len(df_compact), os.path.basename(out_path), write_header
+                )
 
         except Exception as e:
-            self.logger.error(f"Error writing compact raw results: {e}")
+            self.logger.error("store_entry failed: %s", e, exc_info=True)
             raise
 
     def generate_clusters(self):
@@ -560,189 +907,6 @@ class EmbeddingLookUp(BaseTaskInitializer):
             self.logger.warning(f"Accession '{accession}' not found in clusters.")
             return set()
 
-    def lookup_table_into_memory(self):
-        """
-        Load sequence embeddings into memory to build lookup tables for each enabled model,
-        honoring (optional) taxonomy filters, SQL limiting, and per-model layer selection.
-
-        ────────────────────────────────────────────────────────────────────────────────
-        CONFIG KEYS (YAML):
-          - taxonomy_ids_to_exclude: list[str|int]
-              Protein.taxonomy_id values to exclude from the reference set.
-          - taxonomy_ids_included_exclusively: list[str|int]
-              Protein.taxonomy_id values to include (exclusive filter).
-          - get_descendants: bool
-              If True, expand taxonomy lists with their NCBI descendant IDs.
-          - limit_execution: int
-              If > 0, apply an SQL LIMIT to the reference query (useful for debugging).
-          - embedding.models.<TaskName>.layer_index: list[int]
-              Optional list of ESM/PLM layer indices to load from DB for that model.
-              If omitted or empty, ALL available layers for the model will be loaded.
-              Example:
-                embedding:
-                  models:
-                    ESM:
-                      layer_index: [16]
-        ────────────────────────────────────────────────────────────────────────────────
-
-        OUTPUT (self.lookup_tables):
-          A dict keyed by embedding_type_id:
-            {
-              "ids":        np.ndarray[int]    # shape (N,), Sequence.id per row in 'embeddings'
-              "embeddings": np.ndarray[float]  # shape (N, D), stacked row-wise
-              "layers":     np.ndarray[int]    # shape (N,), SequenceEmbedding.layer_index per row
-            }
-
-          NOTE: 'layers' is NEW and optional for downstream consumers. Existing code that
-          only reads 'ids' and 'embeddings' continues to work unchanged.
-
-        RATIONALE:
-          - Prior code filtered only by embedding_type_id (and optional taxonomy / limit).
-            That inadvertently loaded ALL available layers for each sequence/model, which
-            inflates the reference table and can cause GPU OOM when the entire table is
-            moved to CUDA in later steps.
-          - This implementation adds an optional DB-side filter on SequenceEmbedding.layer_index
-            driven by YAML config, significantly reducing reference size if you only need a
-            subset of layers (e.g., [16]).
-        """
-        import traceback
-        import numpy as np
-
-        try:
-            self.logger.info("🔄 Starting lookup table construction: loading embeddings into memory per model...")
-
-            self.lookup_tables = {}
-            limit_execution = self.conf.get("limit_execution")
-            get_descendants = self.conf.get("get_descendants", False)
-
-            # ── Helpers ──────────────────────────────────────────────────────────────
-            def expand_tax_ids(key: str):
-                """
-                Read a taxonomy list from config, clean/cast to ints, and optionally
-                expand with NCBI descendants if get_descendants=True.
-                """
-                ids = self.conf.get(key, [])
-                if not isinstance(ids, list):
-                    self.logger.warning(f"Expected list for '{key}', got {type(ids)}. Forcing empty list.")
-                    return []
-
-                # Coerce valid numeric strings/ints to ints
-                clean_ids = [int(tid) for tid in ids if str(tid).isdigit()]
-
-                if get_descendants and clean_ids:
-                    expanded = get_descendant_ids(clean_ids)  # provided elsewhere in your codebase
-                    # Serialize back to strings for consistent comparison/logging
-                    return [str(tid) for tid in expanded]
-
-                return [str(tid) for tid in clean_ids]
-
-            exclude_taxon_ids = expand_tax_ids("taxonomy_ids_to_exclude")
-            include_taxon_ids = expand_tax_ids("taxonomy_ids_included_exclusively")
-            self.exclude_taxon_ids = [str(tid) for tid in (exclude_taxon_ids or [])]
-            self.include_taxon_ids = [str(tid) for tid in (include_taxon_ids or [])]
-
-            if self.exclude_taxon_ids and self.include_taxon_ids:
-                self.logger.warning(
-                    "⚠️ Both 'taxonomy_ids_to_exclude' and 'taxonomy_ids_included_exclusively' are set. "
-                    "This may lead to conflicting filters."
-                )
-
-            self.logger.info(
-                f"🧬 Taxonomy filters — Exclude: {exclude_taxon_ids}, Include: {include_taxon_ids}, "
-                f"Descendants: {get_descendants}"
-            )
-
-            # ── Main loop over enabled models/types ──────────────────────────────────
-            for task_name, model_info in self.types.items():
-                embedding_type_id = model_info["id"]
-                self.logger.info(f"📥 Model '{task_name}' (ID: {embedding_type_id}): retrieving embeddings...")
-
-                # Read per-model layer filter from config:
-                # embedding.models.<TaskName>.layer_index: [int, ...]
-                model_cfg = (self.conf.get("embedding", {}).get("models", {}) or {}).get(task_name, {}) or {}
-                raw_layers = model_cfg.get("layer_index", [])
-                allowed_layers = []
-                if raw_layers:
-                    try:
-                        allowed_layers = [int(x) for x in raw_layers if str(x).isdigit()]
-                    except Exception:
-                        self.logger.warning(
-                            f"Invalid 'layer_index' list for model '{task_name}' in config. Ignoring layer filter."
-                        )
-                        allowed_layers = []
-
-                if allowed_layers:
-                    self.logger.info(
-                        f"🎯 Reference filter for '{task_name}': layer_index IN {sorted(set(allowed_layers))}")
-                else:
-                    self.logger.info(f"🎯 Reference filter for '{task_name}': NO layer filter (all layers).")
-
-                # Build base query; SELECT layer_index as well (for auditing/logging)
-                query = (
-                    self.session
-                    .query(
-                        Sequence.id,  # 0
-                        SequenceEmbedding.embedding,  # 1
-                        SequenceEmbedding.layer_index  # 2  <-- new: we will log/return it
-                    )
-                    .join(Sequence, Sequence.id == SequenceEmbedding.sequence_id)
-                    .join(Protein, Sequence.id == Protein.sequence_id)
-                    .filter(SequenceEmbedding.embedding_type_id == embedding_type_id)
-                )
-
-                # Apply optional per-model layer filter
-                if allowed_layers:
-                    query = query.filter(SequenceEmbedding.layer_index.in_(allowed_layers))
-
-                # Apply taxonomy filters (if any)
-                if exclude_taxon_ids:
-                    query = query.filter(~Protein.taxonomy_id.in_(exclude_taxon_ids))
-                if include_taxon_ids:
-                    query = query.filter(Protein.taxonomy_id.in_(include_taxon_ids))
-
-                # Optional global SQL LIMIT (debug/probing)
-                if isinstance(limit_execution, int) and limit_execution > 0:
-                    self.logger.info(f"⛔ SQL limit applied: {limit_execution} entries for model '{task_name}'")
-                    query = query.limit(limit_execution)
-
-                # Execute
-                results = query.all()
-                if not results:
-                    self.logger.warning(f"⚠️ No embeddings found for model '{task_name}' (ID: {embedding_type_id})")
-                    continue
-
-                # Materialize arrays
-                # NOTE: Each row corresponds to a (sequence_id, layer_index) pair for this model.
-                #       It is OK to have repeated 'sequence_id' across different layers if the
-                #       layer filter is broad or unspecified.
-                sequence_ids = np.fromiter((row[0] for row in results), dtype=int, count=len(results))
-                layers = np.fromiter((int(row[2]) for row in results), dtype=int, count=len(results))
-
-                # Stack the embedding vectors row-wise
-                # Assumes 'row[1]' implements .to_numpy() (e.g., pgvector) => 1D numpy array of dimension D.
-                embeddings = np.vstack([row[1].to_numpy() for row in results])
-                mem_mb = embeddings.nbytes / (1024 ** 2)
-
-                # Persist in memory
-                self.lookup_tables[embedding_type_id] = {
-                    "ids": sequence_ids,
-                    "embeddings": embeddings,
-                    "layers": layers,  # NEW: harmless for existing consumers; useful for auditing
-                }
-
-                # Logging
-                loaded_layers = sorted(set(layers.tolist()))
-                self.logger.info(
-                    f"✅ Model '{task_name}': loaded {len(sequence_ids)} rows "
-                    f"(layers={loaded_layers}) with shape {embeddings.shape} (~{mem_mb:.2f} MB in RAM)."
-                )
-
-            self.logger.info(f"🏁 Lookup table construction completed for {len(self.lookup_tables)} model(s).")
-
-        except Exception:
-            self.logger.error("❌ Failed to load lookup tables:\n" + traceback.format_exc())
-            raise
-
     def preload_annotations(self):
         """
         Preloads GO annotations from the database and stores them in `self.go_annotations`.
@@ -785,11 +949,14 @@ class EmbeddingLookUp(BaseTaskInitializer):
                     }
                     self.go_annotations.setdefault(row.sequence_id, []).append(entry)
 
-    # --- Helpers de metadatos ---------------------------------------------
+    # --- Metadata helpers -----------------------------------------------------
     def _model_threshold_map(self) -> dict:
         """
-        Devuelve un mapa {model_name -> distance_threshold} a partir de self.types.
-        'model_name' aquí es el 'task_name' usado en los outputs.
+        Build a mapping {task_name -> distance_threshold} from `self.types`.
+
+        Notes
+        -----
+        `task_name` here refers to the model key used across outputs (not the DB model_name).
         """
         try:
             return {info["task_name"]: info.get("distance_threshold") for info in self.types.values()}
@@ -798,10 +965,19 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
     def _add_metadata_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Añade metadatos a las salidas:
-          - distance_metric (constante de la ejecución)
-          - distance_threshold (por fila, según model_name)
-          - (opcional) elimina sequence_query/sequence_reference si keep_sequences=False
+        Append run metadata to the output DataFrame.
+
+        Adds
+        ----
+        - distance_metric : str
+            The distance metric used in the run.
+        - distance_threshold : float | None
+            Per-row threshold resolved from the model's task_name.
+
+        Side effects
+        ------------
+        If `conf['postprocess']['keep_sequences']` is False, drops
+        'sequence_query' and 'sequence_reference' for leaner outputs.
         """
         df = df.copy()
         df["distance_metric"] = self.distance_metric
@@ -815,16 +991,21 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
         return df
 
-    # --- Normalización y utilidades ----------------------------------------
+    # --- Normalization utilities ----------------------------------------------
     def _safe_max(self, s: pd.Series) -> float:
-        """Devuelve el máximo positivo o NaN si no existe."""
+        """
+        Return the maximum positive value in the series, or NaN if none exists.
+        """
         if s is None or s.empty:
             return float("nan")
         m = pd.to_numeric(s, errors="coerce").max()
         return m if pd.notnull(m) and m > 0 else float("nan")
 
     def _normalize_by_accession(self, df: pd.DataFrame, col: str) -> pd.Series:
-        """Normaliza una columna por accesión dividiendo por su máximo positivo."""
+        """
+        Normalize a numeric column by 'accession', dividing by the positive max
+        within each accession group. Returns 0 where no positive max exists.
+        """
 
         def norm(group: pd.Series) -> pd.Series:
             m = self._safe_max(group)
@@ -834,27 +1015,35 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
         return df.groupby("accession")[col].transform(norm)
 
-    # --- SCORE (con layer_support) -----------------------------------------
+    # --- SCORE (with layer_support) -------------------------------------------
     def _compute_score(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Calcula 'score' compuesto por fila.
+        Compute a per-row composite 'score' from multiple normalized components.
 
-        Componentes:
-          - reliability_index: derivado de distance (según el métrico)
-          - support_count_norm: recuento de vecinos por término (normalizado por accesión)
-          - collapsed_support_norm: apoyo ontológico de ancestros (normalizado por accesión)
-          - model_consistency: acuerdo entre modelos (model_support / n_models_total)
-          - alignment_norm: media de identidad y similitud en [0,1]
-          - layer_support_norm: fracción de capas del mismo modelo que apoyan el término
-                                (#capas que predicen el GO / #capas totales del modelo para esa accesión)
+        Components
+        ----------
+        reliability_index : float
+            Derived from distance according to the selected metric.
+        support_count_norm : float
+            Normalized neighbor count supporting the GO term per accession.
+        collapsed_support_norm : float
+            Normalized ontological support from ancestors present in the group.
+        model_consistency : float
+            Agreement across models: model_support / n_models_total.
+        alignment_norm : float
+            0.5 * identity/100 + 0.5 * similarity/100 (if available, else 0).
+        layer_support_norm : float
+            Fraction of layers (of the same model) that support the term:
+            (#layers predicting the GO / #layers available for that model & accession).
 
-        Pesos (override en conf['postprocess']['weights']):
-          reliability_index=0.50, support_count_norm=0.20, collapsed_support_norm=0.15,
-          model_consistency=0.10, alignment_norm=0.05, layer_support_norm=0.05
+        Weights (override via conf['postprocess']['weights'])
+        -----------------------------------------------------
+        reliability_index=0.50, support_count_norm=0.20, collapsed_support_norm=0.15,
+        model_consistency=0.10, alignment_norm=0.05, layer_support_norm=0.05
         """
         df = df.copy()
 
-        # Consistencia entre modelos
+        # Cross-model consistency
         model_counts = (
             df.groupby(["accession", "go_id"])["model_name"]
             .nunique().rename("model_support").reset_index()
@@ -867,7 +1056,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
             .merge(total_models, on="accession", how="left")
         df["model_consistency"] = (df["model_support"] / df["n_models_total"]).fillna(0.0)
 
-        # NUEVO: layer_support (por modelo)
+        # Layer support (per model)
         n_layers_model = (
             df.groupby(["accession", "model_name"])["layer_index"]
             .nunique().rename("n_layers_model").reset_index()
@@ -880,28 +1069,28 @@ class EmbeddingLookUp(BaseTaskInitializer):
             .merge(n_layers_model, on=["accession", "model_name"], how="left")
         df["layer_support_norm"] = (df["layer_support"] / df["n_layers_model"]).fillna(0.0)
 
-        # Normalizaciones por accesión
+        # Normalizations by accession
         for c in ("support_count", "collapsed_support"):
             if c not in df.columns:
                 df[c] = 0.0
             df[c] = pd.to_numeric(df[c], errors="coerce")
             df[c + "_norm"] = self._normalize_by_accession(df, c)
 
-        # Alineamiento
+        # Alignment (if present)
         for mcol in ("identity", "similarity"):
             if mcol not in df.columns:
                 df[mcol] = 0.0
             df[mcol] = pd.to_numeric(df[mcol], errors="coerce").fillna(0.0)
         df["alignment_norm"] = 0.5 * (df["identity"] / 100.0) + 0.5 * (df["similarity"] / 100.0)
 
-        # Pesos
+        # Weights
         wconf = (self.conf.get("postprocess", {}) or {}).get("weights", {})
         w_RI = float(wconf.get("reliability_index", 0.50))
         w_SC = float(wconf.get("support_count_norm", 0.20))
         w_CS = float(wconf.get("collapsed_support_norm", 0.15))
         w_MC = float(wconf.get("model_consistency", 0.10))
         w_AL = float(wconf.get("alignment_norm", 0.05))
-        w_LS = float(wconf.get("layer_support_norm", 0.05))  # NUEVO
+        w_LS = float(wconf.get("layer_support_norm", 0.05))
         df["reliability_index"] = pd.to_numeric(df["reliability_index"], errors="coerce").fillna(0.0)
 
         df["score"] = (
@@ -915,12 +1104,13 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
         return df
 
-    # --- Colapso al mejor modelo+layer --------------------------------------
+    # --- Collapse to best (model, layer) --------------------------------------
     def _collapse_best_model_layer(self, df_scored: pd.DataFrame) -> pd.DataFrame:
         """
-        Para cada 'accession', selecciona el (model_name, layer_index) con mayor 'score_global'
-        (máximo 'score' observado en ese combo). Dentro de ese combo elimina duplicados de GO
-        quedándose con la fila de mayor 'score'. Añade 'best_model', 'best_layer' y 'score_global'.
+        For each accession, select the (model_name, layer_index) pair with the
+        highest 'score_global' (max observed 'score' in that pair). Within the
+        winning pair, drop duplicate GO terms keeping the row with highest 'score'.
+        Adds 'best_model', 'best_layer', and 'score_global'.
         """
         best_combo = (
             df_scored.groupby(["accession", "model_name", "layer_index"], dropna=False)["score"]
@@ -944,76 +1134,44 @@ class EmbeddingLookUp(BaseTaskInitializer):
             .reset_index(drop=True)
         )
 
-        # Anexar score_global sin duplicar columnas
         df_best = df_best.merge(best_by_acc[["accession", "score_global"]], on="accession", how="left")
-
         return df_best
 
-    # --- Post-procesado completo --------------------------------------------
-    def post_process_results(self):
+    # --- Full post-processing pipeline ----------------------------------------
+    def post_processing(self) -> None:
         """
-        Post-processes transferred GO annotations and produces final outputs.
+        Post-process transferred GO annotations and produce final outputs.
 
-        This version is designed to work efficiently with COMPACT RAW files written by
-        `store_entry` (one row per (accession, model, layer, GO) + precomputed `support_count`).
-        If `support_count` is absent (legacy RAW), it will be computed on the fly.
+        Designed to work efficiently with compact RAW created by `store_entry`
+        (one row per (accession, model, layer, GO) + precomputed `support_count`).
+        Falls back to legacy RAW if needed.
 
         Pipeline
         --------
         1) Load RAW:
-           - Prefer layered files: raw_results_layer_*.csv (faster IO and selective reads).
-           - Fallback to legacy: raw_results.csv.
-           - Ensure `layer_index` exists.
-        2) Compute `reliability_index` from `distance` according to `self.distance_metric`:
+           - Prefer layered files: raw_results_layer_*.csv (faster IO, selective reads).
+           - Fallback: raw_results.csv (legacy).
+           - Ensure `layer_index`.
+        2) Compute `reliability_index` from `distance`:
            - cosine    → 1 - distance
            - euclidean → 0.5 / (0.5 + distance)
            - default   → 1 / (1 + distance)
-        3) Ensure `support_count`:
-           - Keep the pre-aggregated column if already present (from compact RAW).
-           - Otherwise, compute group count per (accession, model_name, layer_index, go_id).
-        4) Reduce to GO leaf terms per (accession, model, layer) using the GO DAG:
-           - Identify leaf terms (terms that are not parents of any other term in the group).
-           - For each leaf, compute:
-             * `collapsed_support`: sum of supports of ancestor terms present in the group
-             * `n_collapsed_terms`: number of such ancestors
-             * `collapsed_terms`: comma-separated GO IDs of those ancestors
-           - For each leaf, keep the row with the highest `reliability_index`.
-        5) (Optional) Pairwise alignment metrics:
-           - If `sequence_query` and `sequence_reference` are present, compute
-             identity / similarity / alignment_score / gaps / lengths.
-        6) Add metadata and tidy:
-           - Add `distance_metric` and per-model `distance_threshold`.
-           - Optionally drop sequences (controlled by conf['postprocess']['keep_sequences']).
-           - Round numeric fields and sort for readability.
-           - Clean legacy `gene_name` shapes if needed.
-        7) Scoring:
-           - Compute composite `score` via `_compute_score` (includes `layer_support_norm`
-             if you enabled it in the config).
-           - Write `results_scored.csv` (all leaf terms per model/layer with scores).
-        8) Collapse to best (model, layer) per protein:
-           - For each accession, compute `score_global` = max score within each (model, layer).
-           - Pick the (model, layer) with highest `score_global`.
-           - Within that winning combo, drop duplicate `go_id` keeping the highest `score`.
-           - Write `results_collapsed.csv` and copy it as `results.csv` (compatibility alias).
-        9) TopGO exports (score-based):
-           - `topgo/scored/layer_*/<model>/<category>.tsv`
-           - `topgo/scored/all_layers/<model>/<category>.tsv`
-           - `topgo/collapsed_best/<category>.tsv`
-
-        Outputs
-        -------
-        - results_scored.csv     : detailed leaf-level predictions with `score`
-        - results_collapsed.csv  : unique per protein from the best (model, layer), with `best_model`,
-                                   `best_layer`, and `score_global`
-        - results.csv            : alias of results_collapsed.csv (legacy compatibility)
-        - topgo/...              : score-based TSV files for enrichment
+        3) Ensure `support_count` (keep if present; else compute per group).
+        4) Reduce to leaf GO terms per (accession, model, layer) using the GO DAG and
+           compute collapsed support from ancestors in the group.
+        5) (Optional) Pairwise alignment metrics if sequences are available.
+        6) Append metadata, round numerics, sort for readability; clean legacy gene_name.
+        7) Score with `_compute_score`; write `results_scored.csv`.
+        8) Collapse to best (model, layer) per accession; write `results_collapsed.csv`
+           and copy to `results.csv` (compatibility alias).
+        9) Export TopGO TSVs (score-based) if enabled.
         """
         import glob, time, shutil
 
         start_total = time.perf_counter()
 
-        def log_stage(name, t0):
-            self.logger.info(f"⏱ {name} → {time.perf_counter() - t0:.2f}s")
+        def log_stage(name: str, t0: float) -> None:
+            self.logger.info("%s completed in %.2fs", name, time.perf_counter() - t0)
 
         # 1) Load RAW (prefer layered files)
         t0 = time.perf_counter()
@@ -1032,15 +1190,15 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 dfs.append(g)
             df_raw = pd.concat(dfs, ignore_index=True) if dfs else None
             if df_raw is not None:
-                self.logger.info(f"Loaded {len(df_raw)} rows from layered RAW files.")
+                self.logger.info("Loaded %d rows from layered RAW files.", len(df_raw))
         if df_raw is None:
             if not os.path.exists(self.raw_results_path):
-                self.logger.warning("No raw results found for post-processing.")
+                self.logger.warning("No RAW results found for post-processing.")
                 return
             df_raw = pd.read_csv(self.raw_results_path)
-            self.logger.info(f"Loaded {len(df_raw)} rows from {os.path.basename(self.raw_results_path)}")
+            self.logger.info("Loaded %d rows from %s.", len(df_raw), os.path.basename(self.raw_results_path))
         if df_raw.empty:
-            self.logger.warning("Raw results file is empty. Nothing to post-process.")
+            self.logger.warning("RAW results are empty. Nothing to post-process.")
             return
         log_stage("Load RAW", t0)
 
@@ -1068,14 +1226,14 @@ class EmbeddingLookUp(BaseTaskInitializer):
             )
         else:
             df_raw["support_count"] = pd.to_numeric(df_raw["support_count"], errors="coerce").fillna(0).astype(int)
-        log_stage("Compute/keep support_count", t0)
+        log_stage("Compute or keep support_count", t0)
 
         # 5) Build GO parents cache
         t0 = time.perf_counter()
         unique_go_ids = pd.unique(df_raw["go_id"])
-        parents_cache = {}
+        parents_cache: dict[str, set] = {}
 
-        def get_parents_cached(term):
+        def get_parents_cached(term: str) -> set:
             if term in parents_cache:
                 return parents_cache[term]
             try:
@@ -1092,53 +1250,45 @@ class EmbeddingLookUp(BaseTaskInitializer):
             _ = get_parents_cached(t)
         log_stage("Build GO parents cache", t0)
 
-        # 6) Reduce to leaf terms + collapsed_support  (FAST VERSION)
+        # 6) Reduce to leaf terms + collapsed_support (fast)
         t0 = time.perf_counter()
         rows = []
 
-        # Ensure go_id is string (robust keys for parents_cache)
+        # Ensure go_id is string to match GO DAG keys
         df_raw["go_id"] = df_raw["go_id"].astype(str)
 
         for (acc, model, layer), group in df_raw.groupby(["accession", "model_name", "layer_index"], dropna=False):
-            # Unique GO terms in this (accession, model, layer)
             group_go = pd.unique(group["go_id"])
             if len(group_go) == 0:
                 continue
             group_go_set = set(group_go)
 
-            # 1) FAST: best row per GO (highest reliability_index) once
-            #    (much faster than subsetting for each GO later)
+            # Best row per GO (highest reliability_index)
             best_per_go = (
                 group.sort_values("reliability_index", ascending=False)
                 .drop_duplicates(subset=["go_id"], keep="first")
                 .copy()
             )
 
-            # 2) Leaf detection using parents union
-            #    parents_union = union of parents for all terms in the group
+            # Compute ancestor sets only once per GO in this group
             parents_union = set()
-            # Build ancestors_in_group only for terms in group (use cached parents)
-            ancestors_in_group = {}
+            ancestors_in_group: dict[str, set] = {}
             for gid in group_go:
                 parents = self.go[gid].get_all_parents() if gid in self.go else []
-                # store as set (intersect with group terms)
                 pg = set(parents) & group_go_set
                 ancestors_in_group[gid] = pg
-                # union for leaf detection
                 parents_union.update(pg)
 
-            # Leafs = terms that are NOT any other's parent within the group
+            # Leafs are those not acting as parent of any other term in the group
             leaf_terms = [gid for gid in group_go if gid not in parents_union]
             if not leaf_terms:
                 continue
 
-            # 3) Keep only best rows for leaf GO terms
             leaf_best = best_per_go[best_per_go["go_id"].isin(leaf_terms)].copy()
             if leaf_best.empty:
                 continue
 
-            # 4) Build support map once (support_count already pre-aggregated or enforced above)
-            #    Use best_per_go (1 per GO) to avoid duplicates in the index
+            # Map support_count from best_per_go (1 per GO)
             support_map = (
                 best_per_go[["go_id", "support_count"]]
                 .drop_duplicates("go_id")
@@ -1146,7 +1296,6 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 .to_dict()
             )
 
-            # 5) Vectorized mapping of collapsed metrics for each leaf term
             def _sum_support_ancestors(gid: str) -> int:
                 return int(sum(support_map.get(a, 0) for a in ancestors_in_group.get(gid, set())))
 
@@ -1161,14 +1310,11 @@ class EmbeddingLookUp(BaseTaskInitializer):
             leaf_best["n_collapsed_terms"] = leaf_best["go_id"].map(_count_ancestors)
             leaf_best["collapsed_terms"] = leaf_best["go_id"].map(_list_ancestors)
 
-            # 6) Collect rows
-            #    (already the best per GO + leaf-only + collapsed fields)
             rows.append(leaf_best)
 
-        # Concatenate all groups
-        df_out = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=df_raw.columns.tolist() + [
-            "collapsed_support", "n_collapsed_terms", "collapsed_terms"
-        ])
+        df_out = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(
+            columns=df_raw.columns.tolist() + ["collapsed_support", "n_collapsed_terms", "collapsed_terms"]
+        )
         log_stage("Reduce to leaves + collapsed_support", t0)
 
         # 7) Optional pairwise alignment metrics
@@ -1178,6 +1324,8 @@ class EmbeddingLookUp(BaseTaskInitializer):
             if {"sequence_query", "sequence_reference"} <= set(df_out.columns) else pd.DataFrame()
         )
         if not unique_pairs.empty:
+            from concurrent.futures import ProcessPoolExecutor
+            metrics_list = []
             with ProcessPoolExecutor(max_workers=self.conf.get("store_workers", 4)) as ex:
                 metrics_list = list(ex.map(compute_metrics, unique_pairs.to_dict("records")))
             metrics_df = pd.DataFrame(metrics_list)
@@ -1196,7 +1344,7 @@ class EmbeddingLookUp(BaseTaskInitializer):
             ascending=[True, True, True, True, False]
         )
 
-        # clean legacy gene_name lists like "[{...}]"
+        # Clean legacy gene_name shapes like "[{...}]"
         if "gene_name" in df_out.columns:
             def _extract_gene_name(g):
                 try:
@@ -1216,26 +1364,26 @@ class EmbeddingLookUp(BaseTaskInitializer):
         df_scored = self._compute_score(df_out)
         results_scored_path = os.path.join(self.experiment_path, "results_scored.csv")
         df_scored.to_csv(results_scored_path, index=False)
-        self.logger.info(f"📝 Wrote {len(df_scored)} rows → results_scored.csv")
+        self.logger.info("Wrote %d rows → results_scored.csv", len(df_scored))
         log_stage("Compute SCORE + write results_scored.csv", t0)
 
         # 10) Collapse
         t0 = time.perf_counter()
-        df_collapsed = self._collapse_best_overall(df_scored)  # ← nuevo colapso global
+        df_collapsed = self._collapse_best_overall(df_scored)
         results_collapsed_path = os.path.join(self.experiment_path, "results_collapsed.csv")
         df_collapsed.to_csv(results_collapsed_path, index=False)
         shutil.copyfile(results_collapsed_path, self.results_path)  # legacy alias
-        self.logger.info(f"📝 Wrote {len(df_collapsed)} rows → results_collapsed.csv (aliased to results.csv)")
+        self.logger.info("Wrote %d rows → results_collapsed.csv (aliased to results.csv)", len(df_collapsed))
         log_stage("Collapse best model+layer + write results_collapsed.csv + alias", t0)
 
         # 11) TopGO exports (score-based)
         t0 = time.perf_counter()
         if self.topgo_enabled:
-            self.logger.info("📁 Generating TopGO outputs (using SCORE)...")
+            self.logger.info("Generating TopGO outputs (score-based)…")
             base_dir = os.path.join(self.experiment_path, "topgo")
             os.makedirs(base_dir, exist_ok=True)
 
-            def build_topgo(df_group):
+            def build_topgo(df_group: pd.DataFrame) -> pd.DataFrame:
                 return (
                     df_group.groupby(["accession", "go_id"], as_index=False)["score"]
                     .max().rename(columns={"score": "score"})
@@ -1267,33 +1415,35 @@ class EmbeddingLookUp(BaseTaskInitializer):
                 build_topgo(g).to_csv(os.path.join(collapsed_dir, f"{category}.tsv"),
                                       sep="\t", index=False, header=False)
 
-            self.logger.info("📝 TopGO outputs generated.")
+            self.logger.info("TopGO outputs generated.")
         log_stage("Generate TopGO outputs", t0)
 
-        self.logger.info(f"✅ Post-processing finished in {time.perf_counter() - start_total:.2f}s")
+        self.logger.info("Post-processing finished in %.2fs", time.perf_counter() - start_total)
 
     def _compact_annotations_df(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Compact raw annotations *within the batch* to reduce disk size and speed up post-processing.
 
-        Grouping keys (NOTE: we DO NOT use 'go_description' as a key; it's redundant with 'go_id'):
-          ('accession', 'model_name', 'embedding_type_id', 'layer_index',
-           'go_id', 'category', 'evidence_code')
+        Grouping keys (we DO NOT use 'go_description' as a key; it's redundant with 'go_id'):
+            ('accession', 'model_name', 'embedding_type_id', 'layer_index',
+             'go_id', 'category', 'evidence_code')
 
-        For each group:
-          - support_count := number of neighbors contributing that GO in the group
-          - distance := minimal distance in the group (best neighbor)
-          - Representative row := the row with minimal 'distance' (ties -> keep first)
-          - Keep the representative's metadata (sequence_reference, protein_id, organism, gene_name, go_description, ...)
+        For each group
+        --------------
+        - support_count := number of neighbors contributing that GO in the group
+        - distance      := minimal distance in the group (best neighbor)
+        - representative row := the row with minimal 'distance' (ties → first)
+        - keep representative metadata (sequence_reference, protein_id, organism, gene_name, go_description, ...)
 
-        Returns a compact DataFrame with one row per group + 'support_count' and the representative's fields.
+        Returns
+        -------
+        DataFrame with one row per group + 'support_count' and representative fields.
         """
         if df.empty:
             return df
 
         df = df.copy()
 
-        # --- Ensure expected columns exist
         expected = [
             "accession", "model_name", "embedding_type_id", "layer_index",
             "go_id", "category", "evidence_code", "go_description",
@@ -1304,34 +1454,23 @@ class EmbeddingLookUp(BaseTaskInitializer):
             if c not in df.columns:
                 df[c] = None
 
-        # --- Coerce dtypes to avoid object/float collisions on keys
-        # Numeric/nullable ints
+        # Dtypes for robust grouping/ordering
         df["embedding_type_id"] = pd.to_numeric(df["embedding_type_id"], errors="coerce").astype("Int64")
         df["layer_index"] = pd.to_numeric(df["layer_index"], errors="coerce").astype("Int64")
         df["distance"] = pd.to_numeric(df["distance"], errors="coerce")
 
-        # String-like keys
-        df["accession"] = df["accession"].astype(str)
-        df["model_name"] = df["model_name"].astype(str)
-        df["go_id"] = df["go_id"].astype(str)
-        df["category"] = df["category"].astype(str)
-        df["evidence_code"] = df["evidence_code"].astype(str)
-
-        # Non-key text fields (we keep them from the representative)
-        # Force them to str to avoid surprises later (NaN -> "nan" is fine for metadata)
+        for col in ("accession", "model_name", "go_id", "category", "evidence_code"):
+            df[col] = df[col].astype(str)
         for txt in ("go_description", "sequence_query", "sequence_reference", "organism", "gene_name"):
             df[txt] = df[txt].astype(str)
 
-        # --- Grouping keys (exclude go_description!)
         keys = [
             "accession", "model_name", "embedding_type_id", "layer_index",
             "go_id", "category", "evidence_code"
         ]
 
-        # support_count per group (size is robust vs NaN)
         df["support_count"] = df.groupby(keys, dropna=False)["go_id"].transform("size")
 
-        # find the representative rows: those with minimal distance within each group
         min_distance = df.groupby(keys, dropna=False)["distance"].transform("min")
         df["__is_best"] = df["distance"].eq(min_distance)
 
@@ -1342,10 +1481,80 @@ class EmbeddingLookUp(BaseTaskInitializer):
             .copy()
         )
 
-        # Clean temp flag
         best.drop(columns=["__is_best"], inplace=True, errors="ignore")
 
-        # Reorder columns: keep a consistent, compact header
+        ordered = [
+            "accession", "model_name", "embedding_type_id", "layer_index",
+            "go_id", "category", "evidence_code", "go_description",
+            "distance", "sequence_query", "sequence_reference",
+            "protein_id", "organism", "gene_name", "support_count"
+        ]
+        rest = [c for c in best.columns if c not in ordered]
+        return best[ordered + rest]
+
+    def _compact_annotations_df(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compact raw annotations *within the batch* to reduce disk size and speed up post-processing.
+
+        Grouping keys (we DO NOT use 'go_description' as a key; it's redundant with 'go_id'):
+            ('accession', 'model_name', 'embedding_type_id', 'layer_index',
+             'go_id', 'category', 'evidence_code')
+
+        For each group
+        --------------
+        - support_count := number of neighbors contributing that GO in the group
+        - distance      := minimal distance in the group (best neighbor)
+        - representative row := the row with minimal 'distance' (ties → first)
+        - keep representative metadata (sequence_reference, protein_id, organism, gene_name, go_description, ...)
+
+        Returns
+        -------
+        DataFrame with one row per group + 'support_count' and representative fields.
+        """
+        if df.empty:
+            return df
+
+        df = df.copy()
+
+        expected = [
+            "accession", "model_name", "embedding_type_id", "layer_index",
+            "go_id", "category", "evidence_code", "go_description",
+            "distance", "sequence_query", "sequence_reference",
+            "protein_id", "organism", "gene_name"
+        ]
+        for c in expected:
+            if c not in df.columns:
+                df[c] = None
+
+        # Dtypes for robust grouping/ordering
+        df["embedding_type_id"] = pd.to_numeric(df["embedding_type_id"], errors="coerce").astype("Int64")
+        df["layer_index"] = pd.to_numeric(df["layer_index"], errors="coerce").astype("Int64")
+        df["distance"] = pd.to_numeric(df["distance"], errors="coerce")
+
+        for col in ("accession", "model_name", "go_id", "category", "evidence_code"):
+            df[col] = df[col].astype(str)
+        for txt in ("go_description", "sequence_query", "sequence_reference", "organism", "gene_name"):
+            df[txt] = df[txt].astype(str)
+
+        keys = [
+            "accession", "model_name", "embedding_type_id", "layer_index",
+            "go_id", "category", "evidence_code"
+        ]
+
+        df["support_count"] = df.groupby(keys, dropna=False)["go_id"].transform("size")
+
+        min_distance = df.groupby(keys, dropna=False)["distance"].transform("min")
+        df["__is_best"] = df["distance"].eq(min_distance)
+
+        best = (
+            df[df["__is_best"]]
+            .sort_values(keys + ["distance"])
+            .drop_duplicates(subset=keys, keep="first")
+            .copy()
+        )
+
+        best.drop(columns=["__is_best"], inplace=True, errors="ignore")
+
         ordered = [
             "accession", "model_name", "embedding_type_id", "layer_index",
             "go_id", "category", "evidence_code", "go_description",
@@ -1357,9 +1566,9 @@ class EmbeddingLookUp(BaseTaskInitializer):
 
     def _collapse_best_overall(self, df_scored: pd.DataFrame) -> pd.DataFrame:
         """
-        Colapsa ignorando modelo y capa:
-          - Para cada (accession, go_id), conserva la fila con mayor 'score'
-          - Define 'best_model', 'best_layer' y 'score_global' a partir de esa fila ganadora
+        Collapse predictions ignoring model and layer:
+        keep, for each (accession, go_id), the row with the highest 'score'.
+        Then expose 'best_model', 'best_layer', and 'score_global' from that winning row.
         """
         df = df_scored.copy()
         df = (
@@ -1371,3 +1580,112 @@ class EmbeddingLookUp(BaseTaskInitializer):
         df["best_layer"] = df["layer_index"]
         df["score_global"] = df["score"]
         return df
+
+    def _get_lookup_for_batch(self, model_id: int, layer_index: int | None) -> dict | None:
+        """
+        Lazily build (and cache) the reference lookup table for a given (model_id, layer_index).
+
+        Applies taxonomy filters and optional SQL LIMIT as configured.
+
+        Returns
+        -------
+        dict | None
+            {"ids": np.ndarray, "embeddings": np.ndarray, "layers": np.ndarray}
+            or None if no rows match.
+        """
+        import numpy as np
+
+        key = (int(model_id), None if layer_index is None else int(layer_index))
+        if key in self._lookup_cache:
+            return self._lookup_cache[key]
+
+        def _as_str_list(xs):
+            return [str(t) for t in (xs or [])]
+
+        # usar los enteros preparados en __init__
+        exclude_taxon_ids = _as_str_list(
+            getattr(self, "exclude_taxon_ids", self.conf.get("taxonomy_ids_to_exclude", [])))
+        include_taxon_ids = _as_str_list(
+            getattr(self, "include_taxon_ids", self.conf.get("taxonomy_ids_included_exclusively", [])))
+
+        limit_execution = self.conf.get("limit_execution")
+
+        q = (
+            self.session
+            .query(
+                Sequence.id,  # 0
+                SequenceEmbedding.embedding,  # 1 (pgvector -> .to_numpy())
+                SequenceEmbedding.layer_index  # 2
+            )
+            .join(Sequence, Sequence.id == SequenceEmbedding.sequence_id)
+            .join(Protein, Sequence.id == Protein.sequence_id)
+            .filter(SequenceEmbedding.embedding_type_id == key[0])
+        )
+
+        if key[1] is None:
+            q = q.filter(SequenceEmbedding.layer_index.is_(None))
+        else:
+            q = q.filter(SequenceEmbedding.layer_index == key[1])
+
+        if exclude_taxon_ids:
+            q = q.filter(~Protein.taxonomy_id.in_(exclude_taxon_ids))
+        if include_taxon_ids:
+            q = q.filter(Protein.taxonomy_id.in_(include_taxon_ids))
+
+        if isinstance(limit_execution, int) and limit_execution > 0:
+            self.logger.info(
+                "SQL LIMIT applied: %d for lookup(model_id=%s, layer_index=%s)",
+                limit_execution, key[0], key[1]
+            )
+            q = q.limit(limit_execution)
+
+        rows = q.all()
+        if not rows:
+            self.logger.warning("Empty lookup for model_id=%s, layer_index=%s.", key[0], key[1])
+            return None
+
+        ids = np.fromiter((r[0] for r in rows), dtype=int, count=len(rows))
+        layers = np.fromiter((r[2] for r in rows), dtype=np.int64, count=len(rows))
+        embeddings = np.vstack([r[1].to_numpy() for r in rows])
+
+        lookup = {"ids": ids, "embeddings": embeddings, "layers": layers}
+
+        self._lookup_cache[key] = lookup
+        if len(self._lookup_cache) > self._lookup_cache_max:
+            old_key = next(iter(self._lookup_cache.keys()))
+            if old_key != key:
+                self._lookup_cache.pop(old_key, None)
+
+        self.logger.info(
+            "Lookup loaded for model_id=%s, layer_index=%s | rows=%d | shape=%s",
+            key[0], key[1], len(ids), embeddings.shape
+        )
+        return lookup
+
+    def _h5_available_layers(self, model_id: int) -> list[int]:
+        """
+        Inspect the HDF5 file and return the sorted list of layer indices
+        available under `type_{model_id}` across accessions.
+        """
+        import h5py
+        layers = set()
+        if not os.path.exists(self.embeddings_path):
+            return []
+        with h5py.File(self.embeddings_path, "r") as h5:
+            for accession, group in h5.items():
+                type_key = f"type_{model_id}"
+                if type_key not in group:
+                    continue
+                for k in group[type_key].keys():
+                    if k.startswith("layer_"):
+                        try:
+                            layers.add(int(k.split("_", 1)[1]))
+                        except Exception:
+                            continue
+        return sorted(layers)
+
+    def load_model(self, model_type):
+        return
+
+    def unload_model(self, model_type):
+        return
