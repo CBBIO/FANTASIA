@@ -11,7 +11,7 @@ constants: ./fantasia/constants.yaml # str  | Directory for constants
 base_directory: ~/fantasia/   # str  | Root working dir: inputs, outputs, caches, temp live here
 prefix: cafa5_multiple_layers_k_5 # str | Output prefix (folder & file stem)
 
-input: data_sample/sample.fasta  # str | Default FASTA (can be overridden via CLI --input)
+input: data_sample/UP000002311.fasta  # str | Default FASTA (can be overridden via CLI --input)
 only_lookup: false            # bool | If true: skip Stage A (embedding) and run Stage B using existing embeddings.h5
 
 # ------------------------------------------------------------------------------
@@ -59,23 +59,32 @@ embedding:
     ESM:
       enabled: true
       batch_size: 1
-      layer_index: [33]       # Example layer; adjust to your checkpoint
+      layer_index: [16, 24, 28, 33]
+      distance_threshold: 0
+
     ESM3c:
       enabled: true
       batch_size: 1
-      layer_index: [35]
+      layer_index: [18, 24, 30, 35]
+      distance_threshold: 0
+
     Ankh3-Large:
       enabled: true
       batch_size: 1
-      layer_index: [48]
+      layer_index: [24, 32, 40, 48]
+      distance_threshold: 0
+
     Prot-T5:
       enabled: true
       batch_size: 1
-      layer_index: [24]
+      layer_index: [12, 16, 20, 24]
+      distance_threshold: 0
+
     Prost-T5:
       enabled: true
       batch_size: 1
-      layer_index: [24]
+      layer_index: [12, 16, 20, 24]
+      distance_threshold: 0
 
 # HDF5 on-disk layout (for reference; produced by Stage A):
 # /accession_<id>/type_<embedding_type_id>/layer_<k>/embedding
@@ -86,9 +95,9 @@ embedding:
 # Consumes embeddings.h5 + in-memory references (IDs, vectors, GO) to produce CSV/TSV.
 # ==============================================================================
 lookup:
-  use_gpu: false               # bool | If true, run vector distances on GPU when available
+  use_gpu: True               # bool | If true, run vector distances on GPU when available
   batch_size: 516            # int  | Vector distance batch size (tune to GPU memory)
-  distance_metric: euclidean     # enum{cosine,euclidean} | Distance for nearest-neighbor search
+  distance_metric: cosine     # enum{cosine,euclidean} | Distance for nearest-neighbor search
   limit_per_entry: 5          # int  | k neighbors returned per query (a.k.a. “k”)
   lookup_cache_max: 4       # int  | Max entries per (model,layer) in-memory cache (tune to RAM)
   topgo: true                 # bool | If true, emit TopGO-compatible TSV alongside CSV outputs
@@ -102,7 +111,7 @@ lookup:
 
   # Taxonomy filters (applied after NN retrieval to prune/keep specific taxa).
   taxonomy:
-    exclude: ["559292","6239"]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
+    exclude: ["559292"]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
     include_only: []          # list[str] | If non-empty, restrict results to these IDs (takes precedence)
     get_descendants: false    # bool | If true, expand filters to include descendants
 
