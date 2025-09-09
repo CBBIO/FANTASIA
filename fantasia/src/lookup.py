@@ -39,6 +39,10 @@ from protein_information_system.sql.model.entities.protein.protein import Protei
 
 from fantasia.src.helpers.helpers import get_descendant_ids, compute_metrics
 
+import glob
+import time
+import shutil
+
 
 class EmbeddingLookUp(GPUTaskInitializer):
     """
@@ -249,9 +253,6 @@ class EmbeddingLookUp(GPUTaskInitializer):
                         self.logger.warning(f"Sequence missing for accession '{accession}'. Skipping.")
                         continue
 
-                    raw_seq = group["sequence"][()]
-                    sequence = raw_seq.decode("utf-8") if hasattr(raw_seq, "decode") else str(raw_seq)
-
                     # Recorremos tipos (type_<id>)
                     for type_key, type_grp in group.items():
                         if not type_key.startswith("type_"):
@@ -286,7 +287,6 @@ class EmbeddingLookUp(GPUTaskInitializer):
                                     self.logger.warning(f"Malformed layer group '{lk}' under {type_key}. Skipping.")
                                     continue
 
-                                embedding = layer_grp["embedding"][:]  # carga solo este embedding
                                 task = {
                                     "h5_path": self.embeddings_path,  # para abrir el archivo en process
                                     "h5_group": f"{accession}/{type_key}/{lk}",  # ruta interna hasta layer_*
@@ -792,7 +792,8 @@ class EmbeddingLookUp(GPUTaskInitializer):
 
                 self.logger.info(
                     "store_entry: layered write completed | layers=%s | total_rows=%d",
-                    sorted({int(l) for l in df_compact['layer_index'].dropna().unique()}) or ["legacy"], total_rows
+                    sorted({int(layer_val) for layer_val in df_compact['layer_index'].dropna().unique()}) or ["legacy"]
+
                 )
             else:
                 out_path = self.raw_results_path
@@ -1094,12 +1095,12 @@ class EmbeddingLookUp(GPUTaskInitializer):
         df["reliability_index"] = pd.to_numeric(df["reliability_index"], errors="coerce").fillna(0.0)
 
         df["score"] = (
-                w_RI * df["reliability_index"] +
-                w_SC * df["support_count_norm"] +
-                w_CS * df["collapsed_support_norm"] +
-                w_MC * df["model_consistency"] +
-                w_AL * df["alignment_norm"] +
-                w_LS * df["layer_support_norm"]
+            w_RI * df["reliability_index"] +
+            w_SC * df["support_count_norm"] +
+            w_CS * df["collapsed_support_norm"] +
+            w_MC * df["model_consistency"] +
+            w_AL * df["alignment_norm"] +
+            w_LS * df["layer_support_norm"]
         ).astype(float)
 
         return df
@@ -1166,7 +1167,6 @@ class EmbeddingLookUp(GPUTaskInitializer):
            and copy to `results.csv` (compatibility alias).
         9) Export TopGO TSVs (score-based) if enabled.
         """
-        import glob, time, shutil
 
         start_total = time.perf_counter()
 
@@ -1257,7 +1257,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
         # Ensure go_id is string to match GO DAG keys
         df_raw["go_id"] = df_raw["go_id"].astype(str)
 
-        for (acc, model, layer), group in df_raw.groupby(["accession", "model_name", "layer_index"], dropna=False):
+        for ((_acc, _model, _layer)), group in df_raw.groupby(["accession", "model_name", "layer_index"], dropna=False):
             group_go = pd.unique(group["go_id"])
             if len(group_go) == 0:
                 continue
@@ -1296,14 +1296,14 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 .to_dict()
             )
 
-            def _sum_support_ancestors(gid: str) -> int:
-                return int(sum(support_map.get(a, 0) for a in ancestors_in_group.get(gid, set())))
+            def _sum_support_ancestors(gid: str, _support_map=support_map, _anc=ancestors_in_group) -> int:
+                return int(sum(_support_map.get(a, 0) for a in _anc.get(gid, set())))
 
-            def _count_ancestors(gid: str) -> int:
-                return int(len(ancestors_in_group.get(gid, set())))
+            def _count_ancestors(gid: str, _anc=ancestors_in_group) -> int:
+                return int(len(_anc.get(gid, set())))
 
-            def _list_ancestors(gid: str) -> str:
-                anc = ancestors_in_group.get(gid, set())
+            def _list_ancestors(gid: str, _anc=ancestors_in_group) -> str:
+                anc = _anc.get(gid, set())
                 return ", ".join(sorted(anc)) if anc else ""
 
             leaf_best["collapsed_support"] = leaf_best["go_id"].map(_sum_support_ancestors)
@@ -1345,12 +1345,20 @@ class EmbeddingLookUp(GPUTaskInitializer):
         )
 
         # Clean legacy gene_name shapes like "[{...}]"
+        # Clean legacy gene_name shapes like "[{...}]"
         if "gene_name" in df_out.columns:
             def _extract_gene_name(g):
                 try:
-                    val = eval(g)
-                    if (isinstance(g, str) and g.startswith("[{") and isinstance(val, list)
-                            and len(val) > 0 and "Name" in val[0]):
+                    import ast
+                    val = ast.literal_eval(g)
+                    if (
+                            isinstance(g, str) and
+                            g.startswith("[{") and
+                            isinstance(val, list) and
+                            len(val) > 0 and
+                            isinstance(val[0], dict) and
+                            "Name" in val[0]
+                    ):
                         return val[0]["Name"]
                 except Exception:
                     return None
@@ -1419,78 +1427,6 @@ class EmbeddingLookUp(GPUTaskInitializer):
         log_stage("Generate TopGO outputs", t0)
 
         self.logger.info("Post-processing finished in %.2fs", time.perf_counter() - start_total)
-
-    def _compact_annotations_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Compact raw annotations *within the batch* to reduce disk size and speed up post-processing.
-
-        Grouping keys (we DO NOT use 'go_description' as a key; it's redundant with 'go_id'):
-            ('accession', 'model_name', 'embedding_type_id', 'layer_index',
-             'go_id', 'category', 'evidence_code')
-
-        For each group
-        --------------
-        - support_count := number of neighbors contributing that GO in the group
-        - distance      := minimal distance in the group (best neighbor)
-        - representative row := the row with minimal 'distance' (ties → first)
-        - keep representative metadata (sequence_reference, protein_id, organism, gene_name, go_description, ...)
-
-        Returns
-        -------
-        DataFrame with one row per group + 'support_count' and representative fields.
-        """
-        if df.empty:
-            return df
-
-        df = df.copy()
-
-        expected = [
-            "accession", "model_name", "embedding_type_id", "layer_index",
-            "go_id", "category", "evidence_code", "go_description",
-            "distance", "sequence_query", "sequence_reference",
-            "protein_id", "organism", "gene_name"
-        ]
-        for c in expected:
-            if c not in df.columns:
-                df[c] = None
-
-        # Dtypes for robust grouping/ordering
-        df["embedding_type_id"] = pd.to_numeric(df["embedding_type_id"], errors="coerce").astype("Int64")
-        df["layer_index"] = pd.to_numeric(df["layer_index"], errors="coerce").astype("Int64")
-        df["distance"] = pd.to_numeric(df["distance"], errors="coerce")
-
-        for col in ("accession", "model_name", "go_id", "category", "evidence_code"):
-            df[col] = df[col].astype(str)
-        for txt in ("go_description", "sequence_query", "sequence_reference", "organism", "gene_name"):
-            df[txt] = df[txt].astype(str)
-
-        keys = [
-            "accession", "model_name", "embedding_type_id", "layer_index",
-            "go_id", "category", "evidence_code"
-        ]
-
-        df["support_count"] = df.groupby(keys, dropna=False)["go_id"].transform("size")
-
-        min_distance = df.groupby(keys, dropna=False)["distance"].transform("min")
-        df["__is_best"] = df["distance"].eq(min_distance)
-
-        best = (
-            df[df["__is_best"]]
-            .sort_values(keys + ["distance"])
-            .drop_duplicates(subset=keys, keep="first")
-            .copy()
-        )
-
-        best.drop(columns=["__is_best"], inplace=True, errors="ignore")
-
-        ordered = [
-            "accession", "model_name", "embedding_type_id", "layer_index",
-            "go_id", "category", "evidence_code", "go_description",
-            "distance", "sequence_query", "sequence_reference",
-            "protein_id", "organism", "gene_name", "support_count"
-        ]
-        rest = [c for c in best.columns if c not in ordered]
-        return best[ordered + rest]
 
     def _compact_annotations_df(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -1672,7 +1608,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
         if not os.path.exists(self.embeddings_path):
             return []
         with h5py.File(self.embeddings_path, "r") as h5:
-            for accession, group in h5.items():
+            for _, group in h5.items():
                 type_key = f"type_{model_id}"
                 if type_key not in group:
                     continue

@@ -96,7 +96,6 @@ See Also
 - `BioEmbeddings Project Documentation <https://docs.bioembeddings.com>`_
 """
 
-
 import os
 import traceback
 
@@ -283,9 +282,9 @@ class SequenceEmbedder(SequenceEmbeddingManager):
 
                         # Resolve desired layers: prefer config; fallback to type registry
                         desired_layers = (
-                                model_cfg.get("layer_index")
-                                or type_info.get("layer_index")
-                                or []
+                            model_cfg.get("layer_index") or
+                            type_info.get("layer_index") or
+                            []
                         )
 
                         # Validate layers: must be a non-empty list of integers
@@ -563,5 +562,3 @@ class SequenceEmbedder(SequenceEmbeddingManager):
             # Log full traceback for diagnostics and re-raise to preserve the call site's control flow.
             self.logger.error(f"Error while storing embeddings to HDF5: {e}\n{traceback.format_exc()}")
             raise
-
-
