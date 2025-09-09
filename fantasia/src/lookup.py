@@ -790,11 +790,10 @@ class EmbeddingLookUp(GPUTaskInitializer):
                         len(chunk), os.path.basename(out_path), write_header
                     )
 
-                self.logger.info(
-                    "store_entry: layered write completed | layers=%s | total_rows=%d",
-                    sorted({int(layer_val) for layer_val in df_compact['layer_index'].dropna().unique()}) or ["legacy"]
+                layers = sorted({int(layer_val) for layer_val in df_compact['layer_index'].dropna().unique()}) or [
+                    "legacy"]
+                self.logger.info(f"store_entry: layered write completed | layers={layers} | total_rows={total_rows}")
 
-                )
             else:
                 out_path = self.raw_results_path
                 write_header = not os.path.exists(out_path)
