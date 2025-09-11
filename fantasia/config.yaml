@@ -62,7 +62,7 @@ embedding:
     ESM:
       enabled: true
       batch_size: 1
-      layer_index: [16, 24, 28, 33]
+      layer_index: [ 16, 24, 28, 33 ]
       distance_threshold: 0
 
     ESM3c:
