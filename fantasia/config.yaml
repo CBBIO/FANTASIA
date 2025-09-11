@@ -1,5 +1,5 @@
 # ==============================================================================
-# FANTASIA — Configuration (refactored)
+# FANTASIA — Configuration
 # Technical, production-oriented YAML with explicit separation of concerns.
 # ==============================================================================
 
@@ -9,10 +9,13 @@
 log_path: ~/fantasia/logs/    # str  | Directory for pipeline logs (will be created if missing)
 constants: ./fantasia/constants.yaml # str  | Directory for constants
 base_directory: ~/fantasia/   # str  | Root working dir: inputs, outputs, caches, temp live here
-prefix: cafa5_multiple_layers_k_5 # str | Output prefix (folder & file stem)
+prefix: sample # str | Output prefix (folder & file stem)
 
-input: data_sample/UP000002311.fasta  # str | Default FASTA (can be overridden via CLI --input)
-only_lookup: false            # bool | If true: skip Stage A (embedding) and run Stage B using existing embeddings.h5
+limit_execution: 0
+monitor_interval: 5
+
+input: data_sample/sample.fasta  # str | Default FASTA (can be overridden via CLI --input)
+only_lookup: True            # bool | If true: skip Stage A (embedding) and run Stage B using existing embeddings.h5
 
 # ------------------------------------------------------------------------------
 # Database (PIS: PostgreSQL + pgvector)
@@ -65,25 +68,25 @@ embedding:
     ESM3c:
       enabled: true
       batch_size: 1
-      layer_index: [18, 24, 30, 35]
+      layer_index: [ 18,24,30,35 ]
       distance_threshold: 0
 
     Ankh3-Large:
       enabled: true
       batch_size: 1
-      layer_index: [24, 32, 40, 48]
+      layer_index: [ 24,32,40,48 ]
       distance_threshold: 0
 
     Prot-T5:
       enabled: true
       batch_size: 1
-      layer_index: [12, 16, 20, 24]
+      layer_index: [ 12,16,20,24 ]
       distance_threshold: 0
 
     Prost-T5:
       enabled: true
       batch_size: 1
-      layer_index: [12, 16, 20, 24]
+      layer_index: [ 12,16,20,24 ]
       distance_threshold: 0
 
 # HDF5 on-disk layout (for reference; produced by Stage A):
@@ -107,12 +110,12 @@ lookup:
   redundancy:
     identity: 0.0             # float in [0,1] | 0 disables; 1.0 = 100% identity (strict deduplication)
     coverage: 0.7             # float in (0,1]  | Alignment coverage threshold used in deduplication
-    threads: 0               # int  | CPU threads for redundancy filtering tools
+    threads: 10               # int  | CPU threads for redundancy filtering tools
 
   # Taxonomy filters (applied after NN retrieval to prune/keep specific taxa).
   taxonomy:
-    exclude: ["559292"]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
-    include_only: []          # list[str] | If non-empty, restrict results to these IDs (takes precedence)
+    exclude: [ "559292" ]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
+    include_only: [ ]          # list[str] | If non-empty, restrict results to these IDs (takes precedence)
     get_descendants: false    # bool | If true, expand filters to include descendants
 
 
@@ -121,15 +124,32 @@ lookup:
 # Scoring/collapsing to GO leaf terms, reliability index derivation, model/layer consolidation.
 # ------------------------------------------------------------------------------
 postprocess:
-  keep_sequences: true        # bool | Keep input and reference sequences in final outputs when available
-  # Weighting knobs for final score; keep 0 to disable a term’s contribution.
-  weights:
-    reliability_index: 0.5    # float | Derived from distance (lower distance → higher RI)
-    support_count_norm: 0.0   # float | Count-based support normalization
-    collapsed_support_norm: 0.0
-    model_consistency: 0.25   # float | Agreement across models
-    alignment_norm: 0.25      # float | Alignment-based normalization (when available)
-    layer_support_norm: 0.0   # float | Agreement across layers (when multiple exported)
+  keep_sequences: true
+  summary:
+    include_counts: true
+    normalize_count_by_limit_per_entry: true   # por defecto True si lo omites abajo
+    export_raw_count: true                    # ponlo a true si quieres "count_raw"
+    metrics:
+      reliability_index: [ min, max, mean ]
+      identity: [ min, max, mean ]
+      identity_sw: [ min, max, mean ]
+    aliases:
+      reliability_index: ri
+      identity: id_g
+      identity_sw: id_l
+
+    weights:
+      # 1) Por métrica y función:
+      reliability_index: { max: 0.6 }
+      # 2) Por métrica/alias con un único número (aplica a min/max/mean):
+      max_id_g: 0.2
+      # 3) Por nombre de salida (agg + alias):
+      max_id_l: 0.3
+      # Opcional: también puedes ponderar el count
+      count: 0.3
+    # Prefijo para las columnas ponderadas (opcional; por defecto "w_")
+    weighted_prefix: "w_"
+
 
 # ------------------------------------------------------------------------------
 # Output structure (produced by Stage B; for reference)
