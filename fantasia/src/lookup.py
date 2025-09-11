@@ -26,11 +26,13 @@ with downstream enrichment analysis tools.
 """
 
 import os
+from pathlib import Path
+
 import pandas as pd
 from protein_information_system.tasks.gpu import GPUTaskInitializer
 from goatools.base import get_godag
 from protein_information_system.sql.model.entities.sequence.sequence import Sequence
-
+import polars as pl  # <- añadir
 from sqlalchemy import text
 import h5py
 from protein_information_system.sql.model.entities.embedding.sequence_embedding import SequenceEmbeddingType, \
@@ -39,9 +41,9 @@ from protein_information_system.sql.model.entities.protein.protein import Protei
 
 from fantasia.src.helpers.helpers import get_descendant_ids, compute_metrics
 
-import glob
-import time
-import shutil
+
+
+from pathlib import Path
 
 
 class EmbeddingLookUp(GPUTaskInitializer):
@@ -287,6 +289,16 @@ class EmbeddingLookUp(GPUTaskInitializer):
                                     self.logger.warning(f"Malformed layer group '{lk}' under {type_key}. Skipping.")
                                     continue
 
+                                # Filtrar capas según config
+                                enabled_layers = model_info.get("enabled_layers")
+                                if enabled_layers and isinstance(enabled_layers, (list, tuple)):
+                                    if layer_index not in enabled_layers:
+                                        self.logger.debug(
+                                            f"Skipping layer {layer_index} for model {model_name} "
+                                            f"(not in enabled_layers={enabled_layers})."
+                                        )
+                                        continue
+
                                 task = {
                                     "h5_path": self.embeddings_path,  # para abrir el archivo en process
                                     "h5_group": f"{accession}/{type_key}/{lk}",  # ruta interna hasta layer_*
@@ -357,7 +369,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 "task_name": matched_name,
                 "distance_threshold": cfg.get("distance_threshold"),
                 "batch_size": cfg.get("batch_size"),
-                "enabled_layers": cfg.get("enabled_layers"),  # may be None/absent
+                "enabled_layers": cfg.get("layer_index"),  # may be None/absent
             }
 
         # 2) Detailed, single-pass logging (prevents duplicates)
@@ -624,67 +636,21 @@ class EmbeddingLookUp(GPUTaskInitializer):
 
     def store_entry(self, annotations_or_hits: list[dict]) -> None:
         """
-        Persist results to disk. Accepts EITHER:
-          a) legacy expanded annotations (full rows), OR
-          b) compact neighbor hits (new flow, with 'ref_sequence_id').
+        Persist results to disk. Acepta:
+          a) filas legacy ya expandidas, o
+          b) "hits" compactos (de process) que se expanden con self.go_annotations.
 
-        Behavior
-        --------
-        - If input are *hits*, expand them to GO annotations using `self.go_annotations`
-          (preloaded DB cache keyed by reference sequence_id).
-        - Query and reference sequences are included ONLY when
-          `conf['postprocess']['keep_sequences']` is True (lazy HDF5 read).
-        - Compact the expanded data within the batch using `_compact_annotations_df`
-          to reduce on-disk size and accelerate downstream post-processing.
-        - Write to layered raw CSVs when `layer_index` is present:
-            <experiment_path>/raw_results_layer_{L}.csv
-          or to <experiment_path>/raw_results.csv for legacy/no-layer.
-
-        Input schemas
-        -------------
-        Legacy expanded annotations (kept for backward compatibility):
-            {
-              "accession": str,
-              "sequence_query": str | None,
-              "sequence_reference": str | None,
-              "go_id": str,
-              "category": str,
-              "evidence_code": str,
-              "go_description": str,
-              "distance": float,
-              "model_name": str,
-              "embedding_type_id": int,
-              "layer_index": int | None,
-              "protein_id": int,
-              "organism": str,
-              "gene_name": str | None,
-              ...
-            }
-
-        Compact neighbor hits (preferred, output of process()):
-            {
-              "accession": str,
-              "ref_sequence_id": int,
-              "distance": float,
-              "model_name": str,
-              "embedding_type_id": int,
-              "layer_index": int | None
-            }
-
-        Notes
-        -----
-        - Expansion fan-out is (hits × GO terms) but it happens server-side where memory
-          and I/O are controlled; queue messages remain small.
-        - The compact step is idempotent and safe to apply even if upstream has already
-          reduced duplicates.
-
-        Raises
-        ------
-        Exception
-            Propagates unexpected IO or DataFrame errors after logging.
+        Cambios mínimos:
+          - Antes de escribir, se calculan:
+            * reliability_index (según métrica de distancia) en Polars
+            * métricas de alineamiento global/local con compute_metrics (multiproceso)
+            * casteo numérico de columnas de métricas
         """
         import os
+        import re
         import pandas as pd
+        import polars as pl
+        from concurrent.futures import ProcessPoolExecutor
 
         items = annotations_or_hits or []
         if not items:
@@ -694,14 +660,13 @@ class EmbeddingLookUp(GPUTaskInitializer):
         try:
             os.makedirs(self.experiment_path, exist_ok=True)
 
-            # Detect compact-hits mode
+            # --- ¿Hits compactos o filas legacy?
             is_hits = items and isinstance(items[0], dict) and ("ref_sequence_id" in items[0])
 
             if is_hits:
                 keep_seq = (self.conf.get("postprocess", {}) or {}).get("keep_sequences", False)
                 h5 = None
-
-                # Lazy HDF5 open only if we actually plan to read sequences
+                # Abrimos HDF5 solo si vamos a leer secuencia query
                 if keep_seq and os.path.exists(self.embeddings_path):
                     import h5py
                     try:
@@ -723,7 +688,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
                     if not anns:
                         continue
 
-                    # Optionally load query sequence (once per hit) if keep_seq is enabled
+                    # Secuencia query (opcional, si keep_seq)
                     seq_query = None
                     if keep_seq and h5 is not None:
                         acc_node = f"accession_{acc}"
@@ -752,8 +717,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
                             "gene_name": ann["gene_name"],
                         })
 
-                # Ensure we close HDF5 handle if opened
-                if h5 is not None:
+                if 'h5' in locals() and h5 is not None:
                     try:
                         h5.close()
                     except Exception:
@@ -765,44 +729,102 @@ class EmbeddingLookUp(GPUTaskInitializer):
 
                 df = pd.DataFrame(expanded_rows)
 
-            # Compact within-batch to cut duplicates and shrink output
-            df_compact = self._compact_annotations_df(df)
-            if df_compact.empty:
-                self.logger.info("store_entry: compact DataFrame is empty; nothing to write.")
+            else:
+                # Legacy: ya vienen expandidas
+                df = pd.DataFrame(items)
+
+            if df.empty:
+                self.logger.info("store_entry: dataframe is empty after expansion.")
                 return
 
-            # Layer-aware writing strategy
-            write_layered = df_compact["layer_index"].notna().any()
-            if write_layered:
-                total_rows = 0
-                for layer_val, chunk in df_compact.groupby("layer_index", dropna=False):
-                    if pd.isna(layer_val):
-                        out_path = self.raw_results_path  # legacy bucket for null layer
-                    else:
-                        out_path = os.path.join(self.experiment_path, f"raw_results_layer_{int(layer_val)}.csv")
+            # ---------------------------------------------------------------------
+            #  🔽  BLOQUE INTEGRADO (Polars) — EXACTAMENTE LO QUE PEDISTE  🔽
+            # ---------------------------------------------------------------------
+            pl_df = pl.from_pandas(df).with_columns(
+                pl.col("distance").cast(pl.Float64, strict=False),
+                pl.col("layer_index").cast(pl.Int64, strict=False),
+                pl.col("embedding_type_id").cast(pl.Int64, strict=False),
+            )
 
-                    write_header = not os.path.exists(out_path)
-                    chunk.to_csv(out_path, mode="a", index=False, header=write_header)
-                    total_rows += len(chunk)
-
-                    self.logger.info(
-                        "store_entry: wrote %d compact rows → %s (header=%s)",
-                        len(chunk), os.path.basename(out_path), write_header
-                    )
-
-                layers = sorted({int(layer_val) for layer_val in df_compact['layer_index'].dropna().unique()}) or [
-                    "legacy"]
-                self.logger.info(f"store_entry: layered write completed | layers={layers} | total_rows={total_rows}")
-
+            # ---- 2) reliability_index según métrica ----
+            if self.distance_metric == "cosine":  # 1 - cos_sim
+                pl_df = pl_df.with_columns((1 - pl.col("distance")).alias("reliability_index"))
+            elif self.distance_metric == "euclidean":  # función decreciente suave
+                pl_df = pl_df.with_columns((0.5 / (0.5 + pl.col("distance"))).alias("reliability_index"))
             else:
-                out_path = self.raw_results_path
+                pl_df = pl_df.with_columns((1.0 / (1.0 + pl.col("distance"))).alias("reliability_index"))
+
+            # Métricas de alineamiento (global/local) con compute_metrics
+            have_seq = set(pl_df.columns) >= {"sequence_query", "sequence_reference"}
+            if have_seq:
+                pairs = (
+                    pl_df.select(["sequence_query", "sequence_reference", "model_name", "layer_index"])
+                    .unique()
+                    .to_dicts()
+                )
+                metrics_list = []
+                if pairs:
+                    with ProcessPoolExecutor(max_workers=int(self.conf.get("store_workers", 4))) as ex:
+                        # compute_metrics: devuelve dict con identity, similarity, alignment_score, gaps_percentage, etc.
+                        metrics_list = list(ex.map(compute_metrics, pairs))  # ya importado arriba
+                if metrics_list:
+                    met = pl.DataFrame(metrics_list)
+                    merge_cols = ["sequence_query", "sequence_reference"]
+                    if "model_name" in met.columns: merge_cols.append("model_name")
+                    if "layer_index" in met.columns: merge_cols.append("layer_index")
+                    pl_df = pl_df.join(met, on=merge_cols, how="left")
+
+            # Asegurar numéricos
+            for c in (
+                    "identity", "similarity", "alignment_score", "gaps_percentage",
+                    "identity_sw", "similarity_sw", "alignment_score_sw", "gaps_percentage_sw",
+                    "alignment_length", "alignment_length_sw",
+            ):
+                if c in pl_df.columns:
+                    pl_df = pl_df.with_columns(pl.col(c).cast(pl.Float64, strict=False))
+                else:
+                    pl_df = pl_df.with_columns(pl.lit(0.0).alias(c))
+
+            # ---------------------------------------------------------------------
+            #  🔼  FIN BLOQUE INTEGRADO (Polars)  🔼
+            # ---------------------------------------------------------------------
+
+            # Volver a pandas para el writer por (modelo, capa)
+            df = pl_df.to_pandas()
+
+            # Helper para nombre de fichero
+            def _sanitize(name: str) -> str:
+                name = str(name).strip().lower()
+                name = re.sub(r"\s+", "_", name)
+                name = re.sub(r"[^a-z0-9._-]", "_", name)
+                return name or "model"
+
+            # Escritura por (layer_index, model_name)
+            total_rows = 0
+            grouped = df.groupby(["layer_index", "model_name"], dropna=False)
+            for (layer_val, model_name), chunk in grouped:
+                model_tag = _sanitize(model_name)
+                if pd.isna(layer_val):
+                    out_path = os.path.join(self.experiment_path, f"raw_results_{model_tag}_legacy.csv")
+                else:
+                    out_path = os.path.join(self.experiment_path, f"raw_results_{model_tag}_layer_{int(layer_val)}.csv")
+
                 write_header = not os.path.exists(out_path)
-                df_compact.to_csv(out_path, mode="a", index=False, header=write_header)
+                chunk.to_csv(out_path, mode="a", index=False, header=write_header)
+                total_rows += len(chunk)
 
                 self.logger.info(
-                    "store_entry: wrote %d compact rows → %s (header=%s)",
-                    len(df_compact), os.path.basename(out_path), write_header
+                    "store_entry: wrote %d rows → %s (header=%s)",
+                    len(chunk), os.path.basename(out_path), write_header
                 )
+
+            layers = sorted({int(l) for l in df["layer_index"].dropna().unique()}) if "layer_index" in df else [
+                "legacy"]
+            models = sorted({str(m) for m in df["model_name"].unique()}) if "model_name" in df else []
+            self.logger.info(
+                "store_entry: per-(model,layer) write completed | models=%s | layers=%s | total_rows=%d",
+                models, layers or ["legacy"], total_rows
+            )
 
         except Exception as e:
             self.logger.error("store_entry failed: %s", e, exc_info=True)
@@ -813,7 +835,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
         Generates non-redundant sequence clusters using MMseqs2.
 
         Combines protein sequences from the database and the HDF5 file into a temporary FASTA file,
-        then runs MMseqs2 clustering based on identity and coverage thresholds. The resulting cluster
+        then runs MMseqs2 clustering bno ased on identity and coverage thresholds. The resulting cluster
         assignments are stored in the following attributes:
 
         - `self.clusters`: raw cluster assignment as a DataFrame.
@@ -1081,25 +1103,21 @@ class EmbeddingLookUp(GPUTaskInitializer):
             if mcol not in df.columns:
                 df[mcol] = 0.0
             df[mcol] = pd.to_numeric(df[mcol], errors="coerce").fillna(0.0)
-        df["alignment_norm"] = 0.5 * (df["identity"] / 100.0) + 0.5 * (df["similarity"] / 100.0)
+
+        # Alignment norm (global y local por separado)
+        df["alignment_norm_global"] = 0.5 * (df["identity"] / 100.0) + 0.5 * (df["similarity"] / 100.0)
+        df["alignment_norm_local"] = 0.5 * (df["identity_sw"] / 100.0) + 0.5 * (df["similarity_sw"] / 100.0)
 
         # Weights
         wconf = (self.conf.get("postprocess", {}) or {}).get("weights", {})
         w_RI = float(wconf.get("reliability_index", 0.50))
-        w_SC = float(wconf.get("support_count_norm", 0.20))
-        w_CS = float(wconf.get("collapsed_support_norm", 0.15))
-        w_MC = float(wconf.get("model_consistency", 0.10))
-        w_AL = float(wconf.get("alignment_norm", 0.05))
-        w_LS = float(wconf.get("layer_support_norm", 0.05))
-        df["reliability_index"] = pd.to_numeric(df["reliability_index"], errors="coerce").fillna(0.0)
+        w_AG = float(wconf.get("alignment_norm_global", 0.05))
+        w_AL = float(wconf.get("alignment_norm_local", 0.05))  # nuevo
 
         df["score"] = (
-            w_RI * df["reliability_index"] +
-            w_SC * df["support_count_norm"] +
-            w_CS * df["collapsed_support_norm"] +
-            w_MC * df["model_consistency"] +
-            w_AL * df["alignment_norm"] +
-            w_LS * df["layer_support_norm"]
+                w_RI * df["reliability_index"] +
+                w_AG * df["alignment_norm_global"] +
+                w_AL * df["alignment_norm_local"]
         ).astype(float)
 
         return df
@@ -1138,363 +1156,299 @@ class EmbeddingLookUp(GPUTaskInitializer):
         return df_best
 
     # --- Full post-processing pipeline ----------------------------------------
-    def post_processing(self) -> None:
+    def post_processing(self) -> str:
         """
-        Post-process transferred GO annotations and produce final outputs.
+        Genera summary.csv a partir de raw_results_*.csv con métricas/aggregados configurables,
+        aplica pesos normalizados (suman 1) y añade columnas ponderadas + 'final_score'.
 
-        Designed to work efficiently with compact RAW created by `store_entry`
-        (one row per (accession, model, layer, GO) + precomputed `support_count`).
-        Falls back to legacy RAW if needed.
-
-        Pipeline
-        --------
-        1) Load RAW:
-           - Prefer layered files: raw_results_layer_*.csv (faster IO, selective reads).
-           - Fallback: raw_results.csv (legacy).
-           - Ensure `layer_index`.
-        2) Compute `reliability_index` from `distance`:
-           - cosine    → 1 - distance
-           - euclidean → 0.5 / (0.5 + distance)
-           - default   → 1 / (1 + distance)
-        3) Ensure `support_count` (keep if present; else compute per group).
-        4) Reduce to leaf GO terms per (accession, model, layer) using the GO DAG and
-           compute collapsed support from ancestors in the group.
-        5) (Optional) Pairwise alignment metrics if sequences are available.
-        6) Append metadata, round numerics, sort for readability; clean legacy gene_name.
-        7) Score with `_compute_score`; write `results_scored.csv`.
-        8) Collapse to best (model, layer) per accession; write `results_collapsed.csv`
-           and copy to `results.csv` (compatibility alias).
-        9) Export TopGO TSVs (score-based) if enabled.
+        Notas:
+          - 'count' se normaliza como fracción: count = len(grupo) / self.limit_per_entry.
+          - Si defines peso para "count", se incluye en la normalización (los pesos usados suman 1).
+          - 'final_score' = suma de (agregado * peso_normalizado) sobre todos los términos ponderados.
+        Config soportado en 'postprocess.summary':
+          - metrics: {col: [min, max, mean|avg], ...}
+          - aliases: {col: alias, ...}
+          - include_counts: bool
+          - weights: dict
+              * {metric: {min: w1, mean: w2, max: w3}}
+              * {alias: float}                 -> aplica a min/max/mean
+              * {"<agg>_<alias>": float}       -> p.ej. "max_id_g": 0.3
+              * {"count": float}               -> aplica a count normalizado
+          - weighted_prefix: str  (por defecto "w_")
         """
+        from pathlib import Path
+        import polars as pl
 
-        start_total = time.perf_counter()
+        base_dir = Path(self.experiment_path)
+        paths = sorted(base_dir.glob("raw_results_*.csv"))
+        if not paths:
+            self.logger.info("No raw_results_*.csv found in %s", base_dir)
+            return ""
 
-        def log_stage(name: str, t0: float) -> None:
-            self.logger.info("%s completed in %.2fs", name, time.perf_counter() - t0)
+        spec = (self.conf.get("postprocess", {}) or {}).get("summary", {}) or {}
+        metrics: dict = spec.get("metrics", {})
+        aliases: dict = spec.get("aliases", {})
+        include_counts: bool = bool(spec.get("include_counts", True))
 
-        # 1) Load RAW (prefer layered files)
-        t0 = time.perf_counter()
-        layer_files = sorted(glob.glob(os.path.join(self.experiment_path, "raw_results_layer_*.csv")))
-        df_raw = None
-        if layer_files:
-            dfs = []
-            for path in layer_files:
-                g = pd.read_csv(path)
-                if "layer_index" not in g.columns:
-                    try:
-                        li = int(os.path.splitext(os.path.basename(path))[0].split("_")[-1])
-                    except Exception:
-                        li = None
-                    g["layer_index"] = li
-                dfs.append(g)
-            df_raw = pd.concat(dfs, ignore_index=True) if dfs else None
-            if df_raw is not None:
-                self.logger.info("Loaded %d rows from layered RAW files.", len(df_raw))
-        if df_raw is None:
-            if not os.path.exists(self.raw_results_path):
-                self.logger.warning("No RAW results found for post-processing.")
-                return
-            df_raw = pd.read_csv(self.raw_results_path)
-            self.logger.info("Loaded %d rows from %s.", len(df_raw), os.path.basename(self.raw_results_path))
-        if df_raw.empty:
-            self.logger.warning("RAW results are empty. Nothing to post-process.")
-            return
-        log_stage("Load RAW", t0)
+        # Pesos (raw) y prefijo
+        weights_spec: dict = spec.get("weights", {}) or {}
+        weighted_prefix: str = str(spec.get("weighted_prefix", "w_"))
 
-        # 2) Ensure layer_index
-        t0 = time.perf_counter()
-        if "layer_index" not in df_raw.columns:
-            df_raw["layer_index"] = None
-        log_stage("Ensure layer_index", t0)
+        # k global (limit_per_entry). Fallback a conf
+        k = int(getattr(self, "limit_per_entry",
+                        self.conf.get("limit_per_entry",
+                                      (self.conf.get("lookup", {}) or {}).get("limit_per_entry", 1))) or 1)
+        if k <= 0:
+            k = 1
 
-        # 3) reliability_index from distance
-        t0 = time.perf_counter()
-        if self.distance_metric == "cosine":
-            df_raw["reliability_index"] = 1 - df_raw["distance"]
-        elif self.distance_metric == "euclidean":
-            df_raw["reliability_index"] = 0.5 / (0.5 + df_raw["distance"])
-        else:
-            df_raw["reliability_index"] = 1.0 / (1.0 + df_raw["distance"])
-        log_stage("Compute reliability_index", t0)
+        def _norm_fun(f: str) -> str:
+            f = (f or "").lower()
+            return "mean" if f == "avg" else f
 
-        # 4) Ensure / compute support_count
-        t0 = time.perf_counter()
-        if "support_count" not in df_raw.columns:
-            df_raw["support_count"] = (
-                df_raw.groupby(["accession", "model_name", "layer_index", "go_id"])["go_id"].transform("count")
-            )
-        else:
-            df_raw["support_count"] = pd.to_numeric(df_raw["support_count"], errors="coerce").fillna(0).astype(int)
-        log_stage("Compute or keep support_count", t0)
+        def _weight_for(metric: str, fun: str) -> tuple[float, bool]:
+            """
+            (peso_raw, aplicar?)
+            Busca en este orden:
+              1) "<agg>_<alias>"
+              2) métrica -> número
+              3) alias -> número
+              4) métrica -> {agg: número}
+              5) alias   -> {agg: número}
+            """
+            alias = aliases.get(metric, metric)
+            fun = _norm_fun(fun)
 
-        # 5) Build GO parents cache
-        t0 = time.perf_counter()
-        unique_go_ids = pd.unique(df_raw["go_id"])
-        parents_cache: dict[str, set] = {}
+            out_key = f"{fun}_{alias}"
+            if out_key in weights_spec and isinstance(weights_spec[out_key], (int, float)):
+                return float(weights_spec[out_key]), True
 
-        def get_parents_cached(term: str) -> set:
-            if term in parents_cache:
-                return parents_cache[term]
-            try:
-                if term in self.go:
-                    parents = self.go[term].get_all_parents()
-                    parents_cache[term] = set(parents) if not isinstance(parents, set) else parents
+            for key in (metric, alias):
+                if key in weights_spec:
+                    val = weights_spec[key]
+                    if isinstance(val, (int, float)):
+                        return float(val), True
+                    if isinstance(val, dict):
+                        for kfun, v in val.items():
+                            if _norm_fun(kfun) == fun and isinstance(v, (int, float)):
+                                return float(v), True
+            return 0.0, False  # sin peso
+
+        # columnas mínimas + métricas pedidas
+        needed = ["accession", "go_id", "model_name", "layer_index", "protein_id"] + list(metrics.keys())
+
+        scans = []
+        for p in paths:
+            lf = pl.scan_csv(p, ignore_errors=True)
+            exprs = []
+            for c in needed:
+                if c in lf.columns:
+                    if c in metrics:
+                        exprs.append(pl.col(c).cast(pl.Float64, strict=False).alias(c))
+                    elif c == "layer_index":
+                        exprs.append(pl.col(c).cast(pl.Int64, strict=False).alias(c))
+                    else:
+                        exprs.append(pl.col(c))
                 else:
-                    parents_cache[term] = set()
-            except Exception:
-                parents_cache[term] = set()
-            return parents_cache[term]
+                    if c in metrics:
+                        exprs.append(pl.lit(None).cast(pl.Float64).alias(c))
+                    elif c == "layer_index":
+                        exprs.append(pl.lit(None).cast(pl.Int64).alias(c))
+                    else:
+                        exprs.append(pl.lit(None).alias(c))
+            scans.append(lf.select(exprs))
 
-        for t in unique_go_ids:
-            _ = get_parents_cached(t)
-        log_stage("Build GO parents cache", t0)
+        df = pl.concat(scans, how="vertical").collect()
+        if df.is_empty():
+            self.logger.info("Empty dataframe after reading raw results.")
+            return ""
 
-        # 6) Reduce to leaf terms + collapsed_support (fast)
-        t0 = time.perf_counter()
-        rows = []
+        # info por término
+        per_term = (
+            df.group_by(["accession", "go_id"])
+            .agg([
+                pl.len().alias("term_count"),
+                pl.col("protein_id").cast(pl.Utf8, strict=False).unique().alias("proteins_list"),
+            ])
+        )
 
-        # Ensure go_id is string to match GO DAG keys
-        df_raw["go_id"] = df_raw["go_id"].astype(str)
+        # agregados por (modelo, capa)
+        group_keys = ["accession", "go_id", "model_name", "layer_index"]
 
-        for ((_acc, _model, _layer)), group in df_raw.groupby(["accession", "model_name", "layer_index"], dropna=False):
-            group_go = pd.unique(group["go_id"])
-            if len(group_go) == 0:
-                continue
-            group_go_set = set(group_go)
+        # Primera pasada: definimos todos los agregados y recogemos pesos RAW
+        agg_items = []  # lista de dicts: {"name": str, "expr": Expr, "w_raw": float, "weighted": bool}
+        base_names = []  # para stacking
+        for col, funs in metrics.items():
+            alias = aliases.get(col, col)
+            for f in funs:
+                f = _norm_fun(f)
+                if f == "min":
+                    expr = pl.col(col).min()
+                elif f == "max":
+                    expr = pl.col(col).max()
+                elif f == "mean":
+                    expr = pl.col(col).mean()
+                else:
+                    continue
+                name = f"{f}_{alias}"
+                w_raw, apply = _weight_for(col, f)
+                agg_items.append({"name": name, "expr": expr, "w_raw": float(w_raw), "weighted": bool(apply)})
+                base_names.append(name)
 
-            # Best row per GO (highest reliability_index)
-            best_per_go = (
-                group.sort_values("reliability_index", ascending=False)
-                .drop_duplicates(subset=["go_id"], keep="first")
-                .copy()
+        # count normalizado (si procede)
+        count_name = None
+        count_item = None
+        if include_counts:
+            cnt_expr = (pl.len().cast(pl.Float64) / pl.lit(float(k)))
+            count_name = "count"
+            cw = weights_spec.get("count", None)
+            apply_c = isinstance(cw, (int, float))
+            count_item = {"name": count_name, "expr": cnt_expr, "w_raw": float(cw) if apply_c else 0.0,
+                          "weighted": apply_c}
+            base_names.append(count_name)
+            agg_items.append(count_item)
+
+        # Normalización de pesos (solo sobre los que realmente se aplican)
+        total_w = sum(item["w_raw"] for item in agg_items if item["weighted"])
+        # Si no hay pesos definidos, no habrá columnas ponderadas ni final_score (queda en None)
+        have_weights = total_w > 0.0
+        # Evita divisiones raras
+        norm = (lambda w: (w / total_w) if total_w > 0 else 0.0)
+
+        # Segunda pasada: construir expresiones a agregar (base + ponderadas normalizadas + final_score)
+        agg_exprs = []
+        out_cols = []  # columnas a apilar/pivotar
+        score_terms = []  # contribuciones para final_score
+
+        # Añadimos todas las columnas base
+        for item in agg_items:
+            agg_exprs.append(item["expr"].alias(item["name"]))
+            out_cols.append(item["name"])
+
+        # Añadimos versiones ponderadas (con pesos ya normalizados) y vamos sumando para final_score
+        if have_weights:
+            for item in agg_items:
+                if item["weighted"]:
+                    w_norm = norm(item["w_raw"])
+                    wname = f"{weighted_prefix}{item['name']}"
+                    # fill_null(0) para que NaN no anule la suma
+                    contrib = (item["expr"].fill_null(0.0) * pl.lit(w_norm))
+                    agg_exprs.append(contrib.alias(wname))
+                    out_cols.append(wname)
+                    score_terms.append(contrib)
+
+            # final_score como suma de contribuciones
+            if score_terms:
+                final_expr = score_terms[0]
+                for e in score_terms[1:]:
+                    final_expr = final_expr + e
+                agg_exprs.append(final_expr.alias("final_score"))
+                out_cols.append("final_score")
+
+        stats = df.group_by(group_keys).agg(agg_exprs)
+
+        # pasa a formato largo con etiquetas <col>_<model>_L<layer>
+        def _stack_one(colname: str) -> pl.DataFrame:
+            return stats.select(
+                pl.col("accession"),
+                pl.col("go_id"),
+                pl.concat_str([
+                    pl.lit(colname), pl.lit("_"),
+                    pl.col("model_name"), pl.lit("_L"),
+                    pl.coalesce([pl.col("layer_index").cast(pl.Utf8), pl.lit("legacy")])
+                ]).alias("col"),
+                pl.col(colname).alias("value")
             )
 
-            # Compute ancestor sets only once per GO in this group
-            parents_union = set()
-            ancestors_in_group: dict[str, set] = {}
-            for gid in group_go:
-                parents = self.go[gid].get_all_parents() if gid in self.go else []
-                pg = set(parents) & group_go_set
-                ancestors_in_group[gid] = pg
-                parents_union.update(pg)
+        frames = [_stack_one(c) for c in out_cols]
+        long = pl.concat(frames, how="vertical")
+        wide = long.pivot(values="value", index=["accession", "go_id"], columns="col")
 
-            # Leafs are those not acting as parent of any other term in the group
-            leaf_terms = [gid for gid in group_go if gid not in parents_union]
-            if not leaf_terms:
-                continue
-
-            leaf_best = best_per_go[best_per_go["go_id"].isin(leaf_terms)].copy()
-            if leaf_best.empty:
-                continue
-
-            # Map support_count from best_per_go (1 per GO)
-            support_map = (
-                best_per_go[["go_id", "support_count"]]
-                .drop_duplicates("go_id")
-                .set_index("go_id")["support_count"]
-                .to_dict()
-            )
-
-            def _sum_support_ancestors(gid: str, _support_map=support_map, _anc=ancestors_in_group) -> int:
-                return int(sum(_support_map.get(a, 0) for a in _anc.get(gid, set())))
-
-            def _count_ancestors(gid: str, _anc=ancestors_in_group) -> int:
-                return int(len(_anc.get(gid, set())))
-
-            def _list_ancestors(gid: str, _anc=ancestors_in_group) -> str:
-                anc = _anc.get(gid, set())
-                return ", ".join(sorted(anc)) if anc else ""
-
-            leaf_best["collapsed_support"] = leaf_best["go_id"].map(_sum_support_ancestors)
-            leaf_best["n_collapsed_terms"] = leaf_best["go_id"].map(_count_ancestors)
-            leaf_best["collapsed_terms"] = leaf_best["go_id"].map(_list_ancestors)
-
-            rows.append(leaf_best)
-
-        df_out = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(
-            columns=df_raw.columns.tolist() + ["collapsed_support", "n_collapsed_terms", "collapsed_terms"]
-        )
-        log_stage("Reduce to leaves + collapsed_support", t0)
-
-        # 7) Optional pairwise alignment metrics
-        t0 = time.perf_counter()
-        unique_pairs = (
-            df_out[["sequence_query", "sequence_reference"]].drop_duplicates()
-            if {"sequence_query", "sequence_reference"} <= set(df_out.columns) else pd.DataFrame()
-        )
-        if not unique_pairs.empty:
-            from concurrent.futures import ProcessPoolExecutor
-            metrics_list = []
-            with ProcessPoolExecutor(max_workers=self.conf.get("store_workers", 4)) as ex:
-                metrics_list = list(ex.map(compute_metrics, unique_pairs.to_dict("records")))
-            metrics_df = pd.DataFrame(metrics_list)
-            df_out = df_out.merge(metrics_df, on=["sequence_query", "sequence_reference"], how="left")
-        log_stage("Compute pairwise metrics", t0)
-
-        # 8) Metadata + cleanup
-        t0 = time.perf_counter()
-        df_out = self._add_metadata_columns(df_out)
-        for col in ["distance", "identity", "similarity", "alignment_score", "gaps_percentage", "reliability_index"]:
-            if col in df_out.columns:
-                df_out[col] = pd.to_numeric(df_out[col], errors="coerce")
-                df_out[col] = df_out[col].apply(lambda x: round(x, 4) if pd.notnull(x) else x)
-        df_out = df_out.sort_values(
-            by=["accession", "layer_index", "go_id", "model_name", "reliability_index"],
-            ascending=[True, True, True, True, False]
+        out_df = (
+            per_term
+            .join(wide, on=["accession", "go_id"], how="left")
+            .with_columns(pl.col("proteins_list").list.join("|").alias("proteins"))
+            .drop("proteins_list")
+            .sort(["accession", "go_id"])
         )
 
-        # Clean legacy gene_name shapes like "[{...}]"
-        # Clean legacy gene_name shapes like "[{...}]"
-        if "gene_name" in df_out.columns:
-            def _extract_gene_name(g):
-                try:
-                    import ast
-                    val = ast.literal_eval(g)
-                    if (
-                            isinstance(g, str) and
-                            g.startswith("[{") and
-                            isinstance(val, list) and
-                            len(val) > 0 and
-                            isinstance(val[0], dict) and
-                            "Name" in val[0]
-                    ):
-                        return val[0]["Name"]
-                except Exception:
-                    return None
-                return None
-
-            df_out["gene_name"] = df_out["gene_name"].apply(_extract_gene_name)
-        log_stage("Add metadata + sort & round + clean gene_name", t0)
-
-        # 9) SCORE + results_scored.csv
-        t0 = time.perf_counter()
-        df_scored = self._compute_score(df_out)
-        results_scored_path = os.path.join(self.experiment_path, "results_scored.csv")
-        df_scored.to_csv(results_scored_path, index=False)
-        self.logger.info("Wrote %d rows → results_scored.csv", len(df_scored))
-        log_stage("Compute SCORE + write results_scored.csv", t0)
-
-        # 10) Collapse
-        t0 = time.perf_counter()
-        df_collapsed = self._collapse_best_overall(df_scored)
-        results_collapsed_path = os.path.join(self.experiment_path, "results_collapsed.csv")
-        df_collapsed.to_csv(results_collapsed_path, index=False)
-        shutil.copyfile(results_collapsed_path, self.results_path)  # legacy alias
-        self.logger.info("Wrote %d rows → results_collapsed.csv (aliased to results.csv)", len(df_collapsed))
-        log_stage("Collapse best model+layer + write results_collapsed.csv + alias", t0)
-
-        # 11) TopGO exports (score-based)
-        t0 = time.perf_counter()
-        if self.topgo_enabled:
-            self.logger.info("Generating TopGO outputs (score-based)…")
-            base_dir = os.path.join(self.experiment_path, "topgo")
-            os.makedirs(base_dir, exist_ok=True)
-
-            def build_topgo(df_group: pd.DataFrame) -> pd.DataFrame:
-                return (
-                    df_group.groupby(["accession", "go_id"], as_index=False)["score"]
-                    .max().rename(columns={"score": "score"})
-                    .loc[:, ["accession", "go_id", "score"]]
-                )
-
-            # detailed per layer/model/category
-            for (layer, model_name, category), g in df_scored.groupby(
-                    ["layer_index", "model_name", "category"], dropna=False
-            ):
-                layer_tag = f"layer_{layer}" if layer is not None else "legacy"
-                out_dir = os.path.join(base_dir, "scored", layer_tag, model_name)
-                os.makedirs(out_dir, exist_ok=True)
-                build_topgo(g).to_csv(os.path.join(out_dir, f"{category}.tsv"),
-                                      sep="\t", index=False, header=False)
-
-            # all layers per model/category
-            combined_dir = os.path.join(base_dir, "scored", "all_layers")
-            for (model_name, category), g in df_scored.groupby(["model_name", "category"]):
-                out_dir = os.path.join(combined_dir, model_name)
-                os.makedirs(out_dir, exist_ok=True)
-                build_topgo(g).to_csv(os.path.join(out_dir, f"{category}.tsv"),
-                                      sep="\t", index=False, header=False)
-
-            # collapsed final set by category
-            collapsed_dir = os.path.join(base_dir, "collapsed_best")
-            os.makedirs(collapsed_dir, exist_ok=True)
-            for category, g in df_collapsed.groupby("category"):
-                build_topgo(g).to_csv(os.path.join(collapsed_dir, f"{category}.tsv"),
-                                      sep="\t", index=False, header=False)
-
-            self.logger.info("TopGO outputs generated.")
-        log_stage("Generate TopGO outputs", t0)
-
-        self.logger.info("Post-processing finished in %.2fs", time.perf_counter() - start_total)
+        summary_path = base_dir / "summary.csv"
+        out_df.write_csv(summary_path)
+        self.logger.info("Wrote summary → %s", summary_path)
+        return str(summary_path)
 
     def _compact_annotations_df(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Compact raw annotations *within the batch* to reduce disk size and speed up post-processing.
+        Compact raw annotations *within the batch* to one row per (accession, go_id).
 
-        Grouping keys (we DO NOT use 'go_description' as a key; it's redundant with 'go_id'):
-            ('accession', 'model_name', 'embedding_type_id', 'layer_index',
-             'go_id', 'category', 'evidence_code')
+        Strategy
+        --------
+        - Group exclusively by ('accession', 'go_id').
+        - For each group:
+            * support_count := number of rows in the group.
+            * distance      := minimal distance in the group.
+            * representative row := the row with minimal 'distance' (ties -> first after stable sort).
+              All remaining metadata columns are taken from the representative row.
 
-        For each group
-        --------------
-        - support_count := number of neighbors contributing that GO in the group
-        - distance      := minimal distance in the group (best neighbor)
-        - representative row := the row with minimal 'distance' (ties → first)
-        - keep representative metadata (sequence_reference, protein_id, organism, gene_name, go_description, ...)
+        Input
+        -----
+        df : pandas.DataFrame
+            Raw per-neighbor expanded annotations. Missing expected columns are created
+            and filled with None to ensure a stable output schema.
 
-        Returns
-        -------
-        DataFrame with one row per group + 'support_count' and representative fields.
+        Output
+        ------
+        pandas.DataFrame
+            One row per (accession, go_id) with the minimal distance and support_count,
+            plus representative metadata columns.
         """
+        import pandas as pd
+
         if df.empty:
             return df
 
         df = df.copy()
 
+        # Ensure required columns exist; create missing with None for a stable schema.
         expected = [
-            "accession", "model_name", "embedding_type_id", "layer_index",
-            "go_id", "category", "evidence_code", "go_description",
-            "distance", "sequence_query", "sequence_reference",
-            "protein_id", "organism", "gene_name"
+            "accession", "go_id", "distance",
+            "model_name", "embedding_type_id", "layer_index",
+            "category", "evidence_code", "go_description",
+            "sequence_query", "sequence_reference",
+            "protein_id", "organism", "gene_name",
         ]
         for c in expected:
             if c not in df.columns:
                 df[c] = None
 
-        # Dtypes for robust grouping/ordering
+        # Robust dtypes for grouping and ordering
+        df["distance"] = pd.to_numeric(df["distance"], errors="coerce")
         df["embedding_type_id"] = pd.to_numeric(df["embedding_type_id"], errors="coerce").astype("Int64")
         df["layer_index"] = pd.to_numeric(df["layer_index"], errors="coerce").astype("Int64")
-        df["distance"] = pd.to_numeric(df["distance"], errors="coerce")
 
-        for col in ("accession", "model_name", "go_id", "category", "evidence_code"):
-            df[col] = df[col].astype(str)
-        for txt in ("go_description", "sequence_query", "sequence_reference", "organism", "gene_name"):
-            df[txt] = df[txt].astype(str)
+        # Group only by (accession, go_id)
+        keys = ["accession", "go_id"]
 
-        keys = [
-            "accession", "model_name", "embedding_type_id", "layer_index",
-            "go_id", "category", "evidence_code"
-        ]
-
+        # Group metrics
         df["support_count"] = df.groupby(keys, dropna=False)["go_id"].transform("size")
-
         min_distance = df.groupby(keys, dropna=False)["distance"].transform("min")
-        df["__is_best"] = df["distance"].eq(min_distance)
 
+        # Mark best rows and deterministically pick representative per group
+        df["__is_best"] = df["distance"].eq(min_distance)
         best = (
             df[df["__is_best"]]
-            .sort_values(keys + ["distance"])
+            .sort_values(keys + ["distance"], ascending=[True, True, True])
             .drop_duplicates(subset=keys, keep="first")
             .copy()
         )
-
         best.drop(columns=["__is_best"], inplace=True, errors="ignore")
 
+        # Stable, predictable column order
         ordered = [
-            "accession", "model_name", "embedding_type_id", "layer_index",
-            "go_id", "category", "evidence_code", "go_description",
-            "distance", "sequence_query", "sequence_reference",
-            "protein_id", "organism", "gene_name", "support_count"
+            "accession", "go_id", "distance", "support_count",
+            "model_name", "embedding_type_id", "layer_index",
+            "category", "evidence_code", "go_description",
+            "sequence_query", "sequence_reference",
+            "protein_id", "organism", "gene_name",
         ]
         rest = [c for c in best.columns if c not in ordered]
         return best[ordered + rest]

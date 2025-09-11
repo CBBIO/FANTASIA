@@ -127,18 +127,62 @@ def parse_unknown_args(unknown_args):
 def compute_metrics(row):
     seq1 = row["sequence_query"]
     seq2 = row["sequence_reference"]
-    metrics = run_needle_from_strings(seq1, seq2)
+
+    # Global (Needleman–Wunsch)
+    m_glob = run_needle_from_strings(seq1, seq2)
+
+    # Local (Smith–Waterman)
+    m_loc = run_smith_waterman_from_strings(seq1, seq2)
+
+    # Devuelve los campos originales (global) + los de SW con sufijo _sw
     return {
         "sequence_query": seq1,
         "sequence_reference": seq2,
-        "identity": metrics["identity_percentage"],
-        "similarity": metrics.get("similarity_percentage"),
-        "alignment_score": metrics["alignment_score"],
-        "gaps_percentage": metrics.get("gaps_percentage"),
-        "alignment_length": metrics["alignment_length"],
+
+        # === Global (compatibilidad hacia atrás) ===
+        "identity": m_glob["identity_percentage"],
+        "similarity": m_glob.get("similarity_percentage"),
+        "alignment_score": m_glob["alignment_score"],
+        "gaps_percentage": m_glob.get("gaps_percentage"),
+        "alignment_length": m_glob["alignment_length"],
+
         "length_query": len(seq1),
         "length_reference": len(seq2),
+
+        # === Local (Smith–Waterman) ===
+        "identity_sw": m_loc["identity_percentage"],
+        "similarity_sw": m_loc.get("similarity_percentage"),
+        "alignment_score_sw": m_loc["alignment_score"],
+        "gaps_percentage_sw": m_loc.get("gaps_percentage"),
+        "alignment_length_sw": m_loc["alignment_length"],
     }
+
+
+def run_smith_waterman_from_strings(seq1, seq2):
+    """
+    Alinea dos secuencias con Parasail (local alignment) y extrae métricas estilo EMBOSS.
+    """
+    result = parasail.sw_trace_striped_32(seq1, seq2, 10, 1, parasail.blosum62)
+
+    aligned_query = result.traceback.query
+    aligned_ref = result.traceback.ref
+    comp_line = result.traceback.comp
+
+    alignment_length = len(aligned_query)
+    matches = sum(a == b for a, b in zip(aligned_query, aligned_ref) if a != '-' and b != '-')
+    similarity = sum(c in "|:" for c in comp_line)
+    gaps = aligned_query.count('-') + aligned_ref.count('-')
+
+    metrics = {
+        "identity_count": matches,
+        "alignment_length": alignment_length,
+        "identity_percentage": matches / alignment_length if alignment_length else 0.0,
+        "similarity_percentage": similarity / alignment_length if alignment_length else 0.0,
+        "gaps_percentage": gaps / alignment_length if alignment_length else 0.0,
+        "alignment_score": result.score,
+    }
+
+    return metrics
 
 
 def run_needle_from_strings(seq1, seq2):
@@ -159,9 +203,9 @@ def run_needle_from_strings(seq1, seq2):
     metrics = {
         "identity_count": matches,
         "alignment_length": alignment_length,
-        "identity_percentage": 100 * matches / alignment_length,
-        "similarity_percentage": 100 * similarity / alignment_length,
-        "gaps_percentage": 100 * gaps / alignment_length,
+        "identity_percentage": matches / alignment_length,
+        "similarity_percentage": similarity / alignment_length,
+        "gaps_percentage": gaps / alignment_length,
         "alignment_score": result.score,
     }
 
