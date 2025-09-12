@@ -194,6 +194,19 @@ class EmbeddingLookUp(GPUTaskInitializer):
 
         self.logger.info("EmbeddingLookUp initialization completed successfully.")
 
+        # --- Sequence indexing (in-memory) --------------------------------------
+        self._q_seq_to_idx: dict[str, int] = {}
+        self._q_idx_to_seq: list[str] = []
+        self._r_seq_to_idx: dict[str, int] = {}
+        self._r_idx_to_seq: list[str] = []
+
+        # ruta FASTA (configurable vía conf['sequences_fasta'])
+        self.sequences_fasta_path = os.path.join(self.experiment_path,
+                                                 self.conf.get("sequences_fasta", "sequences.fasta"))
+
+        # Numerical precision
+        self.precision = self.conf.get("precision", 4)
+
     def enqueue(self):
         """
         Encola tareas por lotes homogéneos **(modelo, capa)**.
@@ -647,15 +660,52 @@ class EmbeddingLookUp(GPUTaskInitializer):
 
     def store_entry(self, annotations_or_hits: list[dict]) -> None:
         """
-        Persist results to disk. Acepta:
-          a) filas legacy ya expandidas, o
-          b) "hits" compactos (de process) que se expanden con self.go_annotations.
+        Persiste resultados por (modelo, capa) y actualiza un FASTA global de secuencias.
 
-        Cambios mínimos:
-          - Antes de escribir, se calculan:
-            * reliability_index (según métrica de distancia) en Polars
-            * métricas de alineamiento global/local con compute_metrics (multiproceso)
-            * casteo numérico de columnas de métricas
+        Funcionalidad
+        -------------
+        1) Acepta:
+           a) "hits" compactos devueltos por `process()` (con `ref_sequence_id`), o
+           b) filas legacy ya expandidas.
+
+        2) Expansión de hits:
+           - Para cada vecino, expande las anotaciones GO desde `self.go_annotations`.
+           - Lee la secuencia *query* desde el HDF5 (una vez por *accession*).
+           - Obtiene la secuencia *reference* desde la caché de anotaciones.
+
+        3) Indexado de secuencias en memoria:
+           - Asigna índices estables y deduplicados para queries (Q) y referencias (R)
+             mediante `self._index_sequence(seq, which={'Q','R'})`.
+           - Añade columnas `query_idx`, `ref_idx`, `query_len`, `ref_len`.
+           - Mantiene `sequence_query`/`sequence_reference` de forma **temporal** para métricas
+             y las elimina del output final salvo que `postprocess.keep_sequences=True`.
+
+        4) Post-procesado en Polars:
+           - Casteos robustos y `reliability_index` según métrica de distancia.
+           - Cálculo de métricas de alineamiento (global/local) con `compute_metrics`
+             (multiproceso) y *join* de resultados.
+           - Conversión de vuelta a pandas para escritura incremental.
+
+        5) Escritura jerárquica:
+           - Directorio: `<experiment_path>/raw_results/{model}/layer_{k}/<accession>.csv`
+             (o `legacy/` si no hay capa).
+           - Añade (append) por *accession* preservando cabeceras en la primera escritura.
+
+        6) FASTA global:
+           - Al final, vuelca/actualiza `<experiment_path>/<sequences_fasta|sequences.fasta>`
+             con todas las secuencias vistas en la sesión (`>Q{i}` y `>R{i}`).
+
+        Notas
+        -----
+        - Si `postprocess.keep_sequences` es False (por defecto), las secuencias NO se
+          incluyen en los CSV; sólo los índices y longitudes.
+        - Si no se puede leer la secuencia *query* del HDF5, `query_idx` quedará en `None`
+          y no se calcularán métricas para esos pares.
+
+        Raises
+        ------
+        Exception
+            Propaga la excepción con *logging* enriquecido si algo falla.
         """
         import os
         import re
@@ -671,22 +721,46 @@ class EmbeddingLookUp(GPUTaskInitializer):
         try:
             os.makedirs(self.experiment_path, exist_ok=True)
 
-            # --- ¿Hits compactos o filas legacy?
-            is_hits = items and isinstance(items[0], dict) and ("ref_sequence_id" in items[0])
+            # ------------------------------------------------------------------
+            # 1) ¿Hits compactos (process) o filas legacy ya expandidas?
+            # ------------------------------------------------------------------
+            is_hits = isinstance(items, list) and items and isinstance(items[0], dict) and \
+                      ("ref_sequence_id" in items[0])
+
+            # Config
+            keep_sequences = bool((self.conf.get("postprocess", {}) or {}).get("keep_sequences", False))
+            store_workers = int(self.conf.get("store_workers", 4))
+            # Abriremos HDF5 para leer secuencias query SIEMPRE que tengamos hits
+            # (necesarias para indexado y métricas), aunque luego no se guarden en CSV.
+            h5 = None
+
+            # Utilidad local
+            def _sanitize(name: str) -> str:
+                name = str(name or "").strip().lower()
+                name = re.sub(r"\s+", "_", name)
+                name = re.sub(r"[^a-z0-9._-]", "_", name)
+                return name or "model"
 
             if is_hits:
-                keep_seq = (self.conf.get("postprocess", {}) or {}).get("keep_sequences", False)
-                h5 = None
-                # Abrimos HDF5 solo si vamos a leer secuencia query
-                if keep_seq and os.path.exists(self.embeddings_path):
+                # --------------------------------------------------------------
+                # 1.a) Expandir hits a filas por anotación GO
+                # --------------------------------------------------------------
+                expanded_rows: list[dict] = []
+
+                # Preparar lectura de secuencias query desde HDF5 (una sola apertura)
+                if os.path.exists(self.embeddings_path):
                     import h5py
                     try:
                         h5 = h5py.File(self.embeddings_path, "r")
                     except Exception as e:
                         self.logger.warning("store_entry: could not open HDF5 for sequence read: %s", e)
                         h5 = None
+                else:
+                    self.logger.warning("store_entry: embeddings HDF5 not found at %s", self.embeddings_path)
 
-                expanded_rows = []
+                # Cache local de secuencias query por accession para minimizar IO
+                qseq_cache: dict[str, str | None] = {}
+
                 for hit in items:
                     acc = hit["accession"]
                     ref_id = int(hit["ref_sequence_id"])
@@ -699,36 +773,59 @@ class EmbeddingLookUp(GPUTaskInitializer):
                     if not anns:
                         continue
 
-                    # Secuencia query (opcional, si keep_seq)
-                    seq_query = None
-                    if keep_seq and h5 is not None:
-                        acc_node = f"accession_{acc}"
-                        try:
-                            if acc_node in h5 and "sequence" in h5[acc_node]:
-                                raw_seq = h5[acc_node]["sequence"][()]
-                                seq_query = raw_seq.decode("utf-8") if hasattr(raw_seq, "decode") else str(raw_seq)
-                        except Exception:
-                            seq_query = None
+                    # Secuencia query desde cache/HDF5
+                    seq_query = qseq_cache.get(acc)
+                    if seq_query is None:
+                        seq_query = None
+                        if h5 is not None:
+                            acc_node = f"accession_{acc}"
+                            try:
+                                if acc_node in h5 and "sequence" in h5[acc_node]:
+                                    raw_seq = h5[acc_node]["sequence"][()]
+                                    seq_query = raw_seq.decode("utf-8") if hasattr(raw_seq, "decode") else str(raw_seq)
+                            except Exception as e:
+                                self.logger.debug("store_entry: sequence read failed for %s: %s", acc, e)
+                                seq_query = None
+                        qseq_cache[acc] = seq_query  # cache even if None
+
+                    # Indexado Q (aunque luego no guardemos secuencias en CSV)
+                    q_idx = self._index_sequence(seq_query, 'Q') if seq_query else None
 
                     for ann in anns:
+                        seq_ref = ann.get("sequence")  # desde preload_annotations()
+                        r_idx = self._index_sequence(seq_ref, 'R') if seq_ref else None
+
                         expanded_rows.append({
+                            # Identificación
                             "accession": acc,
-                            "sequence_query": seq_query if keep_seq else None,
-                            "sequence_reference": ann.get("sequence") if keep_seq else None,
+                            "model_name": model_name,
+                            "embedding_type_id": model_id,
+                            "layer_index": li,
+
+                            # Distancia
+                            "distance": d,
+
+                            # GO + meta
                             "go_id": ann["go_id"],
                             "category": ann["category"],
                             "evidence_code": ann["evidence_code"],
                             "go_description": ann["go_description"],
-                            "distance": d,
-                            "model_name": model_name,
-                            "embedding_type_id": model_id,
-                            "layer_index": li,
                             "protein_id": ann["protein_id"],
                             "organism": ann["organism"],
                             "gene_name": ann["gene_name"],
+
+                            # Índices y longitudes
+                            "query_idx": q_idx,
+                            "ref_idx": r_idx,
+                            "query_len": len(seq_query) if seq_query else None,
+                            "ref_len": len(seq_ref) if seq_ref else None,
+
+                            # Secuencias (TEMPORALES para métricas; se eliminan después salvo keep_sequences)
+                            "sequence_query": seq_query,
+                            "sequence_reference": seq_ref,
                         })
 
-                if 'h5' in locals() and h5 is not None:
+                if h5 is not None:
                     try:
                         h5.close()
                     except Exception:
@@ -741,51 +838,79 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 df = pd.DataFrame(expanded_rows)
 
             else:
-                # Legacy: ya vienen expandidas
+                # --------------------------------------------------------------
+                # 1.b) Legacy: ya vienen expandidas; intentamos indexar si hay secuencias
+                # --------------------------------------------------------------
                 df = pd.DataFrame(items)
+                if not df.empty:
+                    # Aseguramos columnas esperadas
+                    for c in ("sequence_query", "sequence_reference"):
+                        if c not in df.columns:
+                            df[c] = None
+
+                    # Indexado en memoria si hay secuencias
+                    q_idx_list, r_idx_list, q_len, r_len = [], [], [], []
+                    for q, r in zip(df["sequence_query"], df["sequence_reference"]):
+                        qi = self._index_sequence(q, 'Q') if isinstance(q, str) and q else None
+                        ri = self._index_sequence(r, 'R') if isinstance(r, str) and r else None
+                        q_idx_list.append(qi)
+                        r_idx_list.append(ri)
+                        q_len.append(len(q) if isinstance(q, str) else None)
+                        r_len.append(len(r) if isinstance(r, str) else None)
+
+                    df["query_idx"] = q_idx_list
+                    df["ref_idx"] = r_idx_list
+                    df["query_len"] = q_len
+                    df["ref_len"] = r_len
 
             if df.empty:
                 self.logger.info("store_entry: dataframe is empty after expansion.")
                 return
 
-            # ---------------------------------------------------------------------
-            #  🔽  BLOQUE INTEGRADO (Polars) — EXACTAMENTE LO QUE PEDISTE  🔽
-            # ---------------------------------------------------------------------
+            # ----------------------------------------------------------------------
+            # 2) Polars: casteos, reliability_index y métricas de alineamiento
+            # ----------------------------------------------------------------------
             pl_df = pl.from_pandas(df).with_columns(
                 pl.col("distance").cast(pl.Float64, strict=False),
                 pl.col("layer_index").cast(pl.Int64, strict=False),
                 pl.col("embedding_type_id").cast(pl.Int64, strict=False),
+                pl.col("query_idx").cast(pl.Int64, strict=False),
+                pl.col("ref_idx").cast(pl.Int64, strict=False),
+                pl.col("query_len").cast(pl.Int64, strict=False),
+                pl.col("ref_len").cast(pl.Int64, strict=False),
             )
 
-            # ---- 2) reliability_index según métrica ----
-            if self.distance_metric == "cosine":  # 1 - cos_sim
+            # reliability_index según métrica
+            if self.distance_metric == "cosine":  # distance = 1 - cos_sim
                 pl_df = pl_df.with_columns((1 - pl.col("distance")).alias("reliability_index"))
             elif self.distance_metric == "euclidean":  # función decreciente suave
                 pl_df = pl_df.with_columns((0.5 / (0.5 + pl.col("distance"))).alias("reliability_index"))
             else:
                 pl_df = pl_df.with_columns((1.0 / (1.0 + pl.col("distance"))).alias("reliability_index"))
 
-            # Métricas de alineamiento (global/local) con compute_metrics
-            have_seq = set(pl_df.columns) >= {"sequence_query", "sequence_reference"}
-            if have_seq:
+            # Métricas de alineamiento si tenemos pares de secuencias
+            have_seq_cols = set(pl_df.columns) >= {"sequence_query", "sequence_reference"}
+            if have_seq_cols:
                 pairs = (
                     pl_df.select(["sequence_query", "sequence_reference", "model_name", "layer_index"])
+                    .drop_nulls(subset=["sequence_query", "sequence_reference"])
                     .unique()
                     .to_dicts()
                 )
                 metrics_list = []
                 if pairs:
-                    with ProcessPoolExecutor(max_workers=int(self.conf.get("store_workers", 4))) as ex:
-                        # compute_metrics: devuelve dict con identity, similarity, alignment_score, gaps_percentage, etc.
-                        metrics_list = list(ex.map(compute_metrics, pairs))  # ya importado arriba
+                    with ProcessPoolExecutor(max_workers=store_workers) as ex:
+                        metrics_list = list(ex.map(compute_metrics, pairs))
                 if metrics_list:
                     met = pl.DataFrame(metrics_list)
                     merge_cols = ["sequence_query", "sequence_reference"]
-                    if "model_name" in met.columns: merge_cols.append("model_name")
-                    if "layer_index" in met.columns: merge_cols.append("layer_index")
+                    if "model_name" in met.columns:
+                        merge_cols.append("model_name")
+                    if "layer_index" in met.columns:
+                        merge_cols.append("layer_index")
                     pl_df = pl_df.join(met, on=merge_cols, how="left")
 
-            # Asegurar numéricos
+            # Casteo robusto de métricas esperadas (si existen)
             for c in (
                     "identity", "similarity", "alignment_score", "gaps_percentage",
                     "identity_sw", "similarity_sw", "alignment_score_sw", "gaps_percentage_sw",
@@ -793,27 +918,23 @@ class EmbeddingLookUp(GPUTaskInitializer):
             ):
                 if c in pl_df.columns:
                     pl_df = pl_df.with_columns(pl.col(c).cast(pl.Float64, strict=False))
-                else:
-                    pl_df = pl_df.with_columns(pl.lit(0.0).alias(c))
 
-            # ---------------------------------------------------------------------
-            #  🔼  FIN BLOQUE INTEGRADO (Polars)  🔼
-            # ---------------------------------------------------------------------
+            # Eliminar secuencias del output salvo que se pida explícitamente
+            if not keep_sequences:
+                pl_df = pl_df.drop([c for c in ("sequence_query", "sequence_reference") if c in pl_df.columns])
 
-            # Volver a pandas para el writer por (modelo, capa)
+            # Añadir metadatos de ejecución (métrica y umbral por modelo)
+            #   - Convertimos a pandas temporalmente y reutilizamos utilidades existentes.
             df = pl_df.to_pandas()
+            df = self._add_metadata_columns(
+                df)  # añade distance_metric y distance_threshold; elimina secuencias si procede
 
-            # Helper para nombre de fichero
-            def _sanitize(name: str) -> str:
-                name = str(name).strip().lower()
-                name = re.sub(r"\s+", "_", name)
-                name = re.sub(r"[^a-z0-9._-]", "_", name)
-                return name or "model"
-
-            # Escritura por (layer_index, model_name)
-            # Escritura jerárquica: raw_results/modelo/layer/proteina.csv
+            # ----------------------------------------------------------------------
+            # 3) Escritura jerárquica por (accession, layer, model)
+            # ----------------------------------------------------------------------
             total_rows = 0
             grouped = df.groupby(["accession", "layer_index", "model_name"], dropna=False)
+
             for (accession, layer_val, model_name), chunk in grouped:
                 model_tag = _sanitize(model_name)
                 acc_tag = _sanitize(accession)
@@ -827,34 +948,37 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 out_path = os.path.join(dir_out, f"{acc_tag}.csv")
 
                 write_header = not os.path.exists(out_path)
-                chunk.to_csv(out_path, mode="a", index=False, header=write_header)
+                float_fmt = f"%.{self.precision}f"
+                chunk.to_csv(
+                    out_path,
+                    mode="a",
+                    index=False,
+                    header=write_header,
+                    float_format=float_fmt
+                )
                 total_rows += len(chunk)
 
                 self.logger.info(
-                    "store_entry: wrote %d rows → %s/%s.csv",
-                    len(chunk), os.path.basename(dir_out), acc_tag
+                    "store_entry: wrote %d rows → %s",
+                    len(chunk), out_path
                 )
 
             models = sorted({str(m) for m in df["model_name"].unique()}) if "model_name" in df else []
             layers = sorted({int(l) for l in df["layer_index"].dropna().unique()}) if "layer_index" in df else [
                 "legacy"]
-            self.logger.info(
-                "store_entry: hierarchical write completed | models=%s | layers=%s | total_rows=%d",
-                models, layers, total_rows
-            )
-
-            self.logger.info(
-                    "store_entry: wrote %d rows → %s (header=%s)",
-                    len(chunk), os.path.basename(out_path), write_header
-                )
-
-            layers = sorted({int(l) for l in df["layer_index"].dropna().unique()}) if "layer_index" in df else [
-                "legacy"]
-            models = sorted({str(m) for m in df["model_name"].unique()}) if "model_name" in df else []
             self.logger.info(
                 "store_entry: per-(model,layer) write completed | models=%s | layers=%s | total_rows=%d",
-                models, layers or ["legacy"], total_rows
+                models or ["-"], layers or ["legacy"], total_rows
             )
+
+            # ----------------------------------------------------------------------
+            # 4) Volcado/actualización del FASTA global (Q*/R*)
+            # ----------------------------------------------------------------------
+            try:
+                fasta_path = self._flush_sequences_fasta()
+                self.logger.info("store_entry: sequences FASTA updated at %s", fasta_path)
+            except Exception as e:
+                self.logger.warning("store_entry: could not write sequences FASTA: %s", e)
 
         except Exception as e:
             self.logger.error("store_entry failed: %s", e, exc_info=True)
@@ -1314,7 +1438,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 if have_weights and item["weighted"]:
                     w_norm = norm(item["w_raw"])
                     wname = f"{weighted_prefix}{item['name']}"
-                    contrib = (item["expr"].fill_null(0.0) * pl.lit(w_norm))
+                    contrib = (item["expr"].fill_null(0.0) * pl.lit(w_norm)).round(self.precision)
                     agg_exprs.append(contrib.alias(wname))
                     out_cols.append(wname)
                     score_terms.append(contrib)
@@ -1341,7 +1465,10 @@ class EmbeddingLookUp(GPUTaskInitializer):
                     pl.col(colname).alias("value")
                 )
 
-            frames = [_stack_one(c) for c in out_cols]
+            frames = [
+                _stack_one(c).with_columns(pl.col("value").cast(pl.Float32))
+                for c in out_cols
+            ]
             long = pl.concat(frames, how="vertical")
             wide = long.pivot(values="value", index=["accession", "go_id"], columns="col")
 
@@ -1354,6 +1481,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
             )
 
             # --- escritura incremental ---
+
             if not summary_path.exists() and i == 0:
                 out_df.write_csv(summary_path)
             else:
@@ -1568,3 +1696,38 @@ class EmbeddingLookUp(GPUTaskInitializer):
 
     def unload_model(self, model_type):
         return
+
+    def _index_sequence(self, seq: str, which: str) -> int | None:
+        """Devuelve el índice estable para la secuencia dada.
+        which: 'Q' para queries/targets, 'R' para references."""
+        if not seq:
+            return None
+        if which == 'Q':
+            if seq in self._q_seq_to_idx:
+                return self._q_seq_to_idx[seq]
+            idx = len(self._q_idx_to_seq)
+            self._q_seq_to_idx[seq] = idx
+            self._q_idx_to_seq.append(seq)
+            return idx
+        elif which == 'R':
+            if seq in self._r_seq_to_idx:
+                return self._r_seq_to_idx[seq]
+            idx = len(self._r_idx_to_seq)
+            self._r_seq_to_idx[seq] = idx
+            self._r_idx_to_seq.append(seq)
+            return idx
+        else:
+            return None
+
+    def _flush_sequences_fasta(self) -> str:
+        """Escribe un único FASTA con todas las secuencias vistas: >Q{idx} y >R{idx}."""
+        os.makedirs(self.experiment_path, exist_ok=True)
+        path = self.sequences_fasta_path
+        with open(path, "w") as f:
+            for i, s in enumerate(self._q_idx_to_seq):
+                f.write(f">Q{i}\n{s}\n")
+            for i, s in enumerate(self._r_idx_to_seq):
+                f.write(f">R{i}\n{s}\n")
+        self.logger.info("Wrote sequences FASTA → %s | Q=%d, R=%d",
+                         path, len(self._q_idx_to_seq), len(self._r_idx_to_seq))
+        return path
