@@ -52,8 +52,8 @@ def run_pipeline(conf):
             conf["embeddings_path"] = conf["input"]
         else:
             embedder = SequenceEmbedder(conf, current_date)
-            logger.info("Running embedding step to generate embeddings.h5...")
-            embedder.start()
+            embedder.start()  # los workers del embedder hacen join dentro del start
+            del embedder  # elimina referencias en el padre
 
             conf["embeddings_path"] = os.path.join(conf["experiment_path"], "embeddings.h5")
 
