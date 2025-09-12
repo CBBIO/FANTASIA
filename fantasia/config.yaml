@@ -105,6 +105,10 @@ lookup:
   lookup_cache_max: 4       # int  | Max entries per (model,layer) in-memory cache (tune to RAM)
   topgo: true                 # bool | If true, emit TopGO-compatible TSV alongside CSV outputs
 
+  precision: 4               # int | Número de decimales a usar en la exportación de resultados.
+
+
+
 
   # Redundancy filtering (optional pre-filter on reference side, e.g., MMseqs2).
   redundancy:
