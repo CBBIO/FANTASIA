@@ -12,10 +12,10 @@ base_directory: ~/fantasia/   # str  | Root working dir: inputs, outputs, caches
 prefix: sample # str | Output prefix (folder & file stem)
 
 limit_execution: 0
-monitor_interval: 5
+monitor_interval: 10
 
 input: data_sample/sample.fasta  # str | Default FASTA (can be overridden via CLI --input)
-only_lookup: True            # bool | If true: skip Stage A (embedding) and run Stage B using existing embeddings.h5
+only_lookup: False            # bool | If true: skip Stage A (embedding) and run Stage B using existing embeddings.h5
 
 # ------------------------------------------------------------------------------
 # Database (PIS: PostgreSQL + pgvector)
@@ -108,7 +108,7 @@ lookup:
 
   # Redundancy filtering (optional pre-filter on reference side, e.g., MMseqs2).
   redundancy:
-    identity: 0.0             # float in [0,1] | 0 disables; 1.0 = 100% identity (strict deduplication)
+    identity: 0             # float in [0,1] | 0 disables; 1.0 = 100% identity (strict deduplication)
     coverage: 0.7             # float in (0,1]  | Alignment coverage threshold used in deduplication
     threads: 10               # int  | CPU threads for redundancy filtering tools
 
