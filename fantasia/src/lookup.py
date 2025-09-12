@@ -569,7 +569,8 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 )
 
             # --- Optional redundancy filter --------------------------------------
-            redundancy = int(self.conf.get("redundancy_filter", 0))
+            redundancy = float(self.conf.get("redundancy_filter", 0))
+            self.logger.info("Redundancy filter active: %s", redundancy)
             redundant_ids: dict[str, set] = {}
             if redundancy > 0:
                 for acc in accessions:
@@ -588,6 +589,11 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 distances_all = dist_matrix[i]
                 ids_all = ids_ref
 
+                self.logger.info(
+                    "Accession %s → cluster members=%s",
+                    accession, list(redundant_ids.get(accession, []))
+                )
+
                 if redundancy > 0 and accession in redundant_ids:
                     mask = ~np.isin(ids_all.astype(str), list(redundant_ids[accession]))
                     distances = distances_all[mask]
@@ -601,9 +607,14 @@ class EmbeddingLookUp(GPUTaskInitializer):
 
                 order = np.argsort(distances)
                 if threshold is None or threshold == 0:
-                    selected = order[:limit]
+                    # usamos todos los vecinos ordenados
+                    order = order
                 else:
-                    selected = order[distances[order] <= float(threshold)][:limit]
+                    # filtramos por umbral de distancia primero
+                    order = order[distances[order] <= float(threshold)]
+
+                # ahora aplicamos el límite después de haber filtrado redundantes y threshold
+                selected = order[:limit]
 
                 total_neighbors += len(selected)
                 li = layer_indices[i]
@@ -800,20 +811,39 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 return name or "model"
 
             # Escritura por (layer_index, model_name)
+            # Escritura jerárquica: raw_results/modelo/layer/proteina.csv
             total_rows = 0
-            grouped = df.groupby(["layer_index", "model_name"], dropna=False)
-            for (layer_val, model_name), chunk in grouped:
+            grouped = df.groupby(["accession", "layer_index", "model_name"], dropna=False)
+            for (accession, layer_val, model_name), chunk in grouped:
                 model_tag = _sanitize(model_name)
+                acc_tag = _sanitize(accession)
+
                 if pd.isna(layer_val):
-                    out_path = os.path.join(self.experiment_path, f"raw_results_{model_tag}_legacy.csv")
+                    dir_out = os.path.join(self.experiment_path, "raw_results", model_tag, "legacy")
                 else:
-                    out_path = os.path.join(self.experiment_path, f"raw_results_{model_tag}_layer_{int(layer_val)}.csv")
+                    dir_out = os.path.join(self.experiment_path, "raw_results", model_tag, f"layer_{int(layer_val)}")
+
+                os.makedirs(dir_out, exist_ok=True)
+                out_path = os.path.join(dir_out, f"{acc_tag}.csv")
 
                 write_header = not os.path.exists(out_path)
                 chunk.to_csv(out_path, mode="a", index=False, header=write_header)
                 total_rows += len(chunk)
 
                 self.logger.info(
+                    "store_entry: wrote %d rows → %s/%s.csv",
+                    len(chunk), os.path.basename(dir_out), acc_tag
+                )
+
+            models = sorted({str(m) for m in df["model_name"].unique()}) if "model_name" in df else []
+            layers = sorted({int(l) for l in df["layer_index"].dropna().unique()}) if "layer_index" in df else [
+                "legacy"]
+            self.logger.info(
+                "store_entry: hierarchical write completed | models=%s | layers=%s | total_rows=%d",
+                models, layers, total_rows
+            )
+
+            self.logger.info(
                     "store_entry: wrote %d rows → %s (header=%s)",
                     len(chunk), os.path.basename(out_path), write_header
                 )
@@ -899,7 +929,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 self.clusters = df
                 self.clusters_by_id = df.set_index("identifier")
                 self.clusters_by_cluster = df.groupby("cluster")["identifier"].apply(set).to_dict()
-
+                df.to_csv(os.path.join(self.experiment_path, "clusters.tsv"), sep="\t", index=False)
                 self.logger.info(f"✅ {len(self.clusters_by_cluster)} clusters loaded from MMseqs2.")
 
         except Exception as e:
@@ -1158,63 +1188,42 @@ class EmbeddingLookUp(GPUTaskInitializer):
     # --- Full post-processing pipeline ----------------------------------------
     def post_processing(self) -> str:
         """
-        Genera summary.csv a partir de raw_results_*.csv con métricas/aggregados configurables,
-        aplica pesos normalizados (suman 1) y añade columnas ponderadas + 'final_score'.
-
-        Notas:
-          - 'count' se normaliza como fracción: count = len(grupo) / self.limit_per_entry.
-          - Si defines peso para "count", se incluye en la normalización (los pesos usados suman 1).
-          - 'final_score' = suma de (agregado * peso_normalizado) sobre todos los términos ponderados.
-        Config soportado en 'postprocess.summary':
-          - metrics: {col: [min, max, mean|avg], ...}
-          - aliases: {col: alias, ...}
-          - include_counts: bool
-          - weights: dict
-              * {metric: {min: w1, mean: w2, max: w3}}
-              * {alias: float}                 -> aplica a min/max/mean
-              * {"<agg>_<alias>": float}       -> p.ej. "max_id_g": 0.3
-              * {"count": float}               -> aplica a count normalizado
-          - weighted_prefix: str  (por defecto "w_")
+        Procesa todos los CSV de raw_results agrupando por proteína (accession).
+        Para cada proteína concatena sus ficheros (todas las capas/modelos),
+        calcula métricas, pesos normalizados y final_score, y escribe en summary.csv
+        de forma incremental.
         """
         from pathlib import Path
         import polars as pl
+        from collections import defaultdict
 
-        base_dir = Path(self.experiment_path)
-        paths = sorted(base_dir.glob("raw_results_*.csv"))
+        base_dir = Path(self.experiment_path) / "raw_results"
+        paths = sorted(base_dir.glob("**/*.csv"))
         if not paths:
-            self.logger.info("No raw_results_*.csv found in %s", base_dir)
+            self.logger.info("No raw_results/*.csv found under %s", base_dir)
             return ""
 
+        # --- Configuración ---
         spec = (self.conf.get("postprocess", {}) or {}).get("summary", {}) or {}
         metrics: dict = spec.get("metrics", {})
         aliases: dict = spec.get("aliases", {})
         include_counts: bool = bool(spec.get("include_counts", True))
-
-        # Pesos (raw) y prefijo
         weights_spec: dict = spec.get("weights", {}) or {}
         weighted_prefix: str = str(spec.get("weighted_prefix", "w_"))
 
-        # k global (limit_per_entry). Fallback a conf
+        # k global
         k = int(getattr(self, "limit_per_entry",
                         self.conf.get("limit_per_entry",
                                       (self.conf.get("lookup", {}) or {}).get("limit_per_entry", 1))) or 1)
         if k <= 0:
             k = 1
 
+        # Funciones auxiliares
         def _norm_fun(f: str) -> str:
             f = (f or "").lower()
             return "mean" if f == "avg" else f
 
         def _weight_for(metric: str, fun: str) -> tuple[float, bool]:
-            """
-            (peso_raw, aplicar?)
-            Busca en este orden:
-              1) "<agg>_<alias>"
-              2) métrica -> número
-              3) alias -> número
-              4) métrica -> {agg: número}
-              5) alias   -> {agg: número}
-            """
             alias = aliases.get(metric, metric)
             fun = _norm_fun(fun)
 
@@ -1231,112 +1240,85 @@ class EmbeddingLookUp(GPUTaskInitializer):
                         for kfun, v in val.items():
                             if _norm_fun(kfun) == fun and isinstance(v, (int, float)):
                                 return float(v), True
-            return 0.0, False  # sin peso
+            return 0.0, False
 
-        # columnas mínimas + métricas pedidas
-        needed = ["accession", "go_id", "model_name", "layer_index", "protein_id"] + list(metrics.keys())
+        summary_path = base_dir.parent / "summary.csv"
 
-        scans = []
+        # --- Agrupar ficheros por accession ---
+        files_by_accession = defaultdict(list)
         for p in paths:
-            lf = pl.scan_csv(p, ignore_errors=True)
-            exprs = []
-            for c in needed:
-                if c in lf.columns:
-                    if c in metrics:
-                        exprs.append(pl.col(c).cast(pl.Float64, strict=False).alias(c))
-                    elif c == "layer_index":
-                        exprs.append(pl.col(c).cast(pl.Int64, strict=False).alias(c))
+            accession = p.stem  # nombre del fichero sin .csv
+            files_by_accession[accession].append(p)
+
+        # --- Procesar proteína a proteína ---
+        for i, (accession, flist) in enumerate(files_by_accession.items()):
+            dfs = [pl.read_csv(f, ignore_errors=True) for f in flist]
+            df = pl.concat(dfs, how="vertical_relaxed")
+
+            if df.is_empty():
+                continue
+
+            # --- info por término ---
+            per_term = (
+                df.group_by(["accession", "go_id"])
+                .agg([
+                    pl.len().alias("term_count"),
+                    pl.col("protein_id").cast(pl.Utf8, strict=False).unique().alias("proteins_list"),
+                ])
+            )
+
+            group_keys = ["accession", "go_id", "model_name", "layer_index"]
+
+            # --- agregados con pesos ---
+            agg_items = []
+            base_names = []
+            for col, funs in metrics.items():
+                alias = aliases.get(col, col)
+                for f in funs:
+                    f = _norm_fun(f)
+                    if f == "min":
+                        expr = pl.col(col).min()
+                    elif f == "max":
+                        expr = pl.col(col).max()
+                    elif f == "mean":
+                        expr = pl.col(col).mean()
                     else:
-                        exprs.append(pl.col(c))
-                else:
-                    if c in metrics:
-                        exprs.append(pl.lit(None).cast(pl.Float64).alias(c))
-                    elif c == "layer_index":
-                        exprs.append(pl.lit(None).cast(pl.Int64).alias(c))
-                    else:
-                        exprs.append(pl.lit(None).alias(c))
-            scans.append(lf.select(exprs))
+                        continue
+                    name = f"{f}_{alias}"
+                    w_raw, apply = _weight_for(col, f)
+                    agg_items.append({"name": name, "expr": expr, "w_raw": w_raw, "weighted": apply})
+                    base_names.append(name)
 
-        df = pl.concat(scans, how="vertical").collect()
-        if df.is_empty():
-            self.logger.info("Empty dataframe after reading raw results.")
-            return ""
+            # count normalizado
+            if include_counts:
+                cnt_expr = (pl.len().cast(pl.Float64) / pl.lit(float(k)))
+                cw = weights_spec.get("count", None)
+                apply_c = isinstance(cw, (int, float))
+                agg_items.append({"name": "count", "expr": cnt_expr,
+                                  "w_raw": float(cw) if apply_c else 0.0, "weighted": apply_c})
+                base_names.append("count")
 
-        # info por término
-        per_term = (
-            df.group_by(["accession", "go_id"])
-            .agg([
-                pl.len().alias("term_count"),
-                pl.col("protein_id").cast(pl.Utf8, strict=False).unique().alias("proteins_list"),
-            ])
-        )
+            # normalización de pesos
+            total_w = sum(item["w_raw"] for item in agg_items if item["weighted"])
+            norm = (lambda w: (w / total_w) if total_w > 0 else 0.0)
+            have_weights = total_w > 0.0
 
-        # agregados por (modelo, capa)
-        group_keys = ["accession", "go_id", "model_name", "layer_index"]
+            # construir expresiones
+            agg_exprs = []
+            score_terms = []
+            out_cols = []
 
-        # Primera pasada: definimos todos los agregados y recogemos pesos RAW
-        agg_items = []  # lista de dicts: {"name": str, "expr": Expr, "w_raw": float, "weighted": bool}
-        base_names = []  # para stacking
-        for col, funs in metrics.items():
-            alias = aliases.get(col, col)
-            for f in funs:
-                f = _norm_fun(f)
-                if f == "min":
-                    expr = pl.col(col).min()
-                elif f == "max":
-                    expr = pl.col(col).max()
-                elif f == "mean":
-                    expr = pl.col(col).mean()
-                else:
-                    continue
-                name = f"{f}_{alias}"
-                w_raw, apply = _weight_for(col, f)
-                agg_items.append({"name": name, "expr": expr, "w_raw": float(w_raw), "weighted": bool(apply)})
-                base_names.append(name)
-
-        # count normalizado (si procede)
-        count_name = None
-        count_item = None
-        if include_counts:
-            cnt_expr = (pl.len().cast(pl.Float64) / pl.lit(float(k)))
-            count_name = "count"
-            cw = weights_spec.get("count", None)
-            apply_c = isinstance(cw, (int, float))
-            count_item = {"name": count_name, "expr": cnt_expr, "w_raw": float(cw) if apply_c else 0.0,
-                          "weighted": apply_c}
-            base_names.append(count_name)
-            agg_items.append(count_item)
-
-        # Normalización de pesos (solo sobre los que realmente se aplican)
-        total_w = sum(item["w_raw"] for item in agg_items if item["weighted"])
-        # Si no hay pesos definidos, no habrá columnas ponderadas ni final_score (queda en None)
-        have_weights = total_w > 0.0
-        # Evita divisiones raras
-        norm = (lambda w: (w / total_w) if total_w > 0 else 0.0)
-
-        # Segunda pasada: construir expresiones a agregar (base + ponderadas normalizadas + final_score)
-        agg_exprs = []
-        out_cols = []  # columnas a apilar/pivotar
-        score_terms = []  # contribuciones para final_score
-
-        # Añadimos todas las columnas base
-        for item in agg_items:
-            agg_exprs.append(item["expr"].alias(item["name"]))
-            out_cols.append(item["name"])
-
-        # Añadimos versiones ponderadas (con pesos ya normalizados) y vamos sumando para final_score
-        if have_weights:
             for item in agg_items:
-                if item["weighted"]:
+                agg_exprs.append(item["expr"].alias(item["name"]))
+                out_cols.append(item["name"])
+                if have_weights and item["weighted"]:
                     w_norm = norm(item["w_raw"])
                     wname = f"{weighted_prefix}{item['name']}"
-                    # fill_null(0) para que NaN no anule la suma
                     contrib = (item["expr"].fill_null(0.0) * pl.lit(w_norm))
                     agg_exprs.append(contrib.alias(wname))
                     out_cols.append(wname)
                     score_terms.append(contrib)
 
-            # final_score como suma de contribuciones
             if score_terms:
                 final_expr = score_terms[0]
                 for e in score_terms[1:]:
@@ -1344,35 +1326,43 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 agg_exprs.append(final_expr.alias("final_score"))
                 out_cols.append("final_score")
 
-        stats = df.group_by(group_keys).agg(agg_exprs)
+            stats = df.group_by(group_keys).agg(agg_exprs)
 
-        # pasa a formato largo con etiquetas <col>_<model>_L<layer>
-        def _stack_one(colname: str) -> pl.DataFrame:
-            return stats.select(
-                pl.col("accession"),
-                pl.col("go_id"),
-                pl.concat_str([
-                    pl.lit(colname), pl.lit("_"),
-                    pl.col("model_name"), pl.lit("_L"),
-                    pl.coalesce([pl.col("layer_index").cast(pl.Utf8), pl.lit("legacy")])
-                ]).alias("col"),
-                pl.col(colname).alias("value")
+            # pasa a formato largo → ancho
+            def _stack_one(colname: str) -> pl.DataFrame:
+                return stats.select(
+                    pl.col("accession"),
+                    pl.col("go_id"),
+                    pl.concat_str([
+                        pl.lit(colname), pl.lit("_"),
+                        pl.col("model_name"), pl.lit("_L"),
+                        pl.coalesce([pl.col("layer_index").cast(pl.Utf8), pl.lit("legacy")])
+                    ]).alias("col"),
+                    pl.col(colname).alias("value")
+                )
+
+            frames = [_stack_one(c) for c in out_cols]
+            long = pl.concat(frames, how="vertical")
+            wide = long.pivot(values="value", index=["accession", "go_id"], columns="col")
+
+            out_df = (
+                per_term
+                .join(wide, on=["accession", "go_id"], how="left")
+                .with_columns(pl.col("proteins_list").list.join("|").alias("proteins"))
+                .drop("proteins_list")
+                .sort(["accession", "go_id"])
             )
 
-        frames = [_stack_one(c) for c in out_cols]
-        long = pl.concat(frames, how="vertical")
-        wide = long.pivot(values="value", index=["accession", "go_id"], columns="col")
+            # --- escritura incremental ---
+            if not summary_path.exists() and i == 0:
+                out_df.write_csv(summary_path)
+            else:
+                with open(summary_path, "a") as f:
+                    out_df.write_csv(f, include_header=False)
 
-        out_df = (
-            per_term
-            .join(wide, on=["accession", "go_id"], how="left")
-            .with_columns(pl.col("proteins_list").list.join("|").alias("proteins"))
-            .drop("proteins_list")
-            .sort(["accession", "go_id"])
-        )
+            self.logger.info("post_processing: processed accession %s → %d rows",
+                             accession, out_df.height)
 
-        summary_path = base_dir / "summary.csv"
-        out_df.write_csv(summary_path)
         self.logger.info("Wrote summary → %s", summary_path)
         return str(summary_path)
 
