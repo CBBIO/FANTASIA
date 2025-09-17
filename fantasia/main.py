@@ -96,79 +96,148 @@ def setup_experiment_directories(conf, timestamp):
 
 def load_and_merge_config(args, unknown_args):
     """
-    Loads the base configuration from YAML and applies any overrides provided via CLI arguments.
+    Load the base configuration from YAML and apply CLI overrides, normalizing the
+    structure expected by the pipeline.
 
-    This function ensures that any parameters passed through standard arguments or unknown
-    arguments (parsed as key-value pairs) override those defined in the configuration file.
+    This function:
+      1) Loads the YAML configuration specified by --config.
+      2) Applies known CLI arguments and unknown key-value pairs (e.g., "--foo bar")
+         as overrides on top of the YAML.
+      3) Maps select CLI flags to their canonical nested locations in the configuration:
+         - --device                      → embedding.device
+         - --redundancy_identity|--redundancy_filter  → lookup.redundancy.identity (+ flat compatibility)
+         - --redundancy_coverage|--alignment_coverage → lookup.redundancy.coverage (+ flat compatibility)
+         - --threads                     → lookup.redundancy.threads (+ flat compatibility)
+         - taxonomy filters              → lookup.taxonomy.{exclude,include_only,get_descendants}
+      4) Sanitizes taxonomy ID lists so they are always lists of numeric strings.
+      5) Restores legacy support for components that rely on `embedding.types`
+         (the list of enabled model names in YAML).
+      6) Performs early validations for redundancy thresholds.
 
-    Additionally, it restores legacy support for systems that rely on the presence of the
-    `embedding.types` field, which lists all embedding model identifiers enabled for the run.
+    Notes
+    -----
+    * **Model selection and per-model settings are YAML-only.** This function does not
+      enable/disable models from the CLI, nor does it accept per-model batch sizes,
+      thresholds, or layer indices.
+    * Redundancy settings are accepted from CLI and mirrored in both nested
+      `lookup.redundancy.*` and flat keys for backward compatibility with consumers
+      that read either form.
 
     Parameters
     ----------
-    args : Namespace
-        Parsed known arguments from argparse.
-    unknown_args : list of str
-        List of unknown CLI arguments in the format --key value.
+    args : argparse.Namespace
+        Known arguments parsed by argparse.
+    unknown_args : list[str]
+        Extra CLI arguments in the form ["--key", "value", ...] that are parsed into
+        key-value pairs (using the project helper).
 
     Returns
     -------
     dict
-        A merged and final configuration dictionary.
+        The merged, normalized configuration dictionary ready for the pipeline.
+
+    Raises
+    ------
+    ValueError
+        If redundancy thresholds are out of range or taxonomy lists have invalid formats.
     """
+    # Load base YAML
     conf = read_yaml_config(args.config)
 
+    # 1) Merge known CLI args as flat overrides (except control keys)
     for key, value in vars(args).items():
-        if value is not None and key not in ["command", "config"]:
+        if value is not None and key not in ("command", "config"):
             conf[key] = value
 
+    # 2) Merge unknown --k v pairs as flat overrides
     unknown_args_dict = parse_unknown_args(unknown_args)
     for key, value in unknown_args_dict.items():
         if value is not None:
             conf[key] = value
 
-    # ✅ Legacy compatibility: populate embedding.types with enabled model names
-    # This list is used by some components (e.g., GPU task schedulers)
-    conf.setdefault("embedding", {})
-    conf["embedding"]["types"] = [
-        model for model, settings in conf["embedding"].get("models", {}).items()
-        if settings.get("enabled", False)
-    ]
+    # 3) Canonical mappings (mirror CLI flags into nested structure expected downstream)
+    # 3.1 Device → embedding.device (also keep flat 'device' for any legacy consumer)
+    if conf.get("device") is not None:
+        emb = conf.setdefault("embedding", {})
+        emb["device"] = conf["device"]  # "cpu" | "cuda"
 
+    # 3.2 Redundancy thresholds and threads → lookup.redundancy.*
+    #     Keep flat duplicates for compatibility with components that read flat keys.
+    ri = conf.get("redundancy_filter")      # identity in [0, 1]; 0 disables
+    rc = conf.get("alignment_coverage")     # coverage in (0, 1]
+    th = conf.get("threads")                # MMseqs2 threads
+
+    if any(v is not None for v in (ri, rc, th)):
+        lk = conf.setdefault("lookup", {})
+        r = lk.setdefault("redundancy", {})
+        if ri is not None:
+            r["identity"] = float(ri)
+        if rc is not None:
+            r["coverage"] = float(rc)
+        if th is not None:
+            r["threads"] = int(th)
+
+    # 3.3 Taxonomy filters → lookup.taxonomy.{exclude, include_only, get_descendants}
+    tx_ex = conf.get("taxonomy_ids_to_exclude")
+    tx_in = conf.get("taxonomy_ids_included_exclusively")
+    tx_desc = conf.get("get_descendants")
+
+    if any(v not in (None, [], "") for v in (tx_ex, tx_in, tx_desc)):
+        lk = conf.setdefault("lookup", {})
+        t = lk.setdefault("taxonomy", {})
+        if tx_ex not in (None, []):
+            t["exclude"] = tx_ex
+        if tx_in not in (None, []):
+            t["include_only"] = tx_in
+        if tx_desc is not None:
+            # Accept truthy/falsy shapes; coerce to bool
+            t["get_descendants"] = bool(tx_desc)
+
+    # 4) Sanitize taxonomy lists (always list[str] of digits like ["559292", "6239"])
     import re
 
-    def sanitize_taxonomy_lists(conf):
-        """
-        Ensures taxonomy ID fields are always lists of numeric strings (e.g., ["559292", "6239"]).
-        Accepts input as list or single string, with space/comma/mixed separators.
-        """
-        for key in ["taxonomy_ids_to_exclude", "taxonomy_ids_included_exclusively"]:
-            val = conf.get(key)
-
+    def _sanitize_taxonomy_lists(cfg: dict) -> None:
+        keys = ("taxonomy_ids_to_exclude", "taxonomy_ids_included_exclusively")
+        for k in keys:
+            val = cfg.get(k)
             if isinstance(val, list):
-                # Asegura que todos los elementos sean strings de dígitos
                 cleaned = []
                 for item in val:
-                    if isinstance(item, str):
-                        tokens = re.split(r"[,\s]+", item.strip())
-                        cleaned.extend(t for t in tokens if t.isdigit())
-                    elif isinstance(item, int):
+                    if isinstance(item, int):
                         cleaned.append(str(item))
-                conf[key] = cleaned
-
+                    elif isinstance(item, str):
+                        tokens = re.split(r"[,\s]+", item.strip())
+                        cleaned.extend(tok for tok in tokens if tok.isdigit())
+                cfg[k] = cleaned
             elif isinstance(val, str):
-                # Soporta separadores por espacio, coma o mezcla
-                conf[key] = [t for t in re.split(r"[,\s]+", val.strip()) if t.isdigit()]
-
-            elif val is None or val is False:
-                conf[key] = []
-
+                cfg[k] = [tok for tok in re.split(r"[,\s]+", val.strip()) if tok.isdigit()]
+            elif val in (None, False):
+                cfg[k] = []
             else:
-                raise ValueError(f"Invalid format for {key}: expected list, string, or None.")
+                raise ValueError(f"Invalid format for {k}: expected list, string, or None; got {type(val).__name__}.")
 
-    sanitize_taxonomy_lists(conf)
+    _sanitize_taxonomy_lists(conf)
+
+    # 5) Legacy compatibility: populate embedding.types with names of enabled models (YAML-only)
+    conf.setdefault("embedding", {})
+    conf["embedding"]["types"] = [
+        name for name, settings in conf["embedding"].get("models", {}).items()
+        if isinstance(settings, dict) and settings.get("enabled", False)
+    ]
+
+    # 6) Early validations for redundancy thresholds (if supplied)
+    if ri is not None:
+        iri = float(ri)
+        if not (0.0 <= iri <= 1.0):
+            raise ValueError("redundancy_filter / redundancy_identity must be in [0, 1].")
+
+    if rc is not None:
+        irc = float(rc)
+        if not (0.0 < irc <= 1.0):
+            raise ValueError("alignment_coverage / redundancy_coverage must be in (0, 1].")
 
     return conf
+
 
 
 def main():
