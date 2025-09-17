@@ -7,4 +7,4 @@ exclude =
     poetryenv,
     .env
 max-line-length = 180
-ignore = E402, W504
+ignore = E402, W504, E126
