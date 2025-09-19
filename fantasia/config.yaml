@@ -59,35 +59,36 @@ embedding:
   # batch_size: PLM forward batch size (beware of VRAM limits).
   # layer_index: list[int] of layers to export; use multiple to materialize several layers into HDF5.
   models:
-    ESM:
-      enabled: true
+    ESM: # 34 capas: 0..33
+      enabled: True
       batch_size: 1
-      layer_index: [ 16, 24, 28, 33 ]
+      layer_index: [ 0, 1, 2, 16, 17, 18 ]
       distance_threshold: 0
 
-    ESM3c:
-      enabled: true
+    ESM3c: # 36 capas: 0..35
+      enabled: True
       batch_size: 1
-      layer_index: [ 18,24,30,35 ]
+      layer_index: [ 0, 1, 2, 17, 18, 19 ]
       distance_threshold: 0
 
-    Ankh3-Large:
-      enabled: true
+    Ankh3-Large: # 49 capas: 0..48
+      enabled: True
       batch_size: 1
-      layer_index: [ 24,32,40,48 ]
+      layer_index: [ 0, 1, 2, 23, 24, 25 ]
       distance_threshold: 0
 
-    Prot-T5:
-      enabled: true
+    Prot-T5: # 25 capas: 0..24
+      enabled: True
       batch_size: 1
-      layer_index: [ 12,16,20,24 ]
+      layer_index: [ 0, 1, 2, 11, 12, 13 ]
       distance_threshold: 0
 
-    Prost-T5:
-      enabled: true
+    Prost-T5: # 25 capas: 0..24 (mismo backbone que Prot-T5)
+      enabled: True
       batch_size: 1
-      layer_index: [ 12,16,20,24 ]
+      layer_index: [ 0, 1, 2, 11, 12, 13 ]
       distance_threshold: 0
+
 
 # HDF5 on-disk layout (for reference; produced by Stage A):
 # /accession_<id>/type_<embedding_type_id>/layer_<k>/embedding
@@ -118,7 +119,7 @@ lookup:
 
   # Taxonomy filters (applied after NN retrieval to prune/keep specific taxa).
   taxonomy:
-    exclude: [ "559292" ]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
+    exclude: [ ]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
     include_only: [ ]          # list[str] | If non-empty, restrict results to these IDs (takes precedence)
     get_descendants: false    # bool | If true, expand filters to include descendants
 
@@ -144,13 +145,13 @@ postprocess:
 
     weights:
       # 1) Por métrica y función:
-      reliability_index: { max: 0.6 }
+      reliability_index: { max: 0.3 }
       # 2) Por métrica/alias con un único número (aplica a min/max/mean):
-      max_id_g: 0.2
+      max_id_g: 0.25
       # 3) Por nombre de salida (agg + alias):
-      max_id_l: 0.3
+      max_id_l: 0.25
       # Opcional: también puedes ponderar el count
-      count: 0.3
+      count: 0.2
     # Prefijo para las columnas ponderadas (opcional; por defecto "w_")
     weighted_prefix: "w_"
 
