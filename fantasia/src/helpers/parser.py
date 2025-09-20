@@ -66,11 +66,22 @@ def build_parser():
         ),
         epilog=(
             "Examples:\n"
+            "  Initialize with default from YAML (Final layer only)\n"
             "  fantasia initialize --config ./fantasia/config.yaml\n"
+            "\n"
+            "  Explicitly use Final layer only (smaller, faster)\n"
             "  fantasia initialize --config ./fantasia/config.yaml \\\n"
-            "    --embeddings_url https://zenodo.org/records/15705162/files/PIS_2025_ankh_exp.dump?download=1\n"
+            "    --embeddings_url https://zenodo.org/records/17167843/files/"
+            "FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1\n"
+            "\n"
+            "  Explicitly use Final + intermediate layers (larger, more detailed)\n"
+            "  fantasia initialize --config ./fantasia/config.yaml \\\n"
+            "    --embeddings_url https://zenodo.org/records/17151847/files/"
+            "FANTASIA_UniProt_Sep2025_Final+Interm_ExpOnly.dump?download=1\n"
         ),
+
     )
+
 
     init.add_argument(
         "--config",
