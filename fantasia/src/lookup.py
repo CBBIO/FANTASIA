@@ -1989,7 +1989,8 @@ class EmbeddingLookUp(GPUTaskInitializer):
 
                 chunk_out = chunk[["accession", "go_id", "reliability_index"]].drop_duplicates()
                 chunk_out = chunk_out.rename(columns={"go_id": "go_term"})
-                chunk_out.to_csv(out_path, sep="\t", index=False, header=False)
+                chunk_out.to_csv(out_path, sep="\t", index=False, header=False,
+                                 mode="a")
 
                 self.logger.info("export_topgo: wrote %d rows → %s", len(chunk_out), out_path)
 
