@@ -9,12 +9,12 @@
 log_path: ~/fantasia/logs/    # str  | Directory for pipeline logs (will be created if missing)
 constants: ./fantasia/constants.yaml # str  | Directory for constants
 base_directory: ~/fantasia/   # str  | Root working dir: inputs, outputs, caches, temp live here
-prefix: sample # str | Output prefix (folder & file stem)
+prefix: ana23sept # str | Output prefix (folder & file stem)
 
 limit_execution: 0
 monitor_interval: 10
 
-input: data_sample/sample.fasta  # str | Default FASTA (can be overridden via CLI --input)
+input: data_sample/ana23sept.fasta  # str | Default FASTA (can be overridden via CLI --input)
 only_lookup: False            # bool | If true: skip Stage A (embedding) and run Stage B using existing embeddings.h5
 
 # ------------------------------------------------------------------------------
