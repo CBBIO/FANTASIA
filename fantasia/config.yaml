@@ -68,32 +68,36 @@ embedding:
   # enabled: if false, model is ignored at runtime.
   # batch_size: PLM forward batch size (beware of VRAM limits).
   # layer_index: list[int] of layers to export; use multiple to materialize several layers into HDF5.
+  # LAYER INDEXING NOTE: 0 = last (output) layer, 1 = penultimate, 2 = second-to-last, and so on.
+
+  # If you use multiple layers, make sure the reference set database has been initialized with those layers.
+
   models:
-    ESM: # 34 capas: 0..33
+    ESM: # 34 layers: 0..33
       enabled: True
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: 0
 
-    ESM3c: # 36 capas: 0..35
+    ESM3c: # 36 layers: 0..35
       enabled: True
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: 0
 
-    Ankh3-Large: # 49 capas: 0..48
+    Ankh3-Large: # 49 layers: 0..48
       enabled: True
       batch_size: 1
       layer_index: [ 0]
       distance_threshold: 0
 
-    Prot-T5: # 25 capas: 0..24
+    Prot-T5: # 25 layers: 0..24
       enabled: True
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: 0
 
-    Prost-T5: # 25 capas: 0..24 (mismo backbone que Prot-T5)
+    Prost-T5: # 25 layers: 0..24 (same backbone as Prot-T5)
       enabled: True
       batch_size: 1
       layer_index: [ 0]
@@ -113,7 +117,7 @@ lookup:
   batch_size: 516            # int  | Vector distance batch size (tune to GPU memory)
   distance_metric: cosine     # enum{cosine,euclidean} | Distance for nearest-neighbor search
   limit_per_entry: 5          # int  | k neighbors returned per query (a.k.a. “k”)
-  lookup_cache_max: 4       # int  | Max entries per (model,layer) in-memory cache (tune to RAM)
+  lookup_cache_max: 6       # int  | Max entries per (model,layer) in-memory cache (tune to RAM)
   topgo: true                 # bool | If true, emit TopGO-compatible TSV alongside CSV outputs
 
   precision: 4               # int | Número de decimales a usar en la exportación de resultados.
@@ -142,10 +146,10 @@ postprocess:
   keep_sequences: true
   summary:
     include_counts: true
-    normalize_count_by_limit_per_entry: true   # por defecto True si lo omites abajo
-    export_raw_count: true                    # ponlo a true si quieres "count_raw"
+    normalize_count_by_limit_per_entry: true   # defaults to True if omitted below
+    export_raw_count: true                     # set to true if you want "count_raw"
     metrics:
-      reliability_index: [ min, max, mean ]
+      reliability_index: [ max ]
       identity: [ min, max, mean ]
       identity_sw: [ min, max, mean ]
     aliases:
@@ -154,16 +158,18 @@ postprocess:
       identity_sw: id_l
 
     weights:
-      # 1) Por métrica y función:
-      reliability_index: { max: 1 }
-      # 2) Por métrica/alias con un único número (aplica a min/max/mean):
-#      max_id_g: 0.25
-      # 3) Por nombre de salida (agg + alias):
-#      max_id_l: 0.25
-      # Opcional: también puedes ponderar el count
-#      count: 0.2
-    # Prefijo para las columnas ponderadas (opcional; por defecto "w_")
+      # 1) By metric and aggregation function:
+      reliability_index: { max: 0.4 }
+      # 2) By metric/alias with a single number (applies to min/max/mean):
+      max_id_g: 0.20
+      # 3) By full output name (agg + alias):
+      max_id_l: 0.20
+      # Optional: you can also weight the count
+      count: 0.2
+
+    # Prefix for weighted columns (optional; defaults to "w_")
     weighted_prefix: "w_"
+
 
 
 # ------------------------------------------------------------------------------
