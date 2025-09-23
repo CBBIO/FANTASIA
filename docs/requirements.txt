@@ -3,3 +3,4 @@ sphinx-copybutton
 furo
 sphinx_copybutton
 sphinx_design
+sphinx-shibuya
