@@ -140,7 +140,7 @@ lookup:
 
 # ------------------------------------------------------------------------------
 # Post-processing
-# Scoring/collapsing to GO leaf terms, reliability index derivation, model/layer consolidation.
+# Scoring, collapsing, reliability index derivation, model/layer consolidation.
 # ------------------------------------------------------------------------------
 postprocess:
   keep_sequences: true

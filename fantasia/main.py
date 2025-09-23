@@ -163,9 +163,9 @@ def load_and_merge_config(args, unknown_args):
 
     # 3.2 Redundancy thresholds and threads → lookup.redundancy.*
     #     Keep flat duplicates for compatibility with components that read flat keys.
-    ri = conf.get("redundancy_filter")      # identity in [0, 1]; 0 disables
-    rc = conf.get("alignment_coverage")     # coverage in (0, 1]
-    th = conf.get("threads")                # MMseqs2 threads
+    ri = conf.get("redundancy_filter")  # identity in [0, 1]; 0 disables
+    rc = conf.get("alignment_coverage")  # coverage in (0, 1]
+    th = conf.get("threads")  # MMseqs2 threads
 
     if any(v is not None for v in (ri, rc, th)):
         lk = conf.setdefault("lookup", {})
@@ -237,7 +237,6 @@ def load_and_merge_config(args, unknown_args):
             raise ValueError("alignment_coverage / redundancy_coverage must be in (0, 1].")
 
     return conf
-
 
 
 def main():

@@ -82,7 +82,6 @@ def build_parser():
 
     )
 
-
     init.add_argument(
         "--config",
         type=str,
