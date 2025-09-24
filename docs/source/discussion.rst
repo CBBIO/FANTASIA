@@ -27,8 +27,7 @@ To follow the trace of this research, it is important to stay up to date with
 the recent joint publications from the **Metazoa Phylogenomics Lab, Institut de
 Biologia Evolutiva (IBE-CSIC/UPF)** and the **Computational Biology and
 Bioinformatics Group (CABD)**. These collaborations highlight advances in the
-application of PLMs, semantic similarity, and filtering strategies, which are
-directly aligned with the development of FANTASIA.
+application of PLMs.
 
 The inclusion of multiple hidden layers is expected to yield better overall
 performance and provide deeper insights into how PLMs capture evolutive and functional
