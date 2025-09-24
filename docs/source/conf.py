@@ -45,7 +45,12 @@ html_theme_options = {
     "dark_logo": "_static/FANTASIA.png",
 }
 
-autodoc_mock_imports = ["yaml", "h5py"]
+autodoc_mock_imports = [
+    "yaml", "h5py",
+    "Bio", "numpy", "protein_information_system",
+    "torch", "pandas", "sklearn", "scipy",
+]
+
 
 
 
