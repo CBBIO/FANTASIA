@@ -2,5 +2,5 @@ sphinx_rtd_theme
 sphinx-copybutton
 furo
 sphinx_copybutton
-sphinx_design
 shibuya
+sphinx-design
