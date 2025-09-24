@@ -1,6 +1,6 @@
 """
-EmbeddingLookUp — protein functional annotation via embedding similarity
-=======================================================================
+Embedding LookUp Module
+========================================================================
 
 Overview
 --------

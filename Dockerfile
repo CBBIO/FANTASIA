@@ -9,13 +9,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg \
     lsb-release \
     ca-certificates \
-    && echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
-    && wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        postgresql-client-16 \
-        mmseqs2 \
-    && rm -rf /var/lib/apt/lists/*
+    mmseqs2
+
+# Install PostgreSQL client 16
+RUN apt-get update && \
+    apt-get install -y wget gnupg lsb-release && \
+    sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list' && \
+    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgres.gpg && \
+    apt-get update && \
+    apt-get install -y postgresql-client-16 && \
+    rm -rf /var/lib/apt/lists/*
 
 
 # Install Poetry
@@ -26,7 +29,7 @@ RUN pip install "poetry==$POETRY_VERSION"
 WORKDIR /app
 
 # Copy project metadata
-COPY pyproject.toml poetry.lock ./
+COPY pyproject.toml ./
 
 # Primero copia
 COPY . .

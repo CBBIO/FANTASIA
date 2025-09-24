@@ -1,3 +1,32 @@
+"""
+=================================
+Main execution module
+=================================
+
+This module serves as the primary entry point for the **FANTASIA** system within
+the *Protein Information System (PIS)*. It orchestrates the end-to-end workflow,
+from initializing the reference embeddings database to running the functional
+annotation pipeline.
+
+Main Functions
+--------------
+
+- **initialize**: Downloads the reference embeddings and loads them into the database.
+- **run_pipeline**: Executes the main FANTASIA pipeline, including sequence embedding
+  and subsequent database lookup.
+- **setup_experiment_directories**: Manages directory creation and experiment-specific
+  configuration files.
+- **load_and_merge_config**: Loads the base YAML configuration, applies CLI overrides,
+  ensures backward compatibility, and performs early validation checks.
+- **main**: CLI entry point that parses arguments, initializes logging, validates
+  services, and dispatches subcommands.
+
+Notes
+-----
+* Designed for CLI usage through the ``initialize`` and ``run`` subcommands.
+* Configuration is driven by YAML files and command-line arguments.
+"""
+
 import warnings
 
 warnings.filterwarnings("ignore", category=SyntaxWarning)  # noqa: E402
@@ -24,6 +53,35 @@ from fantasia.src.helpers.parser import build_parser
 
 
 def initialize(conf):
+    """
+    Initialize the FANTASIA environment by downloading and loading reference embeddings.
+
+    This function:
+
+      1. Creates the embeddings directory if it does not exist.
+      2. Downloads the reference embeddings archive from the configured URL.
+      3. Loads the extracted embeddings into the database for subsequent lookup.
+
+    Parameters
+    ----------
+    conf : dict
+        Configuration dictionary. Must contain:
+
+        - ``base_directory`` (str): Base directory where embeddings and experiments are stored.
+        - ``embeddings_url`` (str): URL of the reference embeddings archive to be downloaded.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    FileNotFoundError
+        If the embeddings archive cannot be found or accessed after download.
+    RuntimeError
+        If loading the embeddings into the database fails.
+    """
+
     logger = logging.getLogger("fantasia")
     embeddings_dir = os.path.join(os.path.expanduser(conf["base_directory"]), "embeddings")
     os.makedirs(embeddings_dir, exist_ok=True)
@@ -40,6 +98,41 @@ def initialize(conf):
 
 
 def run_pipeline(conf):
+    """
+    Execute the main FANTASIA pipeline.
+
+    This function coordinates the entire functional annotation workflow:
+
+      1. Prepares experiment directories and saves the configuration.
+      2. Runs the embedding step unless ``only_lookup`` is enabled.
+      3. Validates that the embeddings file has been generated.
+      4. Performs database lookup using the generated or provided embeddings.
+
+    Parameters
+    ----------
+    conf : dict
+        Configuration dictionary. Must include:
+
+        - ``base_directory`` (str): Root path for storing experiments.
+        - ``only_lookup`` (bool): If True, skip embedding and use provided input file.
+        - ``input`` (str, optional): Path to an existing HDF5 embeddings file (required if
+          ``only_lookup`` is True).
+        - Other pipeline settings required by embedding and lookup components.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    FileNotFoundError
+        If the embeddings file is missing after the embedding step.
+    SystemExit
+        If a fatal error occurs during pipeline execution.
+    Exception
+        For any other unexpected runtime errors.
+    """
+
     logger = logging.getLogger("fantasia")
     try:
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -75,6 +168,40 @@ def run_pipeline(conf):
 
 
 def setup_experiment_directories(conf, timestamp):
+    """
+    Prepare and configure directories for a new experiment.
+
+    This function:
+
+      1. Expands the base directory and ensures an ``experiments`` folder exists.
+      2. Creates a unique experiment directory using the provided timestamp.
+      3. Stores the experiment configuration into ``experiment_config.yaml``.
+      4. Updates the configuration dictionary with the generated experiment path.
+
+    Parameters
+    ----------
+    conf : dict
+        Configuration dictionary containing at least:
+
+        - ``base_directory`` (str, optional): Root path for experiments.
+          Defaults to ``~/fantasia/`` if not provided.
+        - ``prefix`` (str, optional): Prefix for experiment naming. Defaults to ``experiment``.
+
+    timestamp : str
+        Unique identifier (usually ``YYYYMMDDHHMMSS``) appended to the experiment name.
+
+    Returns
+    -------
+    dict
+        Updated configuration dictionary including the key:
+        - ``experiment_path`` (str): Path to the newly created experiment directory.
+
+    Raises
+    ------
+    OSError
+        If the experiment directory or configuration file cannot be created.
+    """
+
     logger = logging.getLogger("fantasia")
     base_directory = os.path.expanduser(conf.get("base_directory", "~/fantasia/"))
     experiments_dir = os.path.join(base_directory, "experiments")
@@ -96,51 +223,49 @@ def setup_experiment_directories(conf, timestamp):
 
 def load_and_merge_config(args, unknown_args):
     """
-    Load the base configuration from YAML and apply CLI overrides, normalizing the
-    structure expected by the pipeline.
+    Load the base YAML configuration and apply CLI overrides.
 
-    This function:
-      1) Loads the YAML configuration specified by --config.
-      2) Applies known CLI arguments and unknown key-value pairs (e.g., "--foo bar")
-         as overrides on top of the YAML.
-      3) Maps select CLI flags to their canonical nested locations in the configuration:
-         - --device                      → embedding.device
-         - --redundancy_identity|--redundancy_filter  → lookup.redundancy.identity (+ flat compatibility)
-         - --redundancy_coverage|--alignment_coverage → lookup.redundancy.coverage (+ flat compatibility)
-         - --threads                     → lookup.redundancy.threads (+ flat compatibility)
-         - taxonomy filters              → lookup.taxonomy.{exclude,include_only,get_descendants}
-      4) Sanitizes taxonomy ID lists so they are always lists of numeric strings.
-      5) Restores legacy support for components that rely on `embedding.types`
-         (the list of enabled model names in YAML).
-      6) Performs early validations for redundancy thresholds.
+    This function merges different sources of configuration into a normalized
+    dictionary ready for pipeline execution. The process includes:
 
-    Notes
-    -----
-    * **Model selection and per-model settings are YAML-only.** This function does not
-      enable/disable models from the CLI, nor does it accept per-model batch sizes,
-      thresholds, or layer indices.
-    * Redundancy settings are accepted from CLI and mirrored in both nested
-      `lookup.redundancy.*` and flat keys for backward compatibility with consumers
-      that read either form.
+      1. Loading the YAML configuration file specified by ``--config``.
+      2. Applying known CLI arguments as flat overrides.
+      3. Parsing unknown CLI key-value pairs (``--key value``) into overrides.
+      4. Mapping selected CLI flags into their canonical nested structure.
+      5. Sanitizing taxonomy ID lists.
+      6. Restoring legacy compatibility for ``embedding.types``.
+      7. Validating redundancy thresholds and taxonomy lists.
 
     Parameters
     ----------
     args : argparse.Namespace
-        Known arguments parsed by argparse.
-    unknown_args : list[str]
-        Extra CLI arguments in the form ["--key", "value", ...] that are parsed into
-        key-value pairs (using the project helper).
+        Namespace of parsed known arguments from ``argparse``. Must include:
+
+        - ``config`` (str): Path to the base YAML configuration.
+        - Other optional CLI overrides such as ``device``, ``redundancy_filter``,
+          ``alignment_coverage``, and ``threads``.
+
+    unknown_args : list of str
+        List of additional CLI arguments in the form
+        ``["--key", "value", ...]``. These are parsed into dictionary entries.
 
     Returns
     -------
     dict
-        The merged, normalized configuration dictionary ready for the pipeline.
+        A fully merged and validated configuration dictionary. Keys include:
+
+        - ``embedding`` (dict): Embedding-related settings, including enabled models.
+        - ``lookup`` (dict): Lookup and redundancy-related parameters.
+        - ``taxonomy`` (dict): Taxonomy filtering options.
+        - Other keys inherited from the YAML file and CLI overrides.
 
     Raises
     ------
     ValueError
-        If redundancy thresholds are out of range or taxonomy lists have invalid formats.
+        If redundancy thresholds are out of range, or taxonomy lists are provided
+        in an invalid format.
     """
+
     # Load base YAML
     conf = read_yaml_config(args.config)
 
@@ -240,6 +365,43 @@ def load_and_merge_config(args, unknown_args):
 
 
 def main():
+    """
+    Command-line interface (CLI) entry point for FANTASIA.
+
+    This function:
+      1. Builds the argument parser and reads CLI inputs.
+      2. Loads and merges the configuration from YAML and CLI overrides.
+      3. Sets up logging with timestamped log files.
+      4. Verifies that required background services are available.
+      5. Dispatches execution to the selected subcommand.
+
+    Supported Subcommands
+    ---------------------
+    - ``initialize`` : Download and load reference embeddings into the database.
+    - ``run``        : Execute the full FANTASIA pipeline (embedding + lookup).
+
+    Behavior
+    --------
+    * If no command is provided, the function prints the help message and exits.
+    * The ``run`` command requires at least one embedding model to be enabled
+      in the configuration under ``embedding.models``.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    ValueError
+        If no embedding models are enabled, or if redundancy thresholds are invalid.
+    SystemExit
+        If the user requests help, or if a fatal error occurs during execution.
+    """
+
     parser = build_parser()
     args, unknown_args = parser.parse_known_args()
 

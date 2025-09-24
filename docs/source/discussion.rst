@@ -70,6 +70,11 @@ representations from the rawest possible signal. In proteins, an analogous
 approach would feed digitized sequence (and potentially structural) information
 directly to the model, allowing unsupervised discovery of meaningful units.
 
+A recent and directly relevant example in NLP is **H-Net**
+(*Dynamic Chunking for End-to-End Hierarchical Sequence Modeling*),
+which eliminates the tokenizer by operating on **raw bytes** and learns a
+**dynamic hierarchical segmentation** end-to-end [HNet2025]_.
+
 Block-Based Amino Acid Tokenization
 """""""""""""""""""""""""""""""""""
 
@@ -105,6 +110,11 @@ retain biological salience:
   biological levels (residue → block/motif → domain → chain → protein),
   enabling downstream tasks to query the appropriate level of granularity
   instead of forcing an early collapse.
+- **Graph neural networks (GNNs)** that explicitly model proteins as graphs
+  (residues as nodes, contacts/interactions as edges), enabling aggregation
+  schemes that respect structural connectivity and capture higher-order
+  relationships beyond linear sequence context.
+
 
 In parallel, we have observed practical challenges related to batching and its
 interaction with attention mechanisms. Early experiments with larger batch sizes
@@ -115,8 +125,7 @@ no evidence of degraded encodings. Nevertheless, given the immaturity of the
 field and the modest computational gains in our configuration, we currently
 favor a **batch size of 1** to maximize stability and traceability of the
 embeddings. This choice is pragmatic rather than prescriptive, and should be
-revisited as aggregation mechanisms mature and as more robust batching–attention
-interactions are established.
+revisited
 
 Jane Doe
 ~~~~~~~~
@@ -139,3 +148,11 @@ How to Contribute
 - Add a new subsection under **Contributors** with your name as the title.
 - Keep the tone technical and focused on discussion/interpretation.
 - Cite datasets, code, and figures as needed.
+
+
+References
+----------
+
+.. [HNet2025] Sukjun Hwang, Brandon Wang, and Albert Gu (2025).
+   *Dynamic Chunking for End-to-End Hierarchical Sequence Modeling*.
+   arXiv:2507.07955.

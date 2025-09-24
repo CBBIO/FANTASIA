@@ -8,3 +8,4 @@ Appendix
    slurm
    howto_guides
    schemas
+   docker_publish
