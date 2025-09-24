@@ -33,6 +33,10 @@ sphinx-copybutton = "^0.5.2"
 
 
 
+
+[tool.poetry.group.docs.dependencies]
+sphinx-design = "^0.6.1"
+
 [tool.coverage.run]
 omit = ["*/site-packages/*"]
 
