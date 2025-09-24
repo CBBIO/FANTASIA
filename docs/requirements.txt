@@ -4,3 +4,6 @@ furo
 sphinx_copybutton
 shibuya
 sphinx-design
+Bio
+numpy
+protein_information_system
