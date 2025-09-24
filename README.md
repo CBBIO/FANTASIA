@@ -15,29 +15,19 @@ FANTASIA is an advanced pipeline for the automatic functional annotation of prot
 For full documentation, visit [FANTASIA Documentation](https://fantasia.readthedocs.io/en/latest/).
 
 
-> ⚠️ **Important Notice (v3.0.0):**
->
-> In previous versions of FANTASIA, all input sequences were **automatically truncated at 512 amino acids**, regardless of model capacity.  
-> This may have negatively affected the accuracy of functional annotation for long proteins by generating incomplete embeddings.
->
-> Starting from version **3.0.0**, this limitation has been **removed**. The updated pipeline now processes the **full sequence length supported by each model**, resulting in more accurate and biologically meaningful representations.
->
-> 🔄 **We strongly recommend updating to FANTASIA v3.0.0.**
->  https://zenodo.org/records/16582433
-> 💬 For questions or issues, please contact the CBBIO group.
 
+## Reference Datasets
+Two packaged reference datasets are available; select one depending on your analysis needs:
 
-## 📌 Current Lookup Table
+- **Main Reference (last layer, default)**  
+  Embeddings extracted only from the **final hidden layer** of each PLM.  
+  Recommended for most annotation tasks (smaller, faster to load).  
+  *Record*: https://zenodo.org/records/17167843
 
-The **lookup table** used by FANTASIA — along with its **detailed description and specifications** — is available in the official Zenodo record:  
-🔗 [https://zenodo.org/records/16582433](https://zenodo.org/records/16582433)
-
-We recommend checking this record to:
-
-- **Download the latest lookup table**
-- **Understand its structure and fields**
-- **Ensure compatibility with your workflows**
-
+- **Multilayer Reference (intermediate + final layers)**  
+  Embeddings extracted from **multiple hidden layers** (including intermediate and final).  
+  Suitable for comparative and exploratory analyses requiring layer-wise representations.  
+  *Record*: https://zenodo.org/records/17151847
 
 
 ## Key Features
@@ -54,6 +44,16 @@ We recommend checking this record to:
   relational PostgreSQL database** using **pgvector**.
 
 - **🚀 Efficient Similarity Lookup**  
+  High-throughput similarity search with a **hybrid approach**: reference embeddings are stored in a **PostgreSQL + pgvector** database and **fetched in batches to memory** to compute similarities at speed.
+
+- **🧭 Global & Local Alignment of Hits**  
+  Candidate hits from the reference table are **aligned both globally and locally** against the input protein for validation and scoring.
+
+- **🧩 Multi-layer Embedding Support**  
+  Optional support for **intermediate + final layers** to enable layer-wise analyses and improved exploration.
+
+- **📦 Raw Outputs & Flexible Post-processing**  
+  Exposes **raw result tables** for custom analyses and includes a **flexible post-processing & scoring system** that produces **TopGO-ready** files.  
   Performs high-speed searches using **in-memory computations**. Reference vectors are retrieved from a PostgreSQL database with pgvector for comparison.
 
 - **🔬 Functional Annotation by Similarity**  
