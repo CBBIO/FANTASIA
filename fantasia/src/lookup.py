@@ -1224,15 +1224,9 @@ class EmbeddingLookUp(GPUTaskInitializer):
                    """)
 
         self.go_annotations = {}
-        count_total, count_filtered = 0, 0
 
         with self.engine.connect() as connection:
             for row in connection.execute(sql):
-                count_total += 1
-                if row.taxonomy_id in self.exclude_taxon_ids:
-                    count_filtered += 1
-                    continue
-
                 entry = {
                     "sequence": row.sequence,
                     "go_id": row.go_id,
@@ -1247,8 +1241,8 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 self.go_annotations.setdefault(row.sequence_id, []).append(entry)
 
         self.logger.info(
-            "Preloaded GO annotations: %d sequences (%d entries skipped by taxonomy filter).",
-            len(self.go_annotations), count_filtered
+            "Preloaded GO annotations: %d sequences.",
+            len(self.go_annotations)
         )
 
     # --- Metadata helpers -----------------------------------------------------
@@ -1795,9 +1789,15 @@ class EmbeddingLookUp(GPUTaskInitializer):
             return None
 
         try:
-            ids = np.fromiter((r[0] for r in rows), dtype=int, count=len(rows))
-            layers = np.fromiter((r[2] for r in rows), dtype=np.int64, count=len(rows))
-            embeddings = np.vstack([r[1].to_numpy() for r in rows])
+            seen = {}
+            for r in rows:
+                seq_id = int(r[0])
+                if seq_id not in seen:
+                    seen[seq_id] = (r[1].to_numpy(), int(r[2]) if r[2] is not None else -1)
+
+            ids = np.fromiter(seen.keys(), dtype=int, count=len(seen))
+            layers = np.fromiter((v[1] for v in seen.values()), dtype=np.int64, count=len(seen))
+            embeddings = np.vstack([v[0] for v in seen.values()])
         except Exception as e:
             self.logger.error("Failed to build numpy arrays for lookup(%s): %s", key, e, exc_info=True)
             return None

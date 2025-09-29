@@ -9,12 +9,12 @@
 log_path: ~/fantasia/logs/    # str  | Directory for pipeline logs (will be created if missing)
 constants: ./fantasia/constants.yaml # str  | Directory for constants
 base_directory: ~/fantasia/   # str  | Root working dir: inputs, outputs, caches, temp live here
-prefix: ana23sept # str | Output prefix (folder & file stem)
+prefix: sample # str | Output prefix (folder & file stem)
 
 limit_execution: 0
 monitor_interval: 10
 
-input: data_sample/ana23sept.fasta  # str | Default FASTA (can be overridden via CLI --input)
+input: data_sample/sample.fasta  # str | Default FASTA (can be overridden via CLI --input)
 only_lookup: False            # bool | If true: skip Stage A (embedding) and run Stage B using existing embeddings.h5
 
 # ------------------------------------------------------------------------------
@@ -88,7 +88,7 @@ embedding:
     Ankh3-Large: # 49 layers: 0..48
       enabled: True
       batch_size: 1
-      layer_index: [ 0]
+      layer_index: [ 0 ]
       distance_threshold: 0
 
     Prot-T5: # 25 layers: 0..24
@@ -100,7 +100,7 @@ embedding:
     Prost-T5: # 25 layers: 0..24 (same backbone as Prot-T5)
       enabled: True
       batch_size: 1
-      layer_index: [ 0]
+      layer_index: [ 0 ]
       distance_threshold: 0
 
 
@@ -116,7 +116,7 @@ lookup:
   use_gpu: True               # bool | If true, run vector distances on GPU when available
   batch_size: 516            # int  | Vector distance batch size (tune to GPU memory)
   distance_metric: cosine     # enum{cosine,euclidean} | Distance for nearest-neighbor search
-  limit_per_entry: 5          # int  | k neighbors returned per query (a.k.a. “k”)
+  limit_per_entry: 3          # int  | k neighbors returned per query (a.k.a. “k”)
   lookup_cache_max: 6       # int  | Max entries per (model,layer) in-memory cache (tune to RAM)
   topgo: true                 # bool | If true, emit TopGO-compatible TSV alongside CSV outputs
 
