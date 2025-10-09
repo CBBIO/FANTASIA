@@ -17,6 +17,8 @@ scipy = "^1.16.0"
 protein-information-system = "^3.0.0"
 goatools = "^1.4.12"
 polars = "^1.33.1"
+pyarrow = "^21.0.0"
+
 
 
 [tool.poetry.group.dev.dependencies]
