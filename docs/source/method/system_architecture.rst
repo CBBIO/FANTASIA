@@ -3,7 +3,7 @@ System Architecture
 
 Scope
 -----
-This page describes the runtime architecture of **FANTASIA v2**: components, services, deployment targets, and data stores.
+This page describes the runtime architecture of **FANTASIA v4**: components, services, deployment targets, and data stores.
 It intentionally avoids method details (e.g., scoring, ontology logic) and focuses on how the system is structured and executed.
 
 Runtime Stack (at a glance)

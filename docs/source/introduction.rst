@@ -43,7 +43,7 @@ flexibility.
 Validation and scope
 --------------------
 
-In this documentation we describe FANTASIA v2, its architecture and applications. We highlight two
+In this documentation we describe FANTASIA v4, its architecture and applications. We highlight two
 complementary use cases:
 
 - **Proteome-wide annotation**, extending functional coverage to proteins overlooked by homology-based
