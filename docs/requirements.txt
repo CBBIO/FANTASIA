@@ -7,3 +7,5 @@ sphinx-design
 Bio
 numpy
 protein_information_system
+polars
+parasail
