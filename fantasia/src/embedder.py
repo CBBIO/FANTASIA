@@ -1,78 +1,151 @@
 """
 Sequence Embedding Module
-==========================
+=========================
 
-This module defines the `SequenceEmbedder` class, which computes protein embeddings
-from input FASTA files using preconfigured language models.
+Overview
+--------
+The **Sequence Embedding Module** provides a high-throughput workflow for computing and
+persisting protein sequence embeddings from FASTA input files. It serves as an orchestration
+layer around model loading, batching, task publication, and structured storage in HDF5.
 
-Given a FASTA file, the system filters and batches sequences, applies the selected
-embedding models, and stores the resulting representations and metadata in HDF5 format.
-It supports optional sequence length filtering and is designed for high-throughput pipelines.
+Responsibilities
+----------------
+This module defines :class:`SequenceEmbedder`, a concrete implementation built on top of
+:class:`protein_information_system.operation.embedding.sequence_embedding.SequenceEmbeddingManager`.
+Its main responsibilities are:
 
-Background
+- Parsing input sequences from FASTA files, with optional truncation by length.
+- Enqueuing embedding tasks for **all configured hidden-layer indices** of each model.
+- Executing model-specific embedding routines with dynamic model loading.
+- Writing embeddings to HDF5 with a stable hierarchy and minimal metadata.
+
+Processing Pipeline
+-------------------
+1. **Ingest**: Parse sequences from the configured FASTA file using Biopython.
+2. **Batch**: Partition sequences into queue batches (``queue_batch_size``) to control message size.
+3. **Dispatch**: For each enabled model, publish a task containing all batch sequences and
+   the full list of requested layer indices.
+4. **Embed**: Load the appropriate model, tokenizer, and module, then compute embeddings.
+5. **Persist**: Store results in ``embeddings.h5`` under per-accession, per-model, per-layer groups.
+
+Input / Output
+--------------
+**Input**: A single- or multi-sequence FASTA file.
+**Output**: An HDF5 file named ``embeddings.h5`` with the structure:
+
+.. code-block::
+
+   /accession_<ID>/
+       /type_<embedding_type_id>/
+           /layer_<k>/
+               embedding   (dataset)
+               shape       (attribute)
+       sequence            (dataset, optional; stored once per accession)
+
+Configuration
+-------------
+The module expects a dictionary ``conf`` with at least the following keys:
+
+- ``input`` : Path to the input FASTA file.
+- ``experiment_path`` : Output directory where ``embeddings.h5`` will be written.
+- ``embedding.models`` : Model-level configuration:
+  - ``enabled`` (bool) : Whether this model should be enqueued.
+  - ``layer_index`` (list[int]) : Hidden-layer indices to extract.
+- ``embedding.batch_size`` (dict[str,int]) : Per-model batch sizes at embedding time.
+- ``embedding.queue_batch_size`` (int) : Number of sequences per published message.
+- ``embedding.max_sequence_length`` (int | None) : Optional truncation length.
+
+Operational Notes
+-----------------
+- **No DB dependency**: Enqueueing does not query a database or require sequence IDs in advance.
+- **All layers extracted**: For each model, all configured layers are included (no aggregation).
+- **Device selection**: Defaults to ``"cuda"`` unless overridden by ``conf["embedding"]["device"]``.
+- **Idempotency**: Existing per-layer datasets are skipped rather than overwritten.
+
+Error Handling & Logging
+------------------------
+- Missing FASTA or I/O errors are raised and logged.
+- Inconsistent batches (multiple ``embedding_type_id`` values) trigger a ``ValueError``.
+- Each storage operation logs whether a dataset was created or skipped.
+
+Dependencies
+------------
+- `Biopython <https://biopython.org/>`_ (FASTA parsing via ``Bio.SeqIO``).
+- `h5py <https://www.h5py.org/>`_ (structured storage).
+- Model registry and dynamic loading provided by
+  :class:`protein_information_system.operation.embedding.sequence_embedding.SequenceEmbeddingManager`.
+
+Public API
 ----------
+- :meth:`SequenceEmbedder.enqueue`
+    Read FASTA, batch sequences, and enqueue per-model tasks with all configured layers.
+- :meth:`SequenceEmbedder.process`
+    Load the appropriate model/tokenizer/module, embed a batch, and return records.
+- :meth:`SequenceEmbedder.store_entry`
+    Persist per-layer embeddings and metadata into ``embeddings.h5``.
 
-The implementation draws inspiration from the BioEmbeddings project:
-- https://docs.bioembeddings.com
+Intended Use
+------------
+This module is the **first stage** in an embedding-driven functional annotation pipeline.
+Downstream consumers typically perform similarity search, annotation transfer, or clustering
+using the stored embeddings.
 
-Enhancements include:
-- Efficient batch-level task handling and queuing.
-- Dynamic model loading via modular architecture.
-- Integration with a SQL-based model registry (SequenceEmbeddingType).
-- Optional redundancy filtering support via MMSeqs2.
-
-This component is intended to serve as the first stage of a larger embedding-based
-functional annotation pipeline.
 """
 
+# --- Standard library ---
 import os
 import traceback
 
+# --- Third-party libraries ---
+import h5py
 from Bio import SeqIO
 
-import h5py
-
+# --- Project-specific imports ---
 from protein_information_system.operation.embedding.sequence_embedding import SequenceEmbeddingManager
 
 
 class SequenceEmbedder(SequenceEmbeddingManager):
     """
-    SequenceEmbedder computes protein embeddings from FASTA-formatted sequences and stores them in HDF5 format.
+    High-throughput computation of protein sequence embeddings from FASTA input.
 
-    This class supports dynamic model loading, batch-based processing, optional sequence filtering,
-    and structured output suitable for downstream similarity-based annotation. It is designed to integrate
-    seamlessly with a database of embedding model definitions and can enqueue embedding tasks across multiple models.
+    The :class:`SequenceEmbedder` orchestrates model loading, batching, optional
+    sequence truncation, and storage of per-layer embeddings into HDF5. It supports
+    multiple embedding models in parallel and produces structured outputs suitable
+    for downstream similarity search, annotation transfer, or clustering.
 
     Parameters
     ----------
     conf : dict
-        Configuration dictionary specifying input paths, enabled models, batch sizes, and filters.
+        Configuration dictionary with input paths, model definitions, batch sizes,
+        and optional filters.
     current_date : str
-        Timestamp used for naming outputs and logging purposes.
+        Timestamp string for naming outputs and logs.
 
     Attributes
     ----------
     fasta_path : str
-        Path to the input FASTA file containing sequences to embed.
+        Path to the input FASTA file with sequences to embed.
     experiment_path : str
-        Directory for writing output files (e.g., embeddings.h5).
+        Directory where ``embeddings.h5`` and logs are written.
+    queue_batch_size : int
+        Number of sequences per published task message.
+    max_sequence_length : int
+        Optional truncation length (0 disables truncation).
     batch_sizes : dict
-        Dictionary of batch sizes per model, controlling how sequences are grouped during embedding.
-    length_filter : int or None
-        Optional maximum sequence length. Sequences longer than this are excluded.
+        Per-model embedding batch sizes.
     model_instances : dict
-        Loaded model objects, keyed by embedding_type_id.
+        Dynamically loaded model objects, keyed by ``embedding_type_id``.
     tokenizer_instances : dict
-        Loaded tokenizer objects, keyed by embedding_type_id.
+        Tokenizer objects, keyed by ``embedding_type_id``.
     types : dict
-        Metadata for each enabled model, including threshold, batch size, and loaded module.
+        Metadata for each enabled model (e.g. thresholds, batch size, module).
     results : list
-        List of processed embedding results (used optionally during aggregation or debugging).
+        In-memory embedding results (used for aggregation/debugging).
     """
 
     def __init__(self, conf, current_date):
         """
-        Initializes the SequenceEmbedder with configuration settings and paths.
+        Initialize the SequenceEmbedder with configuration settings and paths.
 
         Loads the selected embedding models, sets file paths and filters, and prepares
         internal structures for managing embeddings and batching.
@@ -88,92 +161,176 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         self.current_date = current_date
         self.reference_attribute = "sequence_embedder_from_fasta"
 
-        # Debug mode
+        # Debug / test mode
         self.limit_execution = conf.get("limit_execution")
 
         # Input and output paths
-        self.fasta_path = conf.get("input")  # Actual input FASTA
+        self.fasta_path = conf.get("input")
         self.experiment_path = conf.get("experiment_path")
 
         # Optional batch and filtering settings
-        self.batch_sizes = conf.get("embedding", {}).get("batch_size", {})
-        self.queue_batch_size = conf.get('embedding', {}).get("queue_batch_size", 1)
-        self.length_filter = conf.get("embedding", {}).get("max_sequence_length", 0)
+        self.queue_batch_size = conf.get("embedding", {}).get("queue_batch_size", 1)
+        self.max_sequence_length = conf.get("embedding", {}).get("max_sequence_length", 0)
 
-    def enqueue(self):
+        # --- Logging of configuration ---
+        if not self.fasta_path:
+            self.logger.warning("No FASTA input path provided in conf['input']")
+        else:
+            self.logger.info("FASTA input path: %s", self.fasta_path)
+
+        if not self.experiment_path:
+            self.logger.warning("No experiment_path set → outputs may fail")
+        else:
+            self.logger.info("Experiment outputs will be written under: %s", self.experiment_path)
+
+        self.logger.info(
+            "Embedding configuration: queue_batch_size=%d | max_sequence_length=%s | limit_execution=%s",
+            self.queue_batch_size,
+            str(self.max_sequence_length) if self.max_sequence_length else "disabled",
+            str(self.limit_execution) if self.limit_execution else "unlimited"
+        )
+
+        # Optional: log enabled models summary
+        enabled_models = [k for k, v in conf.get("embedding", {}).get("models", {}).items() if v.get("enabled")]
+        if enabled_models:
+            self.logger.info("Enabled models: %s", ", ".join(enabled_models))
+        else:
+            self.logger.warning("No embedding models enabled in configuration")
+
+    def enqueue(self) -> None:
         """
-        Reads the input FASTA file, filters and batches the sequences, and enqueues embedding tasks.
-
-        This method performs the following steps:
-        1. Parses the input FASTA file using BioPython.
-        2. Optionally filters sequences by length if a `length_filter` is defined.
-        3. For each enabled model, splits the full sequence list into batches of configurable size.
-        4. Enqueues each batch for embedding computation using `publish_task`.
-
-        Raises
-        ------
-        FileNotFoundError
-            If the input FASTA file does not exist.
-        Exception
-            For any unexpected errors during file parsing or batching.
+        Read the input FASTA and enqueue *all* sequences for *all* enabled models,
+        emitting *all* configured layers for each model in a single message per model.
         """
-
         try:
-            self.logger.info("Starting embedding enqueue process.")
+            self.logger.info("enqueue: starting embedding enqueue process (all models, all layers).")
 
+            # --- 0) Truncation limit ---
+            max_len = getattr(self, "max_sequence_length", None)
+            if max_len is not None and (not isinstance(max_len, int) or max_len <= 0):
+                self.logger.warning("enqueue: invalid 'max_sequence_length'=%r → ignoring truncation.", max_len)
+                max_len = None
+
+            # --- 1) Load FASTA ---
             input_fasta = os.path.expanduser(self.fasta_path)
             if not os.path.exists(input_fasta):
                 raise FileNotFoundError(f"FASTA file not found at: {input_fasta}")
 
-            sequences = [
-                record for record in SeqIO.parse(input_fasta, "fasta")
-                if not self.length_filter or len(record.seq) <= self.length_filter
-            ]
+            sequences = list(SeqIO.parse(input_fasta, "fasta"))
 
-            if self.limit_execution:
-                sequences = sequences[:self.limit_execution]
+            # Optional cap
+            limit_exec = getattr(self, "limit_execution", None)
+            if isinstance(limit_exec, int) and limit_exec > 0:
+                sequences = sequences[:limit_exec]
+                self.logger.info("enqueue: limit_execution=%d → truncated to %d sequences.", limit_exec, len(sequences))
 
             if not sequences:
-                self.logger.warning("No sequences found. Finishing embedding enqueue process.")
+                self.logger.warning("enqueue: no sequences found in FASTA → nothing to enqueue.")
                 return
 
-            for model_name in self.conf["embedding"]["models"]:
-                model_info = self.types.get(model_name)
+            self.logger.info("enqueue: loaded %d sequences from %s", len(sequences), input_fasta)
 
-                if model_info is None:
-                    self.logger.warning(f"Model '{model_name}' not found in loaded types. Skipping.")
-                    continue
+            # --- 2) Partition ---
+            queue_batch_size = int(getattr(self, "queue_batch_size", 1)) or 1
+            sequence_batches = [
+                sequences[i: i + queue_batch_size]
+                for i in range(0, len(sequences), queue_batch_size)
+            ]
+            self.logger.info("enqueue: partitioned into %d batches (size=%d).",
+                             len(sequence_batches), queue_batch_size)
 
-                if not self.conf["embedding"]["models"][model_name]["enabled"]:
-                    continue
+            # --- 3) Iterate batches ---
+            total_published = 0
+            for batch_idx, batch in enumerate(sequence_batches, start=1):
+                model_batches: dict[str, list[dict]] = {}
 
-                queue_batch_size = self.queue_batch_size
-                sequence_batches = [
-                    sequences[i:i + queue_batch_size]
-                    for i in range(0, len(sequences), queue_batch_size)
-                ]
+                for seq_record in batch:
+                    accession = seq_record.id
+                    seq_str = str(seq_record.seq)
 
-                for batch in sequence_batches:
-                    task_batch = [
-                        {
-                            "sequence": str(seq_record.seq),
-                            "accession": seq_record.id,
-                            "model_name": model_info["model_name"],
-                            "embedding_type_id": model_info["id"]
+                    if max_len and len(seq_str) > max_len:
+                        self.logger.debug("enqueue: truncating sequence %s from %d → %d residues.",
+                                          accession, len(seq_str), max_len)
+                        seq_str = seq_str[:max_len]
+
+                    models_cfg = self.conf.get("embedding", {}).get("models", {}) or {}
+                    if not models_cfg:
+                        self.logger.error("enqueue: config missing 'embedding.models'. Aborting.")
+                        return
+
+                    for model_name, model_cfg in models_cfg.items():
+                        if not model_cfg.get("enabled", False):
+                            continue
+
+                        type_info = self.types.get(model_name)
+                        if not type_info:
+                            self.logger.warning("enqueue: model '%s' missing in types registry. Skipping.", model_name)
+                            continue
+
+                        embedding_type_id = type_info.get("id")
+                        backend_model_name = type_info.get("model_name")
+                        if embedding_type_id is None or not backend_model_name:
+                            self.logger.warning(
+                                "enqueue: incomplete type info for model '%s' (id=%r, model_name=%r). Skipping.",
+                                model_name, embedding_type_id, backend_model_name
+                            )
+                            continue
+
+                        desired_layers = (
+                                model_cfg.get("layer_index") or
+                                type_info.get("layer_index") or []
+                        )
+
+                        if not isinstance(desired_layers, (list, tuple)) or not desired_layers:
+                            self.logger.warning("enqueue: model '%s' has no 'layer_index' configured. Skipping.",
+                                                model_name)
+                            continue
+
+                        try:
+                            normalized_layers = sorted({int(x) for x in desired_layers})
+                        except Exception:
+                            self.logger.warning("enqueue: invalid 'layer_index' values for model '%s': %r. Skipping.",
+                                                model_name, desired_layers)
+                            continue
+
+                        task_data = {
+                            "sequence": seq_str,
+                            "accession": accession,
+                            "model_name": backend_model_name,
+                            "embedding_type_id": embedding_type_id,
+                            "layer_index": normalized_layers,
                         }
-                        for seq_record in batch
-                    ]
+                        model_batches.setdefault(model_name, []).append(task_data)
 
-                    self.publish_task(task_batch, model_info["name"])
-                    self.logger.info(
-                        f"Published batch with {len(task_batch)} sequences to model '{model_info["id"]}'."
-                    )
+                # --- 4) Publish ---
+                for model_name, batch_data in model_batches.items():
+                    if not batch_data:
+                        continue
+                    try:
+                        self.publish_task(batch_data, model_name)
+                        total_published += len(batch_data)
+                        self.logger.info(
+                            "enqueue: batch %d/%d → published %d seqs to model '%s' (id=%s, layers=%d).",
+                            batch_idx, len(sequence_batches),
+                            len(batch_data), model_name, self.types[model_name]["id"],
+                            len(batch_data[0]["layer_index"])
+                        )
+                        self.logger.debug("enqueue: batch %d/%d, model '%s', accessions=%s",
+                                          batch_idx, len(sequence_batches),
+                                          model_name, [d['accession'] for d in batch_data])
+                    except Exception as pub_err:
+                        self.logger.error("enqueue: failed to publish batch for model '%s': %s", model_name, pub_err)
+                        raise
 
-        except FileNotFoundError as e:
-            self.logger.error(f"File not found: {e}")
+            self.logger.info("enqueue: finished. Published %d sequences across %d batches.",
+                             total_published, len(sequence_batches))
+
+        except FileNotFoundError:
+            self.logger.exception("enqueue: FASTA file not found.")
             raise
         except Exception as e:
-            self.logger.error(f"Unexpected error during enqueue: {e}\n{traceback.format_exc()}")
+            self.logger.error("enqueue: unexpected error → %s", e)
+            self.logger.debug("enqueue: traceback:\n%s", traceback.format_exc())
             raise
 
     def process(self, task_data):
@@ -206,6 +363,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
             For any other error during embedding generation.
         """
         try:
+
             if not task_data:
                 self.logger.warning("No task data provided for embedding. Skipping batch.")
                 return []
@@ -226,6 +384,8 @@ class SequenceEmbedder(SequenceEmbeddingManager):
 
             batch_size = self.types[model_type]["batch_size"]
 
+            layer_index_list = self.types[model_type].get('layer_index', [0])
+
             # Prepare input: list of {'sequence', 'sequence_id'}
             sequence_batch = [
                 {"sequence": task["sequence"], "sequence_id": task["accession"]}
@@ -239,14 +399,14 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 tokenizer=tokenizer,
                 batch_size=batch_size,
                 embedding_type_id=embedding_type_id,
-                device=device
+                device=device,
+                layer_index_list=layer_index_list
             )
 
             # Enrich results with task metadata
             for record, task in zip(embeddings, task_data):
                 record["accession"] = task["accession"]
                 record["embedding_type_id"] = embedding_type_id
-
             return embeddings
 
         except Exception as e:
@@ -255,59 +415,59 @@ class SequenceEmbedder(SequenceEmbeddingManager):
 
     def store_entry(self, results):
         """
-        Stores computed embeddings and associated sequences into an HDF5 file.
-
-        For each embedding result, this method creates or updates the HDF5 structure
-        following a hierarchical organization:
-        - /accession_{id}/type_{embedding_type_id}/embedding : stores the embedding vector.
-        - /accession_{id}/type_{embedding_type_id}/attrs     : stores metadata like shape.
-        - /accession_{id}/sequence                            : stores the original sequence.
-
-        If a dataset already exists, the method skips overwriting it.
-
-        Parameters
-        ----------
-        results : list of dict
-            A list of embedding records. Each record must include:
-            - 'accession' (str): sequence identifier.
-            - 'embedding_type_id' (str): model identifier.
-            - 'embedding' (np.ndarray): embedding vector.
-            - 'shape' (tuple): shape of the embedding.
-            - 'sequence' (str): original amino acid sequence.
-
-        Raises
-        ------
-        Exception
-            If any error occurs while writing to the HDF5 file.
+        Persist per-layer embeddings into an HDF5 file using a stable, idempotent group hierarchy.
         """
         try:
+            # --- Normalize input ----------------------------------------------------
+            if isinstance(results, dict):
+                results = [results]
+            elif not isinstance(results, (list, tuple)):
+                raise TypeError(f"store_entry: expected dict or list[dict], got {type(results)}")
+
             output_h5 = os.path.join(self.experiment_path, "embeddings.h5")
 
+            self.logger.info("store_entry: writing %d record(s) → %s", len(results), output_h5)
+
+            # --- Open HDF5 in append mode -------------------------------------------
             with h5py.File(output_h5, "a") as h5file:
                 for record in results:
-                    accession = record["accession"].replace("|", "_")
+                    # --- Minimal validations ----------------------------------------
+                    for key in ("sequence_id", "embedding_type_id", "layer_index", "embedding"):
+                        if key not in record:
+                            raise KeyError(f"store_entry: missing required key '{key}' in record")
+
+                    accession = record["sequence_id"].replace("|", "_")
                     embedding_type_id = record["embedding_type_id"]
+                    layer_index = int(record["layer_index"])
 
                     accession_group = h5file.require_group(f"accession_{accession}")
                     type_group = accession_group.require_group(f"type_{embedding_type_id}")
+                    layer_group = type_group.require_group(f"layer_{layer_index}")
 
-                    # Store embedding
-                    if "embedding" not in type_group:
-                        type_group.create_dataset("embedding", data=record["embedding"])
-                        type_group.attrs["shape"] = record["shape"]
+                    # --- Write embedding dataset (idempotent) -----------------------
+                    if "embedding" not in layer_group:
+                        layer_group.create_dataset("embedding", data=record["embedding"])
+                        layer_group.attrs["shape"] = tuple(
+                            record.get("shape", getattr(record.get("embedding"), "shape", ()))
+                        )
                         self.logger.info(
-                            f"Stored embedding for accession {accession}, type {embedding_type_id}."
+                            "store_entry: stored embedding → accession=%s | type=%s | layer=%d | shape=%s",
+                            accession, embedding_type_id, layer_index, layer_group.attrs["shape"]
                         )
                     else:
-                        self.logger.warning(
-                            f"Embedding for accession {accession}, type {embedding_type_id} already exists. Skipping."
+                        self.logger.debug(
+                            "store_entry: embedding already exists → accession=%s | type=%s | layer=%d (skipped)",
+                            accession, embedding_type_id, layer_index
                         )
 
-                    # Store sequence
-                    if "sequence" not in accession_group:
+                    # --- Store raw sequence once per accession ----------------------
+                    if "sequence" in record and "sequence" not in accession_group:
                         accession_group.create_dataset("sequence", data=record["sequence"].encode("utf-8"))
-                        self.logger.info(f"Stored sequence for accession {accession}.")
+                        self.logger.info("store_entry: stored sequence → accession=%s", accession)
+
+            self.logger.info("store_entry: successfully committed %d record(s) to HDF5", len(results))
 
         except Exception as e:
-            self.logger.error(f"Error while storing embeddings to HDF5: {e}\n{traceback.format_exc()}")
+            self.logger.error("store_entry: error while writing to HDF5 → %s", e)
+            self.logger.debug("store_entry: traceback:\n%s", traceback.format_exc())
             raise

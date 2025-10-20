@@ -1,5 +1,5 @@
-Frequently Asked Questions (FAQ)
-================================
+How-to Guides
+=============
 
 How can I add other new embedding models?
 -------------------------------------------------

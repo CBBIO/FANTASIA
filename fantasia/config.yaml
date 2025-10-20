@@ -1,150 +1,187 @@
-# ==========================
-# 🌍 Global Configuration
-# ==========================
+# ==============================================================================
+# FANTASIA — Configuration
+# Technical, production-oriented YAML with explicit separation of concerns.
+# ==============================================================================
 
-# Maximum number of worker threads for parallel processing.
-max_workers: 1
+# ------------------------------------------------------------------------------
+# Global execution
+# ------------------------------------------------------------------------------
+log_path: ~/fantasia/logs/    # str  | Directory for pipeline logs (will be created if missing)
+constants: ./fantasia/constants.yaml # str  | Directory for constants
+base_directory: ~/fantasia/   # str  | Root working dir: inputs, outputs, caches, temp live here
+prefix: sample # str | Output prefix (folder & file stem)
 
-# Path to the system constants file.
-constants: "./fantasia/constants.yaml"
-
-# Monitoring interval in seconds (for processes that require periodic checks).
+limit_execution: 0
 monitor_interval: 10
 
-# Debug feature: limits the number of input samples processed if set > 0.
-limit_execution: 0
+input: data_sample/sample.fasta  # str | Default FASTA (can be overridden via CLI --input)
+only_lookup: False            # bool | If true: skip Stage A (embedding) and run Stage B using existing embeddings.h5
 
-# Path to the log file or directory.
-log_path: ~/fantasia/logs/
+# ------------------------------------------------------------------------------
+# Database (PIS: PostgreSQL + pgvector)
+# Used by Stage B to load in-memory reference tables (IDs, vectors, GO)
+# ------------------------------------------------------------------------------
+DB_USERNAME: usuario          # str  | PostgreSQL username
+DB_PASSWORD: clave            # str  | PostgreSQL password
+DB_HOST: localhost            # str  | PostgreSQL host (use a socket path if local with custom setup)
+DB_PORT: 5432                 # int  | PostgreSQL port
+DB_NAME: BioData              # str  | PostgreSQL database name
 
-# ==========================
-# 🗄️ Database (PostgreSQL)
-# ==========================
+# ------------------------------------------------------------------------------
+# Message broker (RabbitMQ)
+# Used by Stage A to publish/consume embedding tasks
+# ------------------------------------------------------------------------------
+rabbitmq_host: localhost      # str  | Broker host
+rabbitmq_port: 5672           # int  | Broker port
+rabbitmq_user: guest          # str  | Broker user
+rabbitmq_password: guest      # str  | Broker password
 
-DB_USERNAME: usuario         # Database username.
-DB_PASSWORD: clave           # Database password.
-DB_HOST: localhost           # Host where the database server is running.
-DB_PORT: 5432                # Port used for the database connection.
-DB_NAME: BioData             # Name of the database to use.
+delete_queues: true           # bool | Drop queues on boot/teardown to avoid stale messages between runs
 
-# ==========================
-# 📨 Message Queue (RabbitMQ)
-# ==========================
+# ------------------------------------------------------------------------------
+# External data source (optional)
+# URL used by `fantasia initialize` to preload a DB dump or lookup tables
+#
+# Available options:
+# 1. Final layer only (smaller, faster to load) [default]
+#    https://zenodo.org/records/17167843/files/FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1
+#
+# 2. Final + intermediate layers (larger, more detailed embeddings)
+#    https://zenodo.org/records/17151847/files/FANTASIA_UniProt_Sep2025_Final+Interm_ExpOnly.dump?download=1
+#
+# Leave empty to skip the preload step.
+# ------------------------------------------------------------------------------
+embeddings_url: "https://zenodo.org/records/17167843/files/FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1"
+# embeddings_url: "https://zenodo.org/records/17151847/files/FANTASIA_UniProt_Sep2025_Final+Interm_ExpOnly.dump?download=1"
 
-rabbitmq_host: localhost     # RabbitMQ server hostname.
-rabbitmq_port: 5672          # RabbitMQ server port.
-rabbitmq_user: guest         # RabbitMQ username for authentication.
-rabbitmq_password: guest     # RabbitMQ password for authentication.
-
-# ====================================================================
-# 🔄 Data Source Configuration
-# ====================================================================
-
-# URL to download the embeddings database dump used as reference.
-embeddings_url: "https://zenodo.org/records/16547685/files/lookup_table_exp_v3.tar?download=1"
-
-# ==========================
-# 📂 Directory Configuration
-# ==========================
-
-base_directory: ~/fantasia/
-
-# ==========================
-# 🔬 Pipeline Configuration
-# ==========================
-
-# Path to the input file: FASTA for full pipeline or HDF5 if only_lookup is true.
-input: data_sample/sample.fasta
-
-# Set to true to skip embedding generation and use precomputed HDF5 file.
-only_lookup: false
-
-# Number of sequences per batch during embedding or lookup.
-batch_size: 512
-
-# Number of top matches to retrieve per query.
-limit_per_entry: 5
-
-# Prefix for output files.
-prefix: sample
-
-# Maximum allowed sequence length.
-length_filter: 5000000
-
-# Redundancy filtering threshold (e.g., 0.95 = 95% identity); 0 disables it.
-redundancy_filter: 0
-
-# Minimum coverage for redundancy alignment.
-alignment_coverage: 0.7
-
-# =====================================
-# 🧬 Taxonomy Filtering Configuration
-# =====================================
-
-# Taxonomy IDs to exclude from the reference database.
-
-taxonomy_ids_to_exclude:  [] # Empty List for no filtering
-# Example: 559292 = S. cerevisiae, 6239 = C. elegans
-#  - 559292   # Saccharomyces cerevisiae
-#  - 6239     # Caenorhabditis elegans
-
-# If non-empty, only these taxonomy IDs will be used (overrides exclude list).
-taxonomy_ids_included_exclusively: [ ]
-
-# Set to true to include descendants of the given taxonomy IDs.
-get_descendants: False
-
-# Number of sequences per queue batch (for multiprocessing).
-sequence_queue_package: 64
-
-# Remove existing queues before execution.
-delete_queues: true
-
-# ==========================
-# 🧬 Embedding Configuration
-# ==========================
+# ==============================================================================
+# Stage A — Embedding
+# Produces HDF5 with per-layer query embeddings (no DB required here).
+# ==============================================================================
 embedding:
-  device: cuda
-  queue_batch_size: 10
-  max_sequence_length: 0
-  distance_metric: cosine # Options: "euclidean", "cosine"
+  device: cuda                # enum{cuda,cpu} | Primary device for PLMs; set to cpu to force CPU execution
+  queue_batch_size: 100       # int  | Number of sequences per published batch to RabbitMQ
+  max_sequence_length: 0      # int  | 0 disables truncation; otherwise sequences are truncated to this length
+
+  # Per-model configuration.
+  # name: logical model identifier used across the pipeline (case-sensitive).
+  # enabled: if false, model is ignored at runtime.
+  # batch_size: PLM forward batch size (beware of VRAM limits).
+  # layer_index: list[int] of layers to export; use multiple to materialize several layers into HDF5.
+  # LAYER INDEXING NOTE: 0 = last (output) layer, 1 = penultimate, 2 = second-to-last, and so on.
+
+  # If you use multiple layers, make sure the reference set database has been initialized with those layers.
 
   models:
-    ESM:
+    ESM: # 34 layers: 0..33
       enabled: True
       batch_size: 1
+      layer_index: [ 0 ]
       distance_threshold: 0
 
-    Prost-T5:
+    ESM3c: # 36 layers: 0..35
       enabled: True
       batch_size: 1
+      layer_index: [ 0 ]
       distance_threshold: 0
 
-    Prot-T5:
+    Ankh3-Large: # 49 layers: 0..48
       enabled: True
       batch_size: 1
+      layer_index: [ 0 ]
       distance_threshold: 0
 
-    Ankh3-Large:
+    Prot-T5: # 25 layers: 0..24
       enabled: True
       batch_size: 1
+      layer_index: [ 0 ]
       distance_threshold: 0
 
-    ESM3c:
-      enabled: true
+    Prost-T5: # 25 layers: 0..24 (same backbone as Prot-T5)
+      enabled: True
       batch_size: 1
+      layer_index: [ 0 ]
       distance_threshold: 0
 
 
-# Enable GPU usage globally.
-use_gpu: true
+# HDF5 on-disk layout (for reference; produced by Stage A):
+# /accession_<id>/type_<embedding_type_id>/layer_<k>/embedding
+# (sequence is stored at the accession level)
 
-# Number of workers for postprocessing (pairwise sequence alignment).
-store_workers: 1
+# ==============================================================================
+# Stage B — Lookup
+# Consumes embeddings.h5 + in-memory references (IDs, vectors, GO) to produce CSV/TSV.
+# ==============================================================================
+lookup:
+  use_gpu: True               # bool | If true, run vector distances on GPU when available
+  batch_size: 516            # int  | Vector distance batch size (tune to GPU memory)
+  distance_metric: cosine     # enum{cosine,euclidean} | Distance for nearest-neighbor search
+  limit_per_entry: 3          # int  | k neighbors returned per query (a.k.a. “k”)
+  lookup_cache_max: 6       # int  | Max entries per (model,layer) in-memory cache (tune to RAM)
+  topgo: true                 # bool | If true, emit TopGO-compatible TSV alongside CSV outputs
 
-# ==========================
-# 🧠 Functional Analysis
-# ==========================
+  precision: 4               # int | Número de decimales a usar en la exportación de resultados.
 
-# Enable TopGO-compatible output format.
-topgo: true
+
+
+
+  # Redundancy filtering (optional pre-filter on reference side, e.g., MMseqs2).
+  redundancy:
+    identity: 0             # float in [0,1] | 0 disables; 1.0 = 100% identity (strict deduplication)
+    coverage: 0.7             # float in (0,1]  | Alignment coverage threshold used in deduplication
+    threads: 10               # int  | CPU threads for redundancy filtering tools
+
+  # Taxonomy filters (applied after NN retrieval to prune/keep specific taxa).
+  taxonomy:
+    exclude: [ ]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
+    include_only: [ ]          # list[str] | If non-empty, restrict results to these IDs (takes precedence)
+    get_descendants: false    # bool | If true, expand filters to include descendants
+
+
+# ------------------------------------------------------------------------------
+# Post-processing
+# Scoring, collapsing, reliability index derivation, model/layer consolidation.
+# ------------------------------------------------------------------------------
+postprocess:
+  keep_sequences: true
+  summary:
+    include_counts: true
+    normalize_count_by_limit_per_entry: true   # defaults to True if omitted below
+    export_raw_count: true                     # set to true if you want "count_raw"
+    metrics:
+      reliability_index: [ max ]
+      identity: [ min, max, mean ]
+      identity_sw: [ min, max, mean ]
+    aliases:
+      reliability_index: ri
+      identity: id_g
+      identity_sw: id_l
+
+    weights:
+      # 1) By metric and aggregation function:
+      reliability_index: { max: 0.4 }
+      # 2) By metric/alias with a single number (applies to min/max/mean):
+      max_id_g: 0.20
+      # 3) By full output name (agg + alias):
+      max_id_l: 0.20
+      # Optional: you can also weight the count
+      count: 0.2
+
+    # Prefix for weighted columns (optional; defaults to "w_")
+    weighted_prefix: "w_"
+
+
+
+# ------------------------------------------------------------------------------
+# Output structure (Stage B — generated by the current code)
+# ------------------------------------------------------------------------------
+# Per-query/model/layer shards:
+#   <experiment_path>/raw_results/{model_name}/layer_{k|legacy}/{accession}.csv
+# Global summary (post_processing):
+#   <experiment_path>/summary.csv
+# TopGO (if lookup.topgo = true):
+#   <experiment_path>/topgo/{model_name}/layer_{k|legacy}/{BP|MF|CC}.topgo
+#   <experiment_path>/topgo/ensemble/{BP|MF|CC}.topgo
+# Global FASTA of all sequences:
+#   <experiment_path>/{sequences_fasta}  # IDs: Q{idx}/R{idx}
+#

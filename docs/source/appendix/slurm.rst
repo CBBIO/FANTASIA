@@ -47,7 +47,7 @@ Example:
 
 
 HPC Deployment Examples
-================================
+-----------------------
 
 FANTASIA provides tailored SLURM job scripts for different HPC infrastructures. Each script adapts to the specific container engine (Apptainer or Singularity), available modules, storage layout, and GPU configuration.
 
@@ -56,28 +56,28 @@ CESGA (single job)
 
 Runs **PostgreSQL**, **RabbitMQ**, and the **FANTASIA pipeline** within isolated **Apptainer** containers. All persistent data, cache directories, and outputs are mounted on the **LUSTRE** parallel file system.
 
-📄 See: :doc:`deployment/cesga_job`
+📄 See: :doc:`/deployment/cesga_job`
 
 CESGA (job array)
 -----------------
 
 Launches a SLURM array of jobs based on a tab-separated parameter file. Each task executes a separate FANTASIA run with GPU acceleration (A100) using **Apptainer**, with all caches and intermediate files stored under **LUSTRE**.
 
-📄 See: :doc:`deployment/cesga_array_job`
+📄 See: :doc:`/deployment/cesga_array_job`
 
 Greisenwald (single job)
 ------------------------
 
 Designed for high-memory, long-running jobs. Uses **Singularity** as container runtime along with pre-loaded environment modules (e.g., ``gcc``, ``hdf5``, ``singularity``). All services (PostgreSQL, RabbitMQ) and containers are launched locally.
 
-📄 See: :doc:`deployment/greisenwald_job`
+📄 See: :doc:`/deployment/greisenwald_job`
 
 Greisenwald (job array)
 -----------------------
 
 Equivalent to the CESGA array version but adapted to **Greisenwald’s scheduler configuration** and Singularity runtime. It allows batch processing via SLURM arrays using HPC-appropriate paths and module setups.
 
-📄 See: :doc:`deployment/greisenwald_array_job`
+📄 See: :doc:`/deployment/greisenwald_array_job`
 
 All deployment scripts can also be found in the official repository:
 
