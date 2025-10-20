@@ -551,17 +551,22 @@ class EmbeddingLookUp(GPUTaskInitializer):
                          len(self.types), list(sorted(self.types.keys(), key=str.lower)))
 
     def process(self, payload: dict) -> list[dict]:
-        """Compute nearest neighbors for a homogeneous (model_id, layer) batch.
+        """
+        Compute nearest neighbors for a homogeneous (model_id, layer) batch.
 
         This method:
-          - Loads query embeddings from HDF5 (or directly from payload in legacy mode).
-          - Computes distances against the cached reference matrix for the given
-            (model_id, layer_index).
-          - Optionally applies redundancy filtering (exclude cluster members).
-          - Selects nearest neighbors based on distance threshold and per-entry limit.
-          - Returns a compact list of neighbor hits.
 
-        Expected Payload:
+        - Loads query embeddings from HDF5 (or directly from payload in legacy mode).
+        - Computes distances against the cached reference matrix for the given
+          (model_id, layer_index).
+        - Optionally applies redundancy filtering (exclude cluster members).
+        - Selects nearest neighbors based on distance threshold and per-entry limit.
+        - Returns a compact list of neighbor hits.
+
+        Expected Payload
+        ----------------
+        ::
+
             {
               "model_id": int,
               "layer_index": Optional[int],
@@ -578,32 +583,39 @@ class EmbeddingLookUp(GPUTaskInitializer):
               ]
             }
 
-        Distance computation:
-            - Uses GPU (PyTorch) if ``conf['use_gpu']`` is True.
-            - Otherwise falls back to CPU (SciPy `cdist`).
-            - ``self.distance_metric`` must be either ``"cosine"`` or ``"euclidean"``.
+        Distance computation
+        --------------------
+        - Uses GPU (PyTorch) if ``conf['use_gpu']`` is True.
+        - Otherwise falls back to CPU (SciPy ``cdist``).
+        - ``self.distance_metric`` must be either ``"cosine"`` or ``"euclidean"``.
 
-        Redundancy:
-            - If MMseqs2 clustering is configured, neighbors belonging to the same
-              redundancy cluster as the query accession are excluded.
+        Redundancy
+        ----------
+        - If MMseqs2 clustering is configured, neighbors belonging to the same
+          redundancy cluster as the query accession are excluded.
 
-        Neighbor selection:
-            - Results are sorted by ascending distance.
-            - Filtered by per-model `distance_threshold` (if provided).
-            - Truncated to `limit_per_entry`.
+        Neighbor selection
+        ------------------
+        - Results are sorted by ascending distance.
+        - Filtered by per-model ``distance_threshold`` (if provided).
+        - Truncated to ``limit_per_entry``.
 
-        Returns:
-            list[dict]: One record per selected reference neighbor, with fields:
-                - accession (str)
-                - ref_sequence_id (int)
-                - distance (float)
-                - model_name (str)
-                - embedding_type_id (int)
-                - layer_index (Optional[int])
+        Returns
+        -------
+        list[dict]
+            One record per selected reference neighbor, with fields:
 
-        Notes:
-            - GO expansion and sequence retrieval are deferred to :meth:`store_entry`
-              to keep payloads minimal.
+            - accession (str)
+            - ref_sequence_id (int)
+            - distance (float)
+            - model_name (str)
+            - embedding_type_id (int)
+            - layer_index (Optional[int])
+
+        Notes
+        -----
+        GO expansion and sequence retrieval are deferred to :meth:`store_entry`
+        to keep payloads minimal.
         """
 
         t_start = time.perf_counter()
@@ -790,7 +802,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
                (identity, similarity, etc.) when both sequences are available.
             3) Append execution metadata (distance metric and per-model threshold),
                then write CSV shards hierarchically under:
-                 ``raw_results/{model_name}/layer_{k or 'legacy'}/{accession}.csv``.
+               ``raw_results/{model_name}/layer_{k or 'legacy'}/{accession}.csv``.
             4) Update a global FASTA containing all queries (``>Q{idx}``) and
                references (``>R{idx}``) with stable indices for downstream tools.
 
@@ -1475,15 +1487,15 @@ class EmbeddingLookUp(GPUTaskInitializer):
         --------
         1. Locate all CSV shards under ``raw_results/**`` across models and layers.
         2. For each accession:
-           - Concatenate all shards belonging to it.
-           - Compute per-GO aggregation metrics defined in the configuration.
-           - Apply weighting scheme (if provided) to compute per-metric contributions
-             and a global ``final_score``.
-           - Collect associated proteins and counts.
-           - Write results incrementally to a global ``summary.csv``.
+            - Concatenate all shards belonging to it.
+            - Compute per-GO aggregation metrics defined in the configuration.
+            - Apply weighting scheme (if provided) to compute per-metric contributions
+              and a global ``final_score``.
+            - Collect associated proteins and counts.
+            - Write results incrementally to a global ``summary.csv``.
         3. Trigger downstream exports:
-           - Per model/layer TopGO files: ``topgo/{model}/layer_{k}/{category}.topgo``.
-           - Ensemble TopGO files: ``topgo/ensemble/{category}.topgo``.
+            - Per model/layer TopGO files: ``topgo/{model}/layer_{k}/{category}.topgo``.
+            - Ensemble TopGO files: ``topgo/ensemble/{category}.topgo``.
 
         Configuration (conf['postprocess']['summary'])
         ----------------------------------------------
@@ -1498,7 +1510,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
             Raw weights per metric, alias, or metric+agg combination.
             Normalized to form ``final_score`` and weighted columns prefixed by ``weighted_prefix``.
         - weighted_prefix : str
-            Prefix for weighted metric outputs (default: "w_").
+            Prefix for weighted metric outputs (default: "w\\_").
 
         Output
         ------
