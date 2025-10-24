@@ -1,143 +1,203 @@
-Running FANTASIA at CESGA (SLURM + Apptainer + GPU)
-===================================================
+#!/bin/bash
+#SBATCH -p gpu
+#SBATCH -c 32
+#SBATCH --gres=gpu
+#SBATCH --mem=64G
+#SBATCH -t 02:00:00
+#SBATCH --job-name=fantasia_job
+#SBATCH --output=fantasia_%j.out
+#SBATCH --error=fantasia_%j.err
 
-This section describes how to execute the full **FANTASIA functional annotation pipeline** on the **CESGA supercomputer** using SLURM job arrays and GPU acceleration. All components (PostgreSQL, RabbitMQ, FANTASIA) are isolated via **Apptainer containers**, and run locally on each node without external dependencies.
+################################################################################
+# FANTASIA job script for CESGA (SLURM GPU partition)
+#
+# This script launches the full FANTASIA functional annotation pipeline using:
+#
+# - PostgreSQL with pgvector (run via Apptainer container)
+# - RabbitMQ (run via Apptainer container)
+# - FANTASIA (run via Apptainer container with GPU support)
+#
+# All services are isolated and launched locally within the job node,
+# using bind mounts to persistent storage on LUSTRE.
+#
+# NOTE: This script is intended to be submitted via `sbatch` on CESGA's SLURM system.
+################################################################################
 
-Job script overview
--------------------
+# =======================
+# Load required modules
+# =======================
+module load cesga/system apptainer/1.2.3
 
-The recommended SLURM script (`cesga_array.sh`) is designed to:
 
-- Read tab-separated parameters from a file (input FASTA, experiment name, and extra options)
-- Set up all persistent paths on LUSTRE
-- Launch services (PostgreSQL + RabbitMQ) inside containers
-- Run `fantasia initialize` and `fantasia run` inside the GPU container
-- Perform automated cleanup on exit
+# Lustre-based persistent storage paths
+# =======================
+LUSTRE_BASE="/mnt/lustre/scratch/nlsas/home/csic/cbb/fpc"
+TRANSFORMERS_CACHE="$LUSTRE_BASE/.transformers_cache"
+HF_CACHE="$LUSTRE_BASE/.hf_cache"
+UDOCKER_REPO="$LUSTRE_BASE/.udocker_repo"
+APPTAINER_CACHE="$LUSTRE_BASE/.singularity/cache"
+APPTAINER_TMP="$LUSTRE_BASE/.singularity/tmp"
+APPTAINER_LOCAL_CACHE="$LUSTRE_BASE/.singularity/local"
+PIP_CACHE="$LUSTRE_BASE/.pip_cache"
 
-### SLURM header
+# =======================
+# Export environment variables
+# =======================
+export TRANSFORMERS_CACHE
+export HF_HOME="$HF_CACHE"
+export UDOCKER_DIR="$UDOCKER_REPO"
+export APPTAINER_CACHEDIR="$APPTAINER_CACHE"
+export APPTAINER_TMPDIR="$APPTAINER_TMP"
+export APPTAINER_LOCALCACHEDIR="$APPTAINER_LOCAL_CACHE"
+export PIP_CACHE_DIR="$PIP_CACHE"
 
-.. code-block:: bash
+# =======================
 
-    #SBATCH -p gpu
-    #SBATCH --gres=gpu:a100:1
-    #SBATCH -c 32
-    #SBATCH --mem=64G
-    #SBATCH -t 08:00:00
-    #SBATCH --job-name=fantasia_job
-    #SBATCH --output=fantasia_%j.out
-    #SBATCH --error=fantasia_%j.err
+# Load input parameters
 
-Requesting:
-- A GPU A100 node (`--gres=gpu:a100:1`)
-- 32 CPU cores
-- 64 GB of memory
-- Maximum walltime: 8 hours
+# =======================
 
-Parameter file format
----------------------
+PARAM_FILE="./experiments.tsv"
+IFS=$'\t' read -r INPUT OUTPUT EXTRA <<< "$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$PARAM_FILE")"
 
-The script expects an input file (e.g., `fantasia_input_list.txt`) with **tab-separated** fields:
+if [ -z "$INPUT" ] || [ -z "$OUTPUT" ]; then
+echo "❌ ERROR: Entrada no válida en línea $SLURM_ARRAY_TASK_ID del fichero de parámetros"
+exit 1
+fi
 
-.. code-block:: text
+echo "📥 Input file: $INPUT"
+echo "📤 Output name: $OUTPUT"
+echo "⚙️  Extra params: $EXTRA"
 
-    <input_fasta>    <output_prefix>    <extra_arguments>
+STORE=$PWD
 
-Example:
+# =======================
+# Define working directories
+# =======================
+PROJECT_DIR="$STORE/FANTASIA"
+EXECUTION_DIR="$STORE/fantasia"
+SHARED_MEM_DIR="/tmp/fantasia"
+POSTGRESQL_DATA="$SHARED_MEM_DIR/data"
+POSTGRESQL_SOCKET="$SHARED_MEM_DIR/socket"
+RABBITMQ_DATA_DIR="$STORE/fantasia_rabbitmq"
+CONFIG_FILE="$PROJECT_DIR/fantasia/config.yaml"
 
-.. code-block:: text
+# Apptainer container images
+PGVECTOR_IMAGE="$PROJECT_DIR/pgvector.sif"
+RABBITMQ_IMAGE="$PROJECT_DIR/rabbitmq.sif"
+FANTASIA_IMAGE="$PROJECT_DIR/fantasia.sif"
 
-    proteomes_uniprot/UP000000589.fasta    MOUSE_nr100_k1    --redundancy_filter 1.0 --taxonomy_ids_to_exclude 10090,9606
+DB_NAME="BioData"
+PG_PORT=5432
 
-This file must be located at `$HOME/fantasia_input_list.txt` (can be customized).
+# =======================
+# Environment sanity check
+# =======================
+echo "📂 Current working directory:"
+pwd
+ls -l
 
-Launching a job array
----------------------
+# Clone FANTASIA repo if missing
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "🚀 Cloning FANTASIA from GitHub..."
+    git clone https://github.com/CBBIO/FANTASIA.git "$PROJECT_DIR"
+fi
 
-Submit the job array with:
+cd "$PROJECT_DIR" || exit 1
 
-.. code-block:: bash
+# =======================
+# Build containers if not present
+# =======================
+if [ ! -f "$PGVECTOR_IMAGE" ]; then
+    echo "🔨 Building pgvector container..."
+    apptainer build "$PGVECTOR_IMAGE" docker://pgvector/pgvector:pg16
+fi
 
-    sbatch --array=1-8%1 cesga_array.sh
+if [ ! -f "$RABBITMQ_IMAGE" ]; then
+    echo "🔨 Building RabbitMQ container..."
+    apptainer build "$RABBITMQ_IMAGE" docker://rabbitmq:management
+fi
 
-Explanation:
+if [ ! -f "$FANTASIA_IMAGE" ]; then
+    echo "🔨 Building FANTASIA container..."
+    apptainer build --disable-cache "$FANTASIA_IMAGE" docker://frapercan/fantasia:latest
+fi
 
-- `--array=1-8`: launches 8 jobs corresponding to lines 1–8 of the parameter file
-- `%1`: restricts execution to **1 job at a time** (adjust based on GPU availability)
+# =======================
+# Launch PostgreSQL (pgvector)
+# =======================
+echo "🚀 Starting PostgreSQL (pgvector)..."
 
-Key persistent paths (LUSTRE)
------------------------------
+PGDATA_HOST="$STORE/pgdata_pgvector"
+PG_RUN="$STORE/pg_run"
 
-These directories are defined in the script and must be adapted to your CESGA account:
+rm -rf "$PGDATA_HOST"
+mkdir -p "$PGDATA_HOST" "$PG_RUN"
 
-.. code-block:: bash
+nohup apptainer run \
+  --env POSTGRES_USER=usuario \
+  --env POSTGRES_PASSWORD=clave \
+  --env POSTGRES_DB="$DB_NAME" \
+  --bind "$PGDATA_HOST:/var/lib/postgresql/data" \
+  --bind "$PG_RUN:/var/run/postgresql" \
+  "$PGVECTOR_IMAGE" > postgres.log 2>&1 &
 
-    LUSTRE_BASE="/mnt/lustre/scratch/nlsas/home/csic/cbb/fpc"
+# =======================
+# Launch RabbitMQ
+# =======================
+echo "🚀 Starting RabbitMQ..."
 
-    export TRANSFORMERS_CACHE="$LUSTRE_BASE/.transformers_cache"
-    export HF_HOME="$LUSTRE_BASE/.hf_cache"
-    export UDOCKER_DIR="$LUSTRE_BASE/.udocker_repo"
-    export APPTAINER_CACHEDIR="$LUSTRE_BASE/.singularity/cache"
-    export APPTAINER_TMPDIR="$LUSTRE_BASE/.singularity/tmp"
-    export APPTAINER_LOCALCACHEDIR="$LUSTRE_BASE/.singularity/local"
-    export PIP_CACHE_DIR="$LUSTRE_BASE/.pip_cache"
+rm -rf "$RABBITMQ_DATA_DIR"
+mkdir -p "$RABBITMQ_DATA_DIR"
 
-These are used to cache containers, models (HuggingFace), Python packages, and avoid re-downloading.
+nohup apptainer run \
+  --bind "$RABBITMQ_DATA_DIR:/var/lib/rabbitmq" \
+  "$RABBITMQ_IMAGE" > rabbitmq.log 2>&1 &
 
-Execution paths and services
-----------------------------
+# =======================
+# Wait for services to become available
+# =======================
+echo "⏳ Waiting for services to initialize..."
+sleep 30
 
-The script mounts or initializes:
+# =======================
+# Run FANTASIA pipeline
+# =======================
+mkdir -p "$EXECUTION_DIR"
 
-- `fantasia.sif`: GPU-enabled container with the full pipeline
-- `pgvector.sif`: container with PostgreSQL + pgvector
-- `rabbitmq.sif`: container with management-enabled RabbitMQ
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "❌ ERROR: Configuration file not found at $CONFIG_FILE"
+    exit 1
+fi
 
-All services are launched in the background via `apptainer run` using bind mounts:
+echo "✅ Found configuration file: $CONFIG_FILE"
+echo "📂 Listing FANTASIA contents:"
+ls -l "$PROJECT_DIR/fantasia/"
 
-.. code-block:: bash
+apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
+    fantasia initialize --base_directory /fantasia
 
-    apptainer run \
-      --env POSTGRES_USER=usuario \
-      --env POSTGRES_PASSWORD=clave \
-      --env POSTGRES_DB=BioData \
-      --bind $PGDATA_HOST:/var/lib/postgresql/data \
-      --bind $PG_RUN:/var/run/postgresql \
-      $PGVECTOR_IMAGE
+apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
+    fantasia run --input "$INPUT" --prefix "$OUTPUT" $EXTRA --base_directory /fantasia
 
-    apptainer run \
-      --bind $RABBITMQ_DATA_DIR:/var/lib/rabbitmq \
-      $RABBITMQ_IMAGE
+# =======================
+# Cleanup services on exit
+# =======================
+cleanup() {
+    echo "🧹 Cleaning up background services..."
 
-Pipeline execution
-------------------
+    if pgrep -f "$POSTGRESQL_DATA" > /dev/null; then
+        echo "🛑 Stopping PostgreSQL..."
+        pkill -f "$POSTGRESQL_DATA"
+    fi
 
-After a short delay (`sleep 15`), the pipeline is launched:
+    if pgrep -f "rabbitmq-server" > /dev/null; then
+        echo "🛑 Stopping RabbitMQ..."
+        pkill -f "rabbitmq-server"
+    fi
 
-.. code-block:: bash
-
-    apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-        fantasia initialize
-
-    apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-        fantasia run --input "$INPUT" --prefix "$OUTPUT" $EXTRA
-
-- The `--nv` flag enables GPU passthrough.
-- The output will be written under `$EXECUTION_DIR`.
-
-Cleanup
--------
-
-Upon exit, the script runs a `cleanup()` function to kill background services and delete temporary data:
-
-.. code-block:: bash
-
-    pkill -f "$POSTGRESQL_DATA"
-    pkill -f "rabbitmq-server"
-    rm -rf "$SHARED_MEM_DIR"
-
-Logs
-----
-
-- SLURM output: `fantasia_<jobid>.out`
-- SLURM error: `fantasia_<jobid>.err`
-- PostgreSQL and RabbitMQ logs: `postgres.log`, `rabbitmq.log`
+    if [[ -d "$SHARED_MEM_DIR" ]]; then
+        echo "🗑️ Removing shared memory directory: $SHARED_MEM_DIR"
+        rm -rf "$SHARED_MEM_DIR"
+    fi
+}
