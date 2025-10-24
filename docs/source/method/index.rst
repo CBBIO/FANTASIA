@@ -9,4 +9,5 @@ Method
    database_and_search
    results_storage_post_processing
    experiments_setup
+   computational_complexity
    computational_environment
