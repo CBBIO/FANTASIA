@@ -116,6 +116,12 @@ If you use **FANTASIA** in your research, please cite the following publications
    *Decoding proteome functional information in model organisms using protein language models.*  
    [DOI: 10.1101/2024.02.14.580341](https://doi.org/10.1101/2024.02.14.580341)
 
+
+## License
+
+FANTASIA is distributed under the terms of the [GNU Affero General Public License v3.0](LICENSE).
+
+
 ---
 
 ### 👥 Project Team
@@ -129,3 +135,4 @@ If you use **FANTASIA** in your research, please cite the following publications
 - **Àlex Domínguez Rodríguez**: [alex.dominguezro@autonoma.cat](mailto:alex.dominguezro@autonoma.cat)
 
 ---
+
