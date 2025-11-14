@@ -98,7 +98,6 @@ import traceback
 
 # --- Third-party libraries ---
 import h5py
-from Bio import SeqIO
 
 # --- Project-specific imports ---
 from protein_information_system.operation.embedding.sequence_embedding import SequenceEmbeddingManager
@@ -200,15 +199,15 @@ class SequenceEmbedder(SequenceEmbeddingManager):
     def _parse_fasta_robust(self, fasta_path: str) -> list:
         """
         Robust FASTA parser that handles header continuations properly.
-        
+
         This parser can handle malformed FASTA files where headers are split across
         multiple lines, which causes issues with BioPython's SeqIO.parse().
-        
+
         Parameters
         ----------
         fasta_path : str
             Path to the FASTA file to parse
-            
+
         Returns
         -------
         list
@@ -216,24 +215,24 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         """
         import re
         from collections import namedtuple
-        
+
         # Define amino acid pattern
         AA_RE = re.compile(r'^[ACDEFGHIKLMNPQRSTVWYBXZJOUacdefghiklmnpqrstvwybxzjou]+$')
-        
+
         # Create a simple SeqRecord-like object
         SeqRecord = namedtuple('SeqRecord', ['id', 'seq'])
-        
+
         records = []
         cur_header = None
         cur_seq_parts = []
         seq_started = False
-        
+
         with open(fasta_path, 'r', encoding='utf-8') as handle:
             for raw in handle:
                 line = raw.rstrip('\n')
                 if not line:
                     continue
-                    
+
                 if line.startswith('>'):
                     # Flush previous record
                     if cur_header is not None:
@@ -241,12 +240,12 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                         # Extract ID from header (first word)
                         record_id = cur_header.split()[0] if cur_header else "unknown"
                         records.append(SeqRecord(id=record_id, seq=seq_str))
-                    
+
                     cur_header = line[1:].strip()
                     cur_seq_parts = []
                     seq_started = False
                     continue
-                
+
                 s = line.strip()
                 if not seq_started:
                     # Check if line looks like a sequence (only amino acid letters)
@@ -261,13 +260,13 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 else:
                     # Sequence continuation lines
                     cur_seq_parts.append(s.replace(' ', '').upper())
-        
+
         # Flush last record
         if cur_header is not None:
             seq_str = ''.join(cur_seq_parts)
             record_id = cur_header.split()[0] if cur_header else "unknown"
             records.append(SeqRecord(id=record_id, seq=seq_str))
-        
+
         return records
 
     def enqueue(self) -> None:
