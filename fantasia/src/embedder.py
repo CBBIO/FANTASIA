@@ -197,6 +197,79 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         else:
             self.logger.warning("No embedding models enabled in configuration")
 
+    def _parse_fasta_robust(self, fasta_path: str) -> list:
+        """
+        Robust FASTA parser that handles header continuations properly.
+        
+        This parser can handle malformed FASTA files where headers are split across
+        multiple lines, which causes issues with BioPython's SeqIO.parse().
+        
+        Parameters
+        ----------
+        fasta_path : str
+            Path to the FASTA file to parse
+            
+        Returns
+        -------
+        list
+            List of Bio.SeqRecord-like objects with .id and .seq attributes
+        """
+        import re
+        from collections import namedtuple
+        
+        # Define amino acid pattern
+        AA_RE = re.compile(r'^[ACDEFGHIKLMNPQRSTVWYBXZJOUacdefghiklmnpqrstvwybxzjou]+$')
+        
+        # Create a simple SeqRecord-like object
+        SeqRecord = namedtuple('SeqRecord', ['id', 'seq'])
+        
+        records = []
+        cur_header = None
+        cur_seq_parts = []
+        seq_started = False
+        
+        with open(fasta_path, 'r', encoding='utf-8') as handle:
+            for raw in handle:
+                line = raw.rstrip('\n')
+                if not line:
+                    continue
+                    
+                if line.startswith('>'):
+                    # Flush previous record
+                    if cur_header is not None:
+                        seq_str = ''.join(cur_seq_parts)
+                        # Extract ID from header (first word)
+                        record_id = cur_header.split()[0] if cur_header else "unknown"
+                        records.append(SeqRecord(id=record_id, seq=seq_str))
+                    
+                    cur_header = line[1:].strip()
+                    cur_seq_parts = []
+                    seq_started = False
+                    continue
+                
+                s = line.strip()
+                if not seq_started:
+                    # Check if line looks like a sequence (only amino acid letters)
+                    if AA_RE.match(s):
+                        seq_started = True
+                        cur_seq_parts.append(s.upper())
+                    else:
+                        # Header continuation (contains spaces, '=', digits, parentheses, etc.)
+                        if cur_header is None:
+                            cur_header = ''
+                        cur_header += ' ' + s
+                else:
+                    # Sequence continuation lines
+                    cur_seq_parts.append(s.replace(' ', '').upper())
+        
+        # Flush last record
+        if cur_header is not None:
+            seq_str = ''.join(cur_seq_parts)
+            record_id = cur_header.split()[0] if cur_header else "unknown"
+            records.append(SeqRecord(id=record_id, seq=seq_str))
+        
+        return records
+
     def enqueue(self) -> None:
         """
         Read the input FASTA and enqueue *all* sequences for *all* enabled models,
@@ -216,7 +289,7 @@ class SequenceEmbedder(SequenceEmbeddingManager):
             if not os.path.exists(input_fasta):
                 raise FileNotFoundError(f"FASTA file not found at: {input_fasta}")
 
-            sequences = list(SeqIO.parse(input_fasta, "fasta"))
+            sequences = self._parse_fasta_robust(input_fasta)
 
             # Optional cap
             limit_exec = getattr(self, "limit_execution", None)
