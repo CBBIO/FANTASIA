@@ -116,21 +116,23 @@ If you use **FANTASIA** in your research, please cite the following publications
    *Decoding proteome functional information in model organisms using protein language models.*  
    [DOI: 10.1101/2024.02.14.580341](https://doi.org/10.1101/2024.02.14.580341)
 
+
+## License
+
+FANTASIA is distributed under the terms of the [GNU Affero General Public License v3.0](LICENSE).
+
+
 ---
 
 ### 👥 Project Team
 
-#### 🔧 Technical Team
-
-- **Francisco Miguel Pérez Canales**: [fmpercan@upo.es](mailto:fmpercan@upo.es)  
-  *Author of the system’s engineering and technical implementation*
-- **Francisco J. Ruiz Mota**: [fraruimot@alum.us.es](mailto:fraruimot@alum.us.es)  
-  *Junior developer*
-
-#### 🧬 Scientific Team & Original Authors of FANTASIA v1
-
 - **Ana M. Rojas**: [a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)
-- **Gemma I. Martínez-Redondo**: [gemma.martinez@ibe.upf-csic.es](mailto:gemma.martinez@ibe.upf-csic.es)
 - **Rosa Fernández**: [rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)
+- **Gemma I. Martínez-Redondo**: [gemma.martinez@ibe.upf-csic.es](mailto:gemma.martinez@ibe.upf-csic.es)
+- **Francisco Miguel Pérez Canales**: [fmpercan@upo.es](mailto:fmpercan@upo.es)
+- **Belén Carbonetto**: [belen.carbonetto.metazomics@gmail.com](mailto:belen.carbonetto.metazomics@gmail.com)
+- **Francisco J. Ruiz Mota**: [fraruimot@alum.us.es](mailto:fraruimot@alum.us.es)  
+- **Àlex Domínguez Rodríguez**: [alex.dominguezro@autonoma.cat](mailto:alex.dominguezro@autonoma.cat)
 
 ---
+

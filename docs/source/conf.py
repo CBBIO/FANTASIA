@@ -48,7 +48,7 @@ html_theme_options = {
 autodoc_mock_imports = [
     "yaml", "h5py",
     "Bio", "numpy", "protein_information_system",
-    "torch", "pandas", "sklearn", "scipy",
+    "torch", "pandas", "sklearn", "scipy","polars","parasail", "goatools", "ete3"
 ]
 
 

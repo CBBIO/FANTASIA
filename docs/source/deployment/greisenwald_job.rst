@@ -1,5 +1,5 @@
 Single FANTASIA Job Execution on Greisenwald HPC (GPU + Singularity)
-=================================================================
+================================================================================================
 
 This section describes how to launch a **single, non-array job** of the FANTASIA pipeline on the **Greisenwald HPC cluster**, using SLURM with GPU acceleration and containerized execution via **Singularity** (non-Apptainer).
 

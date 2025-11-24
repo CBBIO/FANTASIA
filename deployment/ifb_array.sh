@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH -p gpu
 #SBATCH -c 32
-#SBATCH --gres=gpu
+#SBATCH --gres=gpu:l40s:1
 #SBATCH --mem=64G
-#SBATCH -t 02:00:00
+#SBATCH -t 12:00:00
 #SBATCH --job-name=fantasia_job
 #SBATCH --output=fantasia_%j.out
 #SBATCH --error=fantasia_%j.err
@@ -22,35 +22,6 @@
 #
 # NOTE: This script is intended to be submitted via `sbatch` on CESGA's SLURM system.
 ################################################################################
-
-# =======================
-# Load required modules
-# =======================
-module load cesga/system apptainer/1.2.3
-
-
-# Lustre-based persistent storage paths
-# =======================
-LUSTRE_BASE="/mnt/lustre/scratch/nlsas/home/csic/cbb/fpc"
-TRANSFORMERS_CACHE="$LUSTRE_BASE/.transformers_cache"
-HF_CACHE="$LUSTRE_BASE/.hf_cache"
-UDOCKER_REPO="$LUSTRE_BASE/.udocker_repo"
-APPTAINER_CACHE="$LUSTRE_BASE/.singularity/cache"
-APPTAINER_TMP="$LUSTRE_BASE/.singularity/tmp"
-APPTAINER_LOCAL_CACHE="$LUSTRE_BASE/.singularity/local"
-PIP_CACHE="$LUSTRE_BASE/.pip_cache"
-
-# =======================
-# Export environment variables
-# =======================
-export TRANSFORMERS_CACHE
-export HF_HOME="$HF_CACHE"
-export UDOCKER_DIR="$UDOCKER_REPO"
-export APPTAINER_CACHEDIR="$APPTAINER_CACHE"
-export APPTAINER_TMPDIR="$APPTAINER_TMP"
-export APPTAINER_LOCALCACHEDIR="$APPTAINER_LOCAL_CACHE"
-export PIP_CACHE_DIR="$PIP_CACHE"
-
 # =======================
 
 # Load input parameters
@@ -120,7 +91,7 @@ fi
 
 if [ ! -f "$FANTASIA_IMAGE" ]; then
     echo "🔨 Building FANTASIA container..."
-    apptainer build --disable-cache "$FANTASIA_IMAGE" docker://frapercan/fantasia:latest
+    apptainer build --disable-cache "$FANTASIA_IMAGE" docker://frapercan/fantasia:dev
 fi
 
 # =======================
@@ -175,10 +146,10 @@ echo "📂 Listing FANTASIA contents:"
 ls -l "$PROJECT_DIR/fantasia/"
 
 apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-    fantasia initialize --base_directory /fantasia
+    fantasia initialize
 
 apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-    fantasia run --input "$INPUT" --prefix "$OUTPUT" $EXTRA --base_directory /fantasia
+    fantasia run --input "$INPUT" --prefix "$OUTPUT" $EXTRA
 
 # =======================
 # Cleanup services on exit
@@ -201,3 +172,4 @@ cleanup() {
         rm -rf "$SHARED_MEM_DIR"
     fi
 }
+
