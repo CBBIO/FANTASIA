@@ -6,7 +6,7 @@
 
 
 
-# FANTASIA
+# FANTASIA v4.1
 
 **Functional ANnoTAtion based on embedding space SImilArity**
 
@@ -15,25 +15,24 @@ FANTASIA is an advanced pipeline for the automatic functional annotation of prot
 For full documentation, visit [FANTASIA Documentation](https://fantasia.readthedocs.io/en/latest/).
 
 
-
 ## Reference Datasets
 Two packaged reference datasets are available; select one depending on your analysis needs:
 
 - **Main Reference (last layer, default)**  
   Embeddings extracted only from the **final hidden layer** of each PLM.  
   Recommended for most annotation tasks (smaller, faster to load).  
-  *Record*: https://zenodo.org/records/17167843
+  *Record*: https://zenodo.org/records/17795871
 
-- **Multilayer Reference (intermediate + final layers)**  
+- **Multilayer Reference (input layers + final layers)**  
   Embeddings extracted from **multiple hidden layers** (including intermediate and final).  
   Suitable for comparative and exploratory analyses requiring layer-wise representations.  
-  *Record*: https://zenodo.org/records/17151847
+  *Record*: https://zenodo.org/records/17793273
 
 
 ## Key Features
 
-- **✅ Available Embedding Models**  
-  Supports protein language models: **ProtT5**, **ProstT5**, **ESM2** and **Ankh** for sequence representation.
+**✅ Available Embedding Models**  
+Supports protein language models: **ESM-2**, **ProtT5**, **ProstT5**, **Ankh3-Large**, and **ESM3c** for sequence representation.
 
 - **🔍 Redundancy Filtering**  
   Filters out homologous sequences using **MMseqs2** in the lookup table, allowing controlled redundancy levels through an adjustable
@@ -57,8 +56,7 @@ Two packaged reference datasets are available; select one depending on your anal
   Performs high-speed searches using **in-memory computations**. Reference vectors are retrieved from a PostgreSQL database with pgvector for comparison.
 
 - **🔬 Functional Annotation by Similarity**  
-  Assigns Gene Ontology (GO) terms to proteins based on **embedding space similarity**, using pre-trained
-  embeddings.
+  Assigns Gene Ontology (GO) terms to proteins based on **embedding space similarity**, using pre-trained embeddings from all supported models.
 
 ## Pipeline Overview (Simplified)
 
@@ -132,7 +130,7 @@ FANTASIA is distributed under the terms of the [GNU Affero General Public Licens
 - **Francisco Miguel Pérez Canales**: [fmpercan@upo.es](mailto:fmpercan@upo.es)
 - **Belén Carbonetto**: [belen.carbonetto.metazomics@gmail.com](mailto:belen.carbonetto.metazomics@gmail.com)
 - **Francisco J. Ruiz Mota**: [fraruimot@alum.us.es](mailto:fraruimot@alum.us.es)  
-- **Àlex Domínguez Rodríguez**: [alex.dominguezro@autonoma.cat](mailto:alex.dominguezro@autonoma.cat)
+- **Àlex Domínguez Rodríguez**: [adomrod4@upo.es](maito:adomrod4@upo.es)
 
 ---
 
