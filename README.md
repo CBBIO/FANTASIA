@@ -23,7 +23,7 @@ Two packaged reference datasets are available; select one depending on your anal
   Recommended for most annotation tasks (smaller, faster to load).  
   *Record*: https://zenodo.org/records/17795871
 
-- **Multilayer Reference (input layers + final layers)**  
+- **Multilayer Reference (early layers + final layers)**  
   Embeddings extracted from **multiple hidden layers** (including intermediate and final).  
   Suitable for comparative and exploratory analyses requiring layer-wise representations.  
   *Record*: https://zenodo.org/records/17793273
