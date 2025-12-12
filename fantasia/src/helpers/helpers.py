@@ -483,3 +483,157 @@ def get_descendant_ids(
         out.update(ids)
 
     return sorted(out)
+
+
+from ete3 import NCBITaxa
+import numpy as np
+from functools import lru_cache
+
+ncbi = NCBITaxa()
+
+
+# ------------------------------------------------------
+# Normalización robusta
+# ------------------------------------------------------
+def _normalize_tax_id(t):
+    if t is None:
+        return None
+
+    if isinstance(t, (list, tuple, np.ndarray)):
+        if len(t) == 0:
+            return None
+        t = t[0]
+
+    if isinstance(t, np.generic):
+        t = t.item()
+
+    if isinstance(t, (bytes, bytearray)):
+        t = t.decode("utf-8")
+
+    try:
+        return int(t)
+    except Exception:
+        return None
+
+
+# ------------------------------------------------------
+# Cache de linajes
+# ------------------------------------------------------
+@lru_cache(maxsize=50000)
+def _cached_lineage(tid: int):
+    return ncbi.get_lineage(tid)
+
+
+# ------------------------------------------------------
+# Clasificación taxonómica "chula"
+# ------------------------------------------------------
+def _classify_relation(t1, t2, common_count, lca, lin1, lin2):
+    # Same taxon
+    if t1 == t2:
+        return "same"
+
+    # Direct lineage relations
+    if t1 in lin2:
+        return "ancestor"
+    if t2 in lin1:
+        return "descendant"
+
+    # Direct parent/child
+    if len(lin1) >= 2 and lin1[-2] == t2:
+        return "child"
+    if len(lin2) >= 2 and lin2[-2] == t1:
+        return "parent"
+
+    # Root-only
+    if common_count == 1 and lca == 1:
+        return "root-only"
+
+    # Distant (very shallow LCA)
+    if common_count <= 2:
+        return "distant"
+
+    # Intermediate (moderate common ancestry: Bilateria, etc.)
+    if 3 <= common_count <= 15:
+        return "intermediate"
+
+    # Close (deep common ancestry: mammals, vertebrates, etc.)
+    if common_count > 15:
+        return "close"
+
+    return "unrelated"
+
+
+# ------------------------------------------------------
+# FUNCIÓN FINAL COMPLETA
+# ------------------------------------------------------
+def compute_taxonomy(t1_raw, t2_raw):
+    """
+    Returns a taxonomy object containing:
+        - lca
+        - distance
+        - common_ancestors
+        - relation
+    """
+
+    # Normalización
+    t1 = _normalize_tax_id(t1_raw)
+    t2 = _normalize_tax_id(t2_raw)
+
+    if t1 is None or t2 is None:
+        return {
+            "lca": None,
+            "distance": -1,
+            "common_ancestors": 0,
+            "relation": "unrelated",
+        }
+
+    # Same case
+    if t1 == t2:
+        return {
+            "lca": t1,
+            "distance": 0,
+            "common_ancestors": 1,
+            "relation": "same",
+        }
+
+    # Linajes con cache
+    try:
+        lin1 = _cached_lineage(t1)
+        lin2 = _cached_lineage(t2)
+    except Exception:
+        return {
+            "lca": None,
+            "distance": -1,
+            "common_ancestors": 0,
+            "relation": "unrelated",
+        }
+
+    # Ancestros comunes
+    common = set(lin1).intersection(lin2)
+    common_count = len(common)
+
+    # LCA manual
+    if common_count > 0:
+        lca = max(common, key=lambda x: lin1.index(x))
+    else:
+        lca = None
+
+    # Distancia
+    if lca:
+        try:
+            distance = (len(lin1) - lin1.index(lca)) + (len(lin2) - lin2.index(lca))
+        except Exception:
+            distance = -1
+    else:
+        distance = -1
+
+    # Relación taxonómica
+    relation = _classify_relation(t1, t2, common_count, lca, lin1, lin2)
+
+    # Resultado final
+    return {
+        "lca": lca,
+        "distance": distance,
+        "common_ancestors": common_count,
+        "relation": relation,
+    }

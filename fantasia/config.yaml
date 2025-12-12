@@ -9,12 +9,13 @@
 log_path: ~/fantasia/logs/    # str  | Directory for pipeline logs (will be created if missing)
 constants: ./fantasia/constants.yaml # str  | Directory for constants
 base_directory: ~/fantasia/   # str  | Root working dir: inputs, outputs, caches, temp live here
-prefix: sample # str | Output prefix (folder & file stem)
+prefix: merged
+ # str | Output prefix (folder & file stem)
 
 limit_execution: 0
 monitor_interval: 10
 
-input: data_sample/sample.fasta  # str | Default FASTA (can be overridden via CLI --input)
+input: data_sample/testsuperset_cafa6.fasta  # str | Default FASTA (can be overridden via CLI --input)
 only_lookup: False            # bool | If true: skip Stage A (embedding) and run Stage B using existing embeddings.h5
 
 # ------------------------------------------------------------------------------
@@ -51,7 +52,7 @@ delete_queues: true           # bool | Drop queues on boot/teardown to avoid sta
 #
 # Leave empty to skip the preload step.
 # ------------------------------------------------------------------------------
-# embeddings_url: "https://zenodo.org/records/17167843/files/FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1"
+embeddings_url: "https://zenodo.org/records/17167843/files/FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1"
 # embeddings_url: "https://zenodo.org/records/17151847/files/FANTASIA_UniProt_Sep2025_Final+Interm_ExpOnly.dump?download=1"
 
 # ==============================================================================
@@ -60,8 +61,8 @@ delete_queues: true           # bool | Drop queues on boot/teardown to avoid sta
 # ==============================================================================
 embedding:
   device: cuda                # enum{cuda,cpu} | Primary device for PLMs; set to cpu to force CPU execution
-  queue_batch_size: 100       # int  | Number of sequences per published batch to RabbitMQ
-  max_sequence_length: 0      # int  | 0 disables truncation; otherwise sequences are truncated to this length
+  queue_batch_size: 1000       # int  | Number of sequences per published batch to RabbitMQ
+  max_sequence_length: 1516      # int  | 0 disables truncation; otherwise sequences are truncated to this length
 
   # Per-model configuration.
   # name: logical model identifier used across the pipeline (case-sensitive).
@@ -76,31 +77,30 @@ embedding:
     ESM: # 34 layers: 0..33
       enabled: False
       batch_size: 1
-      layer_index: [ 0 ]
-      distance_threshold: 0
+      layer_index: [ 0,1,2,16,17,18 ]
 
     ESM3c: # 36 layers: 0..35
-      enabled: False
+      enabled: True
       batch_size: 1
-      layer_index: [ 0 ]
+      layer_index: [ 0,2 ]
       distance_threshold: 0
 
     Ankh3-Large: # 49 layers: 0..48
       enabled: False
       batch_size: 1
-      layer_index: [ 0 ]
+      layer_index: [ 0,1,2,23,24,25 ]
       distance_threshold: 0
 
     Prot-T5: # 25 layers: 0..24
-      enabled: True
+      enabled: False
       batch_size: 1
-      layer_index: [ 0 ]
+      layer_index: [ 0, 1, 2, 11, 12, 13 ]
       distance_threshold: 0
 
     Prost-T5: # 25 layers: 0..24 (same backbone as Prot-T5)
       enabled: False
       batch_size: 1
-      layer_index: [ 0 ]
+      layer_index: [ 0, 1, 2, 11, 12, 13 ]
       distance_threshold: 0
 
 
@@ -113,29 +113,49 @@ embedding:
 # Consumes embeddings.h5 + in-memory references (IDs, vectors, GO) to produce CSV/TSV.
 # ==============================================================================
 lookup:
-  use_gpu: True               # bool | If true, run vector distances on GPU when available
-  batch_size: 516            # int  | Vector distance batch size (tune to GPU memory)
-  distance_metric: cosine     # enum{cosine,euclidean} | Distance for nearest-neighbor search
-  limit_per_entry: 1          # int  | k neighbors returned per query (a.k.a. “k”)
-  lookup_cache_max: 1       # int  | Max entries per (model,layer) in-memory cache (tune to RAM)
-  topgo: true                 # bool | If true, emit TopGO-compatible TSV alongside CSV outputs
 
-  precision: 4               # int | Número de decimales a usar en la exportación de resultados.
+  compute:
+    use_gpu: true
+    batch_size: 5
+    distance_metric: cosine
 
+  nn:
+    limit_per_entry: 10
+    cache_max: 1
 
+  filters:
+    redundancy:
+      identity: 0
+      coverage: 0.7
+      threads: 10
 
+    taxonomy:
+      exclude: []
+      include_only: []
+      get_descendants: false
 
-  # Redundancy filtering (optional pre-filter on reference side, e.g., MMseqs2).
-  redundancy:
-    identity: 0             # float in [0,1] | 0 disables; 1.0 = 100% identity (strict deduplication)
-    coverage: 0.7             # float in (0,1]  | Alignment coverage threshold used in deduplication
-    threads: 10               # int  | CPU threads for redundancy filtering tools
+  selection:
+    enabled: true
+    thresholds:
+      strong:
+        min_identity: 0.40
+        max_identity: 1.0
+      intermediate:
+        min_identity: 0.25
+        max_identity: 0.40
+      weak:
+        min_identity: 0.00
+        max_identity: 0.25
 
-  # Taxonomy filters (applied after NN retrieval to prune/keep specific taxa).
-  taxonomy:
-    exclude: [ ]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
-    include_only: [ ]          # list[str] | If non-empty, restrict results to these IDs (takes precedence)
-    get_descendants: false    # bool | If true, expand filters to include descendants
+    categories:
+      C: { K_good: 3, intermediate_multiplier: 2, weak_multiplier: 3 }
+      F: { K_good: 3, intermediate_multiplier: 2, weak_multiplier: 3 }
+      P: { K_good: 3, intermediate_multiplier: 2, weak_multiplier: 3 }
+
+  output:
+    topgo: true
+    precision: 4
+
 
 
 # ------------------------------------------------------------------------------
@@ -143,7 +163,7 @@ lookup:
 # Scoring, collapsing, reliability index derivation, model/layer consolidation.
 # ------------------------------------------------------------------------------
 postprocess:
-  keep_sequences: true
+  keep_sequences: False
   summary:
     include_counts: true
     normalize_count_by_limit_per_entry: true   # defaults to True if omitted below
