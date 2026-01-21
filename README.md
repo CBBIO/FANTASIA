@@ -14,6 +14,7 @@ FANTASIA is an advanced pipeline for the automatic functional annotation of prot
 
 For full documentation, visit [FANTASIA Documentation](https://fantasia.readthedocs.io/en/latest/).
 
+For FANTASIA-Lite, visit https://github.com/CBBIO/FANTASIA-Lite
 
 ## Reference Datasets
 Two packaged reference datasets are available; select one depending on your analysis needs:
