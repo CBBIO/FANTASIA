@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "FANTASIA"
-version = "4.0.3"
+version = "4.1.0"
 
 description = "Functional ANnoTAtion based on embedding space SImilArity"
 authors = ["Francisco Miguel Pérez Canales <frapercan1@alum.us.es>"]
@@ -15,7 +15,7 @@ docopt = "^0.6.2"
 parasail = "^1.3.4"
 ete3 = "^3.1.3"
 scipy = "^1.16.0"
-protein-information-system = "^3.0.0"
+protein-information-system = "^3.1.0"
 goatools = "^1.4.12"
 polars = "^1.33.1"
 pyarrow = "^21.0.0"

@@ -51,7 +51,7 @@ delete_queues: true           # bool | Drop queues on boot/teardown to avoid sta
 #
 # Leave empty to skip the preload step.
 # ------------------------------------------------------------------------------
-embeddings_url: "https://zenodo.org/records/17167843/files/FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1"
+# embeddings_url: "https://zenodo.org/records/17167843/files/FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1"
 # embeddings_url: "https://zenodo.org/records/17151847/files/FANTASIA_UniProt_Sep2025_Final+Interm_ExpOnly.dump?download=1"
 
 # ==============================================================================
@@ -74,19 +74,19 @@ embedding:
 
   models:
     ESM: # 34 layers: 0..33
-      enabled: True
+      enabled: False
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: 0
 
     ESM3c: # 36 layers: 0..35
-      enabled: True
+      enabled: False
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: 0
 
     Ankh3-Large: # 49 layers: 0..48
-      enabled: True
+      enabled: False
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: 0
@@ -98,7 +98,7 @@ embedding:
       distance_threshold: 0
 
     Prost-T5: # 25 layers: 0..24 (same backbone as Prot-T5)
-      enabled: True
+      enabled: False
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: 0
@@ -116,8 +116,8 @@ lookup:
   use_gpu: True               # bool | If true, run vector distances on GPU when available
   batch_size: 516            # int  | Vector distance batch size (tune to GPU memory)
   distance_metric: cosine     # enum{cosine,euclidean} | Distance for nearest-neighbor search
-  limit_per_entry: 3          # int  | k neighbors returned per query (a.k.a. “k”)
-  lookup_cache_max: 6       # int  | Max entries per (model,layer) in-memory cache (tune to RAM)
+  limit_per_entry: 1          # int  | k neighbors returned per query (a.k.a. “k”)
+  lookup_cache_max: 1       # int  | Max entries per (model,layer) in-memory cache (tune to RAM)
   topgo: true                 # bool | If true, emit TopGO-compatible TSV alongside CSV outputs
 
   precision: 4               # int | Número de decimales a usar en la exportación de resultados.

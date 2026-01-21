@@ -26,7 +26,18 @@ ENV POETRY_VERSION=1.8.2
 RUN pip install "poetry==$POETRY_VERSION"
 
 # Set working directory
-WORKDIR /app
+export WORKDIR=\$RUN_DIR
+singularity exec  --nv \\
+      --bind \$RUN_DIR:\$RUN_DIR \\
+      --bind \$PWD/fantasia:\$PWD/fantasia \\
+      --bind \$PWD:\$PWD \\
+      \$FT_IMG fantasia initialize --config \$CFG
+
+singularity exec --nv \\
+      --bind \$RUN_DIR:\$RUN_DIR \\
+      --bind \$PWD/fantasia:\$PWD/fantasia \\
+      --bind \$PWD:\$PWD \\
+      \$FT_IMG fantasia run --config \$CFG
 
 # Copy project metadata
 COPY pyproject.toml ./
