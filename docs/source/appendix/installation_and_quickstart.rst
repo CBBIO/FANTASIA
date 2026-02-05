@@ -140,7 +140,7 @@ Minimal settings in ``fantasia/config.yaml``:
 
 .. code-block:: bash
 
-   fantasia initialize
+   poetry run fantasia initialize
 
 During initialization, required embeddings are downloaded and indexed.
 
@@ -164,7 +164,7 @@ Custom-format dump (``pg_dump -Fc``) with ``pg_restore``::
 
 .. code-block:: bash
 
-   fantasia run
+   poetry run fantasia run
 
 7) CLI help
 ===========
