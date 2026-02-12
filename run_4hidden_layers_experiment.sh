@@ -42,7 +42,6 @@ for fasta in "${FASTAS[@]}"; do
     --prefix "OX_${ox_id}" \
     --base_directory "${OUT_DIR}"
 
-
     echo "✔ Finished OX_${ox_id} (${COUNT}/${TOTAL})"
 done
 

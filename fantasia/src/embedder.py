@@ -95,12 +95,15 @@ using the stored embeddings.
 # --- Standard library ---
 import os
 import traceback
+import hashlib
 
 # --- Third-party libraries ---
 import h5py
 
 # --- Project-specific imports ---
 from protein_information_system.operation.embedding.sequence_embedding import SequenceEmbeddingManager
+from protein_information_system.sql.model.entities.sequence.sequence import Sequence
+from protein_information_system.sql.model.entities.embedding.sequence_embedding import SequenceEmbedding
 
 
 class SequenceEmbedder(SequenceEmbeddingManager):
@@ -425,7 +428,8 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         -------
         list of dict
             A list of embedding records. Each record includes the embedding vector, shape,
-            accession, and embedding_type_id.
+            sequence_id (FASTA accession), and embedding_type_id. When possible, embeddings
+            are retrieved from the BioData database; otherwise they are computed on-the-fly.
 
         Raises
         ------
@@ -446,40 +450,181 @@ class SequenceEmbedder(SequenceEmbeddingManager):
                 raise ValueError("All tasks in the batch must have the same embedding_type_id.")
 
             # Load model, tokenizer and embedding logic
-
             model_type = self.types_by_id[embedding_type_id]['name']
             model = self.model_instances[model_type]
             tokenizer = self.tokenizer_instances[model_type]
             module = self.types[model_type]['module']
 
             device = self.conf["embedding"].get("device", "cuda")
-
             batch_size = self.types[model_type]["batch_size"]
+            # Configured layers for this model (e.g. [0, 1, 2])
+            layer_index_list = list(self.types[model_type].get('layer_index', [0]))
 
-            layer_index_list = self.types[model_type].get('layer_index', [0])
+            db_records = []
+            sequences_for_embedding_by_layers = {}
 
-            # Prepare input: list of {'sequence', 'sequence_id'}
-            sequence_batch = [
-                {"sequence": task["sequence"], "sequence_id": task["accession"]}
-                for task in task_data
-            ]
+            # --- 1) Try to retrieve embeddings from BioData (local DB) ---------
+            try:
+                self.session_init()
+                session = self.session
 
-            # Run embedding task
-            embeddings = module.embedding_task(
-                sequence_batch,
-                model=model,
-                tokenizer=tokenizer,
-                batch_size=batch_size,
-                embedding_type_id=embedding_type_id,
-                device=device,
-                layer_index_list=layer_index_list
+                # Map each FASTA task to a stable sequence hash (MD5) and accession
+                hash_to_tasks = {}
+                for task in task_data:
+                    seq_str = task["sequence"]
+                    accession = task["accession"]
+                    seq_hash = hashlib.md5(seq_str.encode("utf-8")).hexdigest()
+                    hash_to_tasks.setdefault(seq_hash, []).append({
+                        "accession": accession,
+                        "sequence": seq_str,
+                    })
+
+                # Resolve hashes to Sequence IDs in a single query
+                seq_rows = (
+                    session.query(Sequence.id, Sequence.sequence_hash)
+                    .filter(Sequence.sequence_hash.in_(list(hash_to_tasks.keys())))
+                    .all()
+                )
+                hash_to_seq_id = {row.sequence_hash: row.id for row in seq_rows}
+
+                # Collect all sequence_ids that are present in BioData
+                seq_ids_present = {sid for sid in hash_to_seq_id.values() if sid is not None}
+
+                # Fetch existing embeddings for all (sequence_id, embedding_type_id, layer_index)
+                emb_by_seq_id = {}
+                if seq_ids_present:
+                    emb_rows = (
+                        session.query(
+                            SequenceEmbedding.sequence_id,
+                            SequenceEmbedding.layer_index,
+                            SequenceEmbedding.embedding,
+                        )
+                        .filter(
+                            SequenceEmbedding.sequence_id.in_(seq_ids_present),
+                            SequenceEmbedding.embedding_type_id == embedding_type_id,
+                            SequenceEmbedding.layer_index.in_(layer_index_list),
+                        )
+                        .all()
+                    )
+
+                    for seq_id, layer_idx, emb in emb_rows:
+                        emb_by_seq_id.setdefault(seq_id, {})[int(layer_idx)] = emb
+
+                # For each task, decide which layers come from DB vs need computation
+                for task in task_data:
+                    accession = task["accession"]
+                    seq_str = task["sequence"]
+                    seq_hash = hashlib.md5(seq_str.encode("utf-8")).hexdigest()
+                    seq_id = hash_to_seq_id.get(seq_hash)
+
+                    cached_by_layer = emb_by_seq_id.get(seq_id, {}) if seq_id is not None else {}
+                    missing_layers = [li for li in layer_index_list if li not in cached_by_layer]
+
+                    # Build records for layers already stored in DB
+                    for li, emb in cached_by_layer.items():
+                        try:
+                            vec = emb.to_numpy()
+                        except Exception:
+                            vec = emb
+
+                        shape = getattr(vec, "shape", None)
+                        if shape is None and hasattr(vec, "__len__"):
+                            shape = (len(vec),)
+
+                        db_records.append({
+                            "sequence_id": accession,  # keep FASTA accession for HDF5 hierarchy
+                            "embedding_type_id": embedding_type_id,
+                            "layer_index": int(li),
+                            "sequence": seq_str,
+                            "embedding": vec,
+                            "shape": tuple(shape) if shape is not None else (),
+                        })
+
+                    # Log per-accession DB vs compute decision for debugging
+                    self.logger.info(
+                        "process: accession=%s | model_type=%s | layers_from_db=%s | layers_to_compute=%s",
+                        accession,
+                        model_type,
+                        sorted(cached_by_layer.keys()) if cached_by_layer else [],
+                        missing_layers,
+                    )
+
+                    # Any missing layers must be computed on-the-fly
+                    if missing_layers:
+                        key = tuple(sorted(int(li) for li in missing_layers))
+                        sequences_for_embedding_by_layers.setdefault(key, []).append({
+                            "sequence": seq_str,
+                            "sequence_id": accession,
+                        })
+
+                session.close()
+
+                self.logger.info(
+                    "process: DB lookup completed → %d record(s) served from cache, %d distinct layer-sets to compute.",
+                    len(db_records),
+                    len(sequences_for_embedding_by_layers),
+                )
+
+            except Exception as db_err:
+                # If DB is unavailable or query fails, fall back to on-the-fly embeddings
+                self.logger.warning(
+                    "process: DB lookup failed or unavailable, falling back to on-the-fly embeddings. Error: %s",
+                    db_err,
+                )
+                db_records = []
+                sequences_for_embedding_by_layers = {
+                    tuple(layer_index_list): [
+                        {"sequence": task["sequence"], "sequence_id": task["accession"]}
+                        for task in task_data
+                    ]
+                }
+
+            # --- 2) Compute embeddings for any remaining (sequence, layer) pairs ---
+            computed_records = []
+
+            for layers_key, seq_batch in sequences_for_embedding_by_layers.items():
+                if not seq_batch:
+                    continue
+
+                current_layers = list(layers_key)
+
+                embeddings = module.embedding_task(
+                    sequences=seq_batch,
+                    model=model,
+                    tokenizer=tokenizer,
+                    batch_size=batch_size,
+                    embedding_type_id=embedding_type_id,
+                    device=device,
+                    layer_index_list=current_layers,
+                )
+
+                # Ensure embedding_type_id is always present
+                for record in embeddings:
+                    record.setdefault("embedding_type_id", embedding_type_id)
+
+                self.logger.info(
+                    "process: computed %d embedding record(s) on-the-fly for model_type=%s, layers=%s",
+                    len(embeddings),
+                    model_type,
+                    current_layers,
+                )
+
+                computed_records.extend(embeddings)
+
+            all_records = db_records + computed_records
+
+            self.logger.info(
+                "process: batch summary for model_type=%s → %d record(s) from DB, %d record(s) computed, %d total.",
+                model_type,
+                len(db_records),
+                len(computed_records),
+                len(all_records),
             )
 
-            # Enrich results with task metadata
-            for record, task in zip(embeddings, task_data):
-                record["accession"] = task["accession"]
-                record["embedding_type_id"] = embedding_type_id
-            return embeddings
+            if not all_records:
+                self.logger.warning("process: no embeddings produced for batch (model_type=%s)", model_type)
+
+            return all_records
 
         except Exception as e:
             self.logger.error(f"Error during embedding computation: {e}\n{traceback.format_exc()}")

@@ -9,7 +9,7 @@
 log_path: /home/alexdoro/fantasia/logs/    # str  | Directory for pipeline logs (will be created if missing)
 constants: ./fantasia/constants.yaml # str  | Directory for constants
 base_directory: /home/alexdoro/fantasia/   # str  | Root working dir: inputs, outputs, caches, temp live here
-prefix: sample # str | Output prefix (folder & file stem)
+prefix: all_layers_all_models # str | Output prefix (folder & file stem)
 
 limit_execution: 0
 monitor_interval: 10
@@ -25,7 +25,7 @@ DB_USERNAME: usuario          # str  | PostgreSQL username
 DB_PASSWORD: clave            # str  | PostgreSQL password
 DB_HOST: localhost            # str  | PostgreSQL host (use a socket path if local with custom setup)
 DB_PORT: 5432                 # int  | PostgreSQL port
-DB_NAME: BioData_UniProt              # str  | PostgreSQL database name
+DB_NAME: BioData              # str  | PostgreSQL database name
 
 # ------------------------------------------------------------------------------
 # Message broker (RabbitMQ)
@@ -61,7 +61,7 @@ delete_queues: true           # bool | Drop queues on boot/teardown to avoid sta
 embedding:
   device: cuda                # enum{cuda,cpu} | Primary device for PLMs; set to cpu to force CPU execution
   queue_batch_size: 100       # int  | Number of sequences per published batch to RabbitMQ
-  max_sequence_length: 0      # int  | 0 disables truncation; otherwise sequences are truncated to this length
+  max_sequence_length: 2000      # int  | 0 disables truncation; otherwise sequences are truncated to this length
 
   # Per-model configuration.
   # name: logical model identifier used across the pipeline (case-sensitive).
@@ -76,31 +76,31 @@ embedding:
     ESM: # 34 layers: 0..33
       enabled: True
       batch_size: 1
-      layer_index: [ 0, 5, 11, 17 ]
+      layer_index: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33]
       distance_threshold: 0
 
     ESM3c: # 36 layers: 0..35
       enabled: True
       batch_size: 1
-      layer_index: [ 0, 5, 11, 17 ]
+      layer_index: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
       distance_threshold: 0
 
     Ankh3-Large: # 49 layers: 0..48
       enabled: True
       batch_size: 1
-      layer_index: [ 0, 8, 16, 24 ]
+      layer_index: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48]
       distance_threshold: 0
 
     Prot-T5: # 25 layers: 0..24
       enabled: True
       batch_size: 1
-      layer_index: [ 0, 4, 8, 12 ]
+      layer_index: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
       distance_threshold: 0
 
     Prost-T5: # 25 layers: 0..24 (same backbone as Prot-T5)
       enabled: True
       batch_size: 1
-      layer_index: [ 0, 4, 8, 12 ]
+      layer_index: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
       distance_threshold: 0
 
 
@@ -133,7 +133,7 @@ lookup:
 
   # Taxonomy filters (applied after NN retrieval to prune/keep specific taxa).
   taxonomy:
-    exclude: [ ]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
+    exclude: [ 559292 ]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
     include_only: [ ]          # list[str] | If non-empty, restrict results to these IDs (takes precedence)
     get_descendants: false    # bool | If true, expand filters to include descendants
 
