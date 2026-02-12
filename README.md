@@ -14,6 +14,9 @@ FANTASIA is an advanced pipeline for the automatic functional annotation of prot
 
 For full documentation, visit [FANTASIA Documentation](https://fantasia.readthedocs.io/en/latest/).
 
+For users who need a lightweight, standalone alternative, FANTASIA-Lite provides fast Gene Ontology annotation directly from local FASTA files, without requiring a database server or the full FANTASIA infrastructure. It leverages protein language model embeddings and nearest-neighbor similarity in embedding space to deliver high-quality functional annotations with minimal setup.
+
+For FANTASIA-Lite, visit https://github.com/CBBIO/FANTASIA-Lite
 
 ## Reference Datasets
 Two packaged reference datasets are available; select one depending on your analysis needs:
