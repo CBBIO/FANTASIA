@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:0.7.0-pg16
+    container_name: fantasia-postgres
+    environment:
+      POSTGRES_USER: usuario
+      POSTGRES_PASSWORD: clave
+      POSTGRES_DB: BioData
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U usuario -d BioData"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fantasia-network
+
+  # RabbitMQ message broker
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: fantasia-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"      # AMQP port
+      - "15672:15672"    # Management UI port
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fantasia-network
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+
+networks:
+  fantasia-network:
+    driver: bridge

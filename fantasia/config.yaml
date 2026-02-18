@@ -44,24 +44,24 @@ delete_queues: true           # bool | Drop queues on boot/teardown to avoid sta
 #
 # Available options:
 # 1. Final layer only (smaller, faster to load) [default]
-#    https://zenodo.org/records/17167843/files/FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1
+#    https://zenodo.org/records/17795871/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup?download=1
 #
 # 2. Final + intermediate layers (larger, more detailed embeddings)
-#    https://zenodo.org/records/17151847/files/FANTASIA_UniProt_Sep2025_Final+Interm_ExpOnly.dump?download=1
+#    https://zenodo.org/records/17793273/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layers_3Frist_3Last.backup?download=1
 #
 # Leave empty to skip the preload step.
 # ------------------------------------------------------------------------------
-# embeddings_url: "https://zenodo.org/records/17167843/files/FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1"
-# embeddings_url: "https://zenodo.org/records/17151847/files/FANTASIA_UniProt_Sep2025_Final+Interm_ExpOnly.dump?download=1"
+# embeddings_url: "https://zenodo.org/records/17795871/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup?download=1"
+# embeddings_url: "https://zenodo.org/records/17793273/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layers_3Frist_3Last.backup?download=1"
 
 # ==============================================================================
 # Stage A — Embedding
 # Produces HDF5 with per-layer query embeddings (no DB required here).
 # ==============================================================================
 embedding:
-  device: cuda                # enum{cuda,cpu} | Primary device for PLMs; set to cpu to force CPU execution
+  device: cpu                # enum{cuda,cpu} | Primary device for PLMs; set to cpu to force CPU execution
   queue_batch_size: 100       # int  | Number of sequences per published batch to RabbitMQ
-  max_sequence_length: 0      # int  | 0 disables truncation; otherwise sequences are truncated to this length
+  max_sequence_length: 2000      # int  | 0 disables truncation; otherwise sequences are truncated to this length
 
   # Per-model configuration.
   # name: logical model identifier used across the pipeline (case-sensitive).
@@ -113,7 +113,7 @@ embedding:
 # Consumes embeddings.h5 + in-memory references (IDs, vectors, GO) to produce CSV/TSV.
 # ==============================================================================
 lookup:
-  use_gpu: True               # bool | If true, run vector distances on GPU when available
+  use_gpu: False               # bool | If true, run vector distances on GPU when available
   batch_size: 516            # int  | Vector distance batch size (tune to GPU memory)
   distance_metric: cosine     # enum{cosine,euclidean} | Distance for nearest-neighbor search
   limit_per_entry: 1          # int  | k neighbors returned per query (a.k.a. “k”)

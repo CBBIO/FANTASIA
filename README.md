@@ -70,7 +70,80 @@ Supports protein language models: **ESM-2**, **ProtT5**, **ProstT5**, **Ankh3-La
    Performs vector similarity searches using **in-memory computations** to assign Gene Ontology terms. Reference
    embeddings are retrieved from a **PostgreSQL database with pgvector**. Only experimental evidence codes are used for transfer.
 
-## 📚 Supported Embedding Models
+## � Setting Up Required Services with Docker Compose
+
+FANTASIA requires two key services:
+- **PostgreSQL 16 with pgvector**: Stores reference protein embeddings and provides vector similarity search
+- **RabbitMQ**: Message broker for distributed embedding task processing
+
+### Prerequisites
+- Docker and Docker Compose installed
+
+### Quick Start
+
+1. **Start services** (from the FANTASIA directory):
+   ```bash
+   docker-compose up -d
+   ```
+
+2. **Verify services are running**:
+   ```bash
+   docker-compose ps
+   ```
+
+   Expected output:
+   ```
+   CONTAINER ID   IMAGE                           STATUS
+   xxx            pgvector/pgvector:0.7.0-pg16   Up (healthy)
+   xxx            rabbitmq:3.13-management       Up (healthy)
+   ```
+
+3. **Test database connection**:
+   ```bash
+   PGPASSWORD=clave psql -h localhost -U usuario -d BioData -c "SELECT 1"
+   ```
+
+### Service Credentials
+
+The `docker-compose.yml` is configured with the following default credentials (matching `config.yaml`):
+
+| Service    | Host       | Port  | User     | Password | Database |
+|------------|-----------|-------|----------|----------|----------|
+| PostgreSQL | localhost | 5432  | usuario  | clave    | BioData  |
+| RabbitMQ   | localhost | 5672  | guest    | guest    | -        |
+
+RabbitMQ Management UI is available at: http://localhost:15672 (user: guest, password: guest)
+
+### Troubleshooting
+
+**Connection refused error**:
+```bash
+# Check if containers are running
+docker-compose ps
+
+# If stopped, restart them
+docker-compose restart
+
+# View logs
+docker-compose logs postgres
+docker-compose logs rabbitmq
+```
+
+**Password authentication failed**:
+Ensure the credentials in `docker-compose.yml` match those in `config.yaml`:
+```bash
+# Current values in docker-compose.yml
+POSTGRES_USER: usuario
+POSTGRES_PASSWORD: clave
+POSTGRES_DB: BioData
+```
+
+**Cleaning up**: To remove containers and volumes:
+```bash
+docker-compose down -v
+```
+
+## �📚 Supported Embedding Models
 
 | Name         | Model ID                                 | Params | Architecture      | Description                                                                 |
 |--------------|-------------------------------------------|--------|-------------------|-----------------------------------------------------------------------------|
