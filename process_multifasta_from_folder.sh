@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_CONFIG="/home/alexdoro/PycharmProjects/FANTASIA/fantasia/config.yaml"
+BASE_CONFIG="/home/alexdoro/repositories/FANTASIA/fantasia/config.yaml"
 # Directory containing the grouped OX_*.fasta files
-FASTAS_DIR="/home/alexdoro/fantasia/dataset/ox_grouped_fastas"
+FASTAS_DIR="/home/alexdoro/fantasia/datasets/ox_grouped_fastas"
 OUT_DIR="/home/alexdoro/fantasia/experiments/ox_runs"
 
 mkdir -p "$OUT_DIR"
