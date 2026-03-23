@@ -142,6 +142,11 @@ def run_pipeline(conf):
         logger.debug(conf)
 
         if conf["only_lookup"]:
+            if conf.get("only_embed"):
+                logger.warning(
+                    "Both only_lookup=true and only_embed=true were provided. "
+                    "only_lookup takes precedence; embedding stage will be skipped."
+                )
             conf["embeddings_path"] = conf["input"]
         else:
             embedder = SequenceEmbedder(conf, current_date)
@@ -159,6 +164,13 @@ def run_pipeline(conf):
                 raise FileNotFoundError(
                     f"Missing HDF5 file after embedding step: {conf['embeddings_path']}"
                 )
+
+            if conf.get("only_embed"):
+                logger.info(
+                    f"only_embed=true -> skipping lookup. Embeddings available at: "
+                    f"{conf['embeddings_path']}"
+                )
+                return
 
         lookup = EmbeddingLookUp(conf, current_date)
         lookup.start()
@@ -281,6 +293,28 @@ def load_and_merge_config(args, unknown_args):
             conf[key] = value
 
     # 3) Canonical mappings (mirror CLI flags into nested structure expected downstream)
+    def _coerce_bool(value, key_name):
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return None
+        if isinstance(value, str):
+            v = value.strip().lower()
+            if v in ("1", "true", "t", "yes", "y", "on"):
+                return True
+            if v in ("0", "false", "f", "no", "n", "off"):
+                return False
+            raise ValueError(f"Invalid boolean value for {key_name}: {value!r}")
+        if isinstance(value, int):
+            return bool(value)
+        raise ValueError(f"Invalid boolean value for {key_name}: {value!r}")
+
+    # 3.0 Execution control flags
+    only_lookup_value = _coerce_bool(conf.get("only_lookup"), "only_lookup")
+    only_embed_value = _coerce_bool(conf.get("only_embed"), "only_embed")
+    conf["only_lookup"] = only_lookup_value if only_lookup_value is not None else False
+    conf["only_embed"] = only_embed_value if only_embed_value is not None else False
+
     # 3.1 Device → embedding.device (also keep flat 'device' for any legacy consumer)
     if conf.get("device") is not None:
         emb = conf.setdefault("embedding", {})

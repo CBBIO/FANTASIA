@@ -51,7 +51,7 @@ delete_queues: true           # bool | Drop queues on boot/teardown to avoid sta
 #
 # Leave empty to skip the preload step.
 # ------------------------------------------------------------------------------
-# embeddings_url: "https://zenodo.org/records/17795871/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup?download=1"
+embeddings_url: "https://zenodo.org/records/17795871/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup?download=1"
 # embeddings_url: "https://zenodo.org/records/17793273/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layers_3Frist_3Last.backup?download=1"
 
 # ==============================================================================
@@ -59,8 +59,8 @@ delete_queues: true           # bool | Drop queues on boot/teardown to avoid sta
 # Produces HDF5 with per-layer query embeddings (no DB required here).
 # ==============================================================================
 embedding:
-  device: cpu                # enum{cuda,cpu} | Primary device for PLMs; set to cpu to force CPU execution
-  queue_batch_size: 100       # int  | Number of sequences per published batch to RabbitMQ
+  device: cuda                # enum{cuda,cpu} | Primary device for PLMs; set to cpu to force CPU execution
+  queue_batch_size: 64       # int  | Number of sequences per published batch to RabbitMQ
   max_sequence_length: 2000      # int  | 0 disables truncation; otherwise sequences are truncated to this length
 
   # Per-model configuration.
@@ -94,7 +94,7 @@ embedding:
     Prot-T5: # 25 layers: 0..24
       enabled: True
       batch_size: 1
-      layer_index: [ 0 ]
+      layer_index: [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24 ]
       distance_threshold: 0
 
     Prost-T5: # 25 layers: 0..24 (same backbone as Prot-T5)

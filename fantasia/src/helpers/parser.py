@@ -180,6 +180,11 @@ def build_parser():
         type=_boolish,
         help="If true, skip the embedding stage and use --input as an embeddings HDF5.",
     )
+    run.add_argument(
+        "--only_embed",
+        type=_boolish,
+        help="If true, run embedding only and skip lookup.",
+    )
 
     # Embedding / device (models are YAML-only)
     run.add_argument(

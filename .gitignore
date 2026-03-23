@@ -120,3 +120,5 @@ cython_debug/
 # Others
 .idea/
 poetry.lock
+.sh
+run_fantasia_for_all_pep.sh
