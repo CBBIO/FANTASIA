@@ -79,6 +79,12 @@ The repository default is **CPU lookup** (`lookup.use_gpu: false`). For single-r
 
 When processing multiple proteomes on a single GPU-equipped machine, a [sequential launcher script](scripts/run_sequential_proteomes.sh) is recommended. Running one proteome at a time preserves the same non-overlapping execution model used within a single FANTASIA run and avoids GPU contention between concurrent jobs. This is often the simplest and most reliable strategy for small-to-medium batches of proteomes.
 
+Example:
+
+```bash
+./scripts/run_sequential_proteomes.sh ./config/prott5_full.yaml /path/to/proteomes /path/to/experiments prott5
+```
+
 The GPU memory required by the lookup stage depends mainly on:
 
 - the size of the reference embedding matrix
@@ -124,6 +130,15 @@ FANTASIA writes lookup results in three main forms:
 - TopGO-ready files under `topgo/`
 
 If you need to consolidate many per-accession raw CSV files into a single table for downstream analysis, use the [merge utility](scripts/merge_raw_results.py).
+
+Example:
+
+```bash
+python scripts/merge_raw_results.py \
+  /path/to/experiment/raw_results/prot-t5/layer_0 \
+  -o /path/to/experiment/raw_results/prot-t5/layer_0_merged.csv \
+  --add-source-file
+```
 
 ### Raw per-accession CSV files
 
