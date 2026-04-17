@@ -10,7 +10,7 @@
 
 **Functional ANnoTAtion based on embedding space SImilArity**
 
-FANTASIA is an advanced pipeline for the automatic functional annotation of protein sequences using state-of-the-art protein language models. It integrates deep learning embeddings and in-memory similarity searches, retrieving reference vectors from a PostgreSQL database with pgvector, to associate Gene Ontology (GO) terms with proteins.
+FANTASIA is an advanced pipeline for the automatic functional annotation of protein sequences using state-of-the-art protein language models. It integrates deep learning embeddings and in-memory similarity searches, retrieving reference vectors from a PostgreSQL database with pgvector-backed storage, to associate Gene Ontology (GO) terms with proteins.
 
 For full documentation, visit [FANTASIA Documentation](https://fantasia.readthedocs.io/en/latest/).
 
@@ -34,46 +34,89 @@ Two packaged reference datasets are available; select one depending on your anal
 
 ## Key Features
 
-**✅ Available Embedding Models**  
+**Available Embedding Models**  
 Supports protein language models: **ESM-2**, **ProtT5**, **ProstT5**, **Ankh3-Large**, and **ESM3c** for sequence representation.
 
-- **🔍 Redundancy Filtering**  
+- **Redundancy Filtering**  
   Filters out homologous sequences using **MMseqs2** in the lookup table, allowing controlled redundancy levels through an adjustable
   threshold, ensuring reliable benchmarking and evaluation.
 
-- **💾 Optimized Data Storage**  
+- **Optimized Data Storage**  
   Embeddings are stored in **HDF5 format** for input sequences. The reference table, however, is hosted in a **public
   relational PostgreSQL database** using **pgvector**.
 
-- **🚀 Efficient Similarity Lookup**  
-  High-throughput similarity search with a **hybrid approach**: reference embeddings are stored in a **PostgreSQL + pgvector** database and **fetched in batches to memory** to compute similarities at speed.
+- **Efficient Similarity Lookup**  
+  High-throughput similarity search with a **hybrid approach**: reference embeddings are stored in a **PostgreSQL + pgvector** database, then loaded **per model/layer into memory** so similarities can be computed efficiently in the application with vectorized CPU or GPU operations.
 
-- **🧭 Global & Local Alignment of Hits**  
+- **Sequential Embedding + Lookup**  
+  FANTASIA first computes query embeddings and stores them in `embeddings.h5`, then runs the lookup stage. These stages execute sequentially within a run, so embedding and lookup do not compete for GPU resources unless multiple FANTASIA jobs are launched at the same time.
+
+- **Global & Local Alignment of Hits**  
   Candidate hits from the reference table are **aligned both globally and locally** against the input protein for validation and scoring.
 
-- **🧩 Multi-layer Embedding Support**  
+- **Multi-layer Embedding Support**  
   Optional support for **intermediate + final layers** to enable layer-wise analyses and improved exploration.
 
-- **📦 Raw Outputs & Flexible Post-processing**  
+- **Raw Outputs & Flexible Post-processing**  
   Exposes **raw result tables** for custom analyses and includes a **flexible post-processing & scoring system** that produces **TopGO-ready** files.  
-  Performs high-speed searches using **in-memory computations**. Reference vectors are retrieved from a PostgreSQL database with pgvector for comparison.
+  Performs high-speed searches using **in-memory computations**. Reference vectors are retrieved from a PostgreSQL database with pgvector-backed storage for comparison.
 
-- **🔬 Functional Annotation by Similarity**  
+- **Functional Annotation by Similarity**  
   Assigns Gene Ontology (GO) terms to proteins based on **embedding space similarity**, using pre-trained embeddings from all supported models.
 
 ## Pipeline Overview (Simplified)
 
 1. **Embedding Generation**  
-   Computes protein embeddings using deep learning models (**ProtT5**, **ProstT5**, **ESM2** and **Ankh**).
+   Computes protein embeddings using deep learning models (**ProtT5**, **ProstT5**, **ESM2**, **ESM3c**, and **Ankh**).
 
 2. **GO Term Lookup**  
    Performs vector similarity searches using **in-memory computations** to assign Gene Ontology terms. Reference
-   embeddings are retrieved from a **PostgreSQL database with pgvector**. Only experimental evidence codes are used for transfer.
+   embeddings are retrieved from a **PostgreSQL database with pgvector-backed storage** and loaded per model/layer into memory. Only experimental evidence codes are used for transfer.
 
-## � Setting Up Required Services with Docker Compose
+## GPU Recommendation
+
+For single-run workflows on CUDA-capable systems, enabling GPU lookup with `lookup.use_gpu: true` is recommended. In the current pipeline, embeddings are generated first and lookup runs afterward, so Stage A and Stage B do not overlap within the same run.
+
+The GPU memory required by the lookup stage depends mainly on:
+
+- the size of the reference embedding matrix
+- the lookup query batch size
+- the embedding dimensionality
+- temporary tensors created during cosine or euclidean distance computation
+
+Because FANTASIA runs embeddings first and lookup afterward, GPU lookup memory requirements do **not** depend on the embedding step being active within the same run.
+
+For a typical single-model **Prot-T5 layer-0** lookup on a proteome, the reference matrix may be on the order of `123,977 x 1024`, with lookup batches such as `516 x 1024` using `float32` tensors. In practice, this fits comfortably on a `24 GB` GPU and is generally expected to fit on a `16 GB` GPU as well. Actual memory requirements still depend on the selected reference dataset, enabled layers/models, and lookup batch size.
+
+### Example Benchmark: CPU vs GPU Lookup
+
+The table below summarizes a lookup-only benchmark on a single proteome using the same precomputed Prot-T5 embeddings and the same reference table. Only the lookup execution device was changed.
+
+Benchmark hardware for the GPU run:
+
+- GPU: `NVIDIA GeForce RTX 3090 Ti`
+- VRAM: `24 GB`
+- CUDA available in the runtime environment: `True`
+- PyTorch build used for the benchmark: `2.11.0+cu130`
+
+| Proteome | Input proteins | Mean protein length (aa) | Max protein length (aa) | Embedded proteins | Lookup tasks | Lookup device | Distance time (total) | Distance time / batch | Lookup wall time |
+|----------|----------------|--------------------------|--------------------------|-------------------|--------------|---------------|------------------------|-----------------------|------------------|
+| A proteome (Prot-T5, layer 0) | 20,223 | 392.25 | 8,215 | 20,223 | 20,223 | CPU | 1,835.89 s | 45.90 s | 1,933.08 s |
+| A proteome (Prot-T5, layer 0) | 20,223 | 392.25 | 8,215 | 20,223 | 20,223 | GPU | 17.05 s | 0.43 s | 126.95 s |
+
+Observed speedup in this benchmark:
+
+- Distance kernel: about `108x` faster on GPU (`1835.89 s` → `17.05 s`)
+- Lookup wall time: about `15x` faster on GPU (`1933.08 s` → `126.95 s`)
+
+In this benchmark, no proteins were discarded before embedding: the input FASTA contained `20,223` proteins and the generated `embeddings.h5` also contained `20,223` embedded accessions.
+
+Long proteins were not removed either. Instead, when `embedding.max_sequence_length` is set, FANTASIA truncates sequences longer than that limit before embedding. This means lookup can still cover the full proteome while controlling the memory cost of the embedding stage.
+
+## Setting Up Required Services with Docker Compose
 
 FANTASIA requires two key services:
-- **PostgreSQL 16 with pgvector**: Stores reference protein embeddings and provides vector similarity search
+- **PostgreSQL 16 with pgvector**: Stores reference protein embeddings used by the lookup stage
 - **RabbitMQ**: Message broker for distributed embedding task processing
 
 ### Prerequisites
@@ -143,7 +186,7 @@ POSTGRES_DB: BioData
 docker-compose down -v
 ```
 
-## �📚 Supported Embedding Models
+## Supported Embedding Models
 
 | Name         | Model ID                                 | Params | Architecture      | Description                                                                 |
 |--------------|-------------------------------------------|--------|-------------------|-----------------------------------------------------------------------------|
@@ -163,17 +206,17 @@ This project demonstrates the synergy between research teams with diverse expert
 This version of FANTASIA builds upon previous work from:
 
 - [`Metazoa Phylogenomics Lab's FANTASIA`](https://github.com/MetazoaPhylogenomicsLab/FANTASIA)  
-  The original implementation of FANTASIA for functional annotation.
+  The original implementation of FANTASIA for functional annotation with preprocessing of input sequences.
 
 - [`bio_embeddings`](https://github.com/sacdallago/bio_embeddings)  
   A state-of-the-art framework for generating protein sequence embeddings.
 
 - [`GoPredSim`](https://github.com/Rostlab/goPredSim)  
-  A similarity-based approach for Gene Ontology annotation.
+  The original concept of transfer using embeddings similarity. A similarity-based approach for Gene Ontology annotation.
 
 - [`protein-information-system`](https://github.com/CBBIO/protein-information-system)  
-  Serves as the **reference biological information system**, providing a robust data model and curated datasets for
-  protein structural and functional analysis.
+  The backbone of the lookup table. Serves as the **reference biological information system**, providing a robust data model and curated datasets for
+  protein analysis.
 
 We also extend our gratitude to **LifeHUB-CSIC** for inspiring this initiative and fostering innovation in computational
 biology.
@@ -198,7 +241,7 @@ FANTASIA is distributed under the terms of the [GNU Affero General Public Licens
 
 ---
 
-### 👥 Project Team
+### Project Team
 
 - **Ana M. Rojas**: [a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)
 - **Rosa Fernández**: [rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)
@@ -209,4 +252,3 @@ FANTASIA is distributed under the terms of the [GNU Affero General Public Licens
 - **Àlex Domínguez Rodríguez**: [adomrod4@upo.es](maito:adomrod4@upo.es)
 
 ---
-
