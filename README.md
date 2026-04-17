@@ -46,7 +46,7 @@ Supports protein language models: **ESM-2**, **ProtT5**, **ProstT5**, **Ankh3-La
   relational PostgreSQL database** using **pgvector**.
 
 - **Efficient Similarity Lookup**  
-  High-throughput similarity search with a **hybrid approach**: reference embeddings are stored in a **PostgreSQL + pgvector** database, then loaded **per model/layer into memory** so similarities can be computed efficiently in the application with vectorized CPU or GPU operations.
+  High-throughput similarity search with a **hybrid approach**: reference embeddings are stored in a **PostgreSQL + pgvector** database, then loaded **per model/layer into memory** so similarities can be computed efficiently in the application with vectorized CPU or GPU operations. In the repository default configuration, lookup runs on **CPU** unless `lookup.use_gpu: true` is enabled.
 
 - **Sequential Embedding + Lookup**  
   FANTASIA first computes query embeddings and stores them in `embeddings.h5`, then runs the lookup stage. These stages execute sequentially within a run, so embedding and lookup do not compete for GPU resources unless multiple FANTASIA jobs are launched at the same time.
@@ -67,15 +67,17 @@ Supports protein language models: **ESM-2**, **ProtT5**, **ProstT5**, **Ankh3-La
 ## Pipeline Overview (Simplified)
 
 1. **Embedding Generation**  
-   Computes protein embeddings using deep learning models (**ProtT5**, **ProstT5**, **ESM2**, **ESM3c**, and **Ankh**).
+   Computes protein embeddings using deep learning models (**ProtT5**, **ProstT5**, **ESM-2**, **Ankh3-Large**, and **ESM3c**).
 
 2. **GO Term Lookup**  
    Performs vector similarity searches using **in-memory computations** to assign Gene Ontology terms. Reference
-   embeddings are retrieved from a **PostgreSQL database with pgvector-backed storage** and loaded per model/layer into memory. Only experimental evidence codes are used for transfer.
+   embeddings are retrieved from a **PostgreSQL database with pgvector-backed storage** and loaded per model/layer into memory. In the default configuration, this stage runs on **CPU** (`lookup.use_gpu: false`). Only experimental evidence codes are used for transfer.
 
 ## GPU Recommendation
 
-For single-run workflows on CUDA-capable systems, enabling GPU lookup with `lookup.use_gpu: true` is recommended. In the current pipeline, embeddings are generated first and lookup runs afterward, so Stage A and Stage B do not overlap within the same run.
+The repository default is **CPU lookup** (`lookup.use_gpu: false`). For single-run workflows on CUDA-capable systems, enabling GPU lookup with `lookup.use_gpu: true` is recommended. In the current pipeline, embeddings are generated first and lookup runs afterward, so Stage A and Stage B do not overlap within the same run.
+
+When processing multiple proteomes on a single GPU-equipped machine, a sequential launcher script is recommended. Running one proteome at a time preserves the same non-overlapping execution model used within a single FANTASIA run and avoids GPU contention between concurrent jobs. This is often the simplest and most reliable strategy for small-to-medium batches of proteomes.
 
 The GPU memory required by the lookup stage depends mainly on:
 
@@ -120,6 +122,8 @@ FANTASIA requires two key services:
 - **RabbitMQ**: Message broker for distributed embedding task processing
 
 ### Prerequisites
+- **Python 3.12** (the project metadata specifies `>=3.12,<4.0`)
+  A Conda environment based on Python 3.12 is a suitable local setup option.
 - Docker and Docker Compose installed
 
 ### Quick Start
@@ -206,17 +210,23 @@ This project demonstrates the synergy between research teams with diverse expert
 This version of FANTASIA builds upon previous work from:
 
 - [`Metazoa Phylogenomics Lab's FANTASIA`](https://github.com/MetazoaPhylogenomicsLab/FANTASIA)  
-  The original implementation of FANTASIA for functional annotation with preprocessing of input sequences.
+  The original implementation of FANTASIA for functional annotation.
 
 - [`bio_embeddings`](https://github.com/sacdallago/bio_embeddings)  
   A state-of-the-art framework for generating protein sequence embeddings.
 
 - [`GoPredSim`](https://github.com/Rostlab/goPredSim)  
-  The original concept of transfer using embeddings similarity. A similarity-based approach for Gene Ontology annotation.
+  A similarity-based approach for Gene Ontology annotation.
+
+- [`MMseqs2`](https://github.com/soedinglab/MMseqs2)  
+  Used for redundancy-aware sequence clustering and filtering during lookup workflows.
+
+- [`Parasail`](https://github.com/jeffdaily/parasail)  
+  Provides high-performance pairwise sequence alignment routines used in hit validation and post-processing.
 
 - [`protein-information-system`](https://github.com/CBBIO/protein-information-system)  
-  The backbone of the lookup table. Serves as the **reference biological information system**, providing a robust data model and curated datasets for
-  protein analysis.
+  Serves as the **reference biological information system**, providing a robust data model and curated datasets for
+  protein structural and functional analysis.
 
 We also extend our gratitude to **LifeHUB-CSIC** for inspiring this initiative and fostering innovation in computational
 biology.
@@ -241,14 +251,19 @@ FANTASIA is distributed under the terms of the [GNU Affero General Public Licens
 
 ---
 
+
 ### Project Team
 
 - **Ana M. Rojas**: [a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)
 - **Rosa Fernández**: [rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)
+- **Belén Carbonetto**: [belen.carbonetto.metazomics@gmail.com](mailto:belen.carbonetto.metazomics@gmail.com)
+- **Àlex Domínguez Rodríguez**: [adomrod4@upo.es](mailto:adomrod4@upo.es)
+
+### Past Contributors
+
 - **Gemma I. Martínez-Redondo**: [gemma.martinez@ibe.upf-csic.es](mailto:gemma.martinez@ibe.upf-csic.es)
 - **Francisco Miguel Pérez Canales**: [fmpercan@upo.es](mailto:fmpercan@upo.es)
-- **Belén Carbonetto**: [belen.carbonetto.metazomics@gmail.com](mailto:belen.carbonetto.metazomics@gmail.com)
-- **Francisco J. Ruiz Mota**: [fraruimot@alum.us.es](mailto:fraruimot@alum.us.es)  
-- **Àlex Domínguez Rodríguez**: [adomrod4@upo.es](maito:adomrod4@upo.es)
+- **Francisco J. Ruiz Mota**: [fraruimot@alum.us.es](mailto:fraruimot@alum.us.es)
+
 
 ---
