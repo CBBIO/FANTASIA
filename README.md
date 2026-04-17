@@ -159,6 +159,8 @@ The `docker-compose.yml` is configured with the following default credentials (m
 | PostgreSQL | localhost | 5432  | usuario  | clave    | BioData  |
 | RabbitMQ   | localhost | 5672  | guest    | guest    | -        |
 
+`BioData` is the default local PostgreSQL database name used for the restored reference lookup table downloaded from Zenodo. It is a configurable database name, not a separate repository requirement.
+
 RabbitMQ Management UI is available at: http://localhost:15672 (user: guest, password: guest)
 
 ### Troubleshooting
@@ -251,7 +253,6 @@ FANTASIA is distributed under the terms of the [GNU Affero General Public Licens
 
 ---
 
-
 ### Project Team
 
 - **Ana M. Rojas**: [a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)
@@ -264,6 +265,5 @@ FANTASIA is distributed under the terms of the [GNU Affero General Public Licens
 - **Gemma I. Martínez-Redondo**: [gemma.martinez@ibe.upf-csic.es](mailto:gemma.martinez@ibe.upf-csic.es)
 - **Francisco Miguel Pérez Canales**: [fmpercan@upo.es](mailto:fmpercan@upo.es)
 - **Francisco J. Ruiz Mota**: [fraruimot@alum.us.es](mailto:fraruimot@alum.us.es)
-
 
 ---
