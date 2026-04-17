@@ -82,7 +82,7 @@ When processing multiple proteomes on a single GPU-equipped machine, a [sequenti
 Example:
 
 ```bash
-./scripts/run_sequential_proteomes.sh ./config/prott5_full.yaml /path/to/proteomes /path/to/experiments prott5
+./scripts/run_sequential_proteomes.sh ../config/prott5_full.yaml /path/to/proteomes /path/to/experiments prott5
 ```
 
 The GPU memory required by the lookup stage depends mainly on:
@@ -196,7 +196,7 @@ These fields are best interpreted as complementary evidence rather than strict p
 
 ### summary.csv
 
-`summary.csv` is the post-processed accession-by-GO summary table. It aggregates all raw rows belonging to the same `(accession, go_id, model_name, layer_index)` combination and computes configured statistics such as `min`, `max`, and `mean`.
+`summary.csv` is the post-processed accession-by-GO summary table. It should be interpreted as the output of a heuristic ranking procedure, not as a table of probabilities. In particular, `final_score` is not a probability score and should not be read as a calibrated confidence value. The table aggregates all raw rows belonging to the same `(accession, go_id, model_name, layer_index)` combination and computes configured statistics such as `min`, `max`, and `mean`.
 
 By default, the repository configuration summarizes:
 
@@ -211,6 +211,8 @@ The default aliases are:
 - `id_g` for global identity
 - `id_l` for local identity
 
+In the current code, the support `count` metric is derived from the number of raw rows supporting the same `(accession, go_id, model_name, layer_index)` group, normalized by `limit_per_entry`. This means `count` acts as a support-strength signal rather than a probability: GO terms supported repeatedly across raw hits receive a larger value.
+
 So columns such as `max_ri_ProtT5_L0`, `mean_id_g_ProtT5_L0`, or `max_id_l_ProtT5_L0` in `summary.csv` represent aggregated per-model, per-layer evidence for the same accession and GO term.
 
 If weights are configured, FANTASIA also writes:
@@ -218,7 +220,16 @@ If weights are configured, FANTASIA also writes:
 - weighted columns prefixed by `w_`
 - a composite `final_score`
 
-`final_score` is a configuration-driven ranking score, not a universal probability. It is most useful for prioritizing GO terms within the same run and configuration.
+`final_score` is a configuration-driven heuristic ranking score, not a universal probability or calibrated confidence value. Its objective is to combine several evidence signals into one sortable value so candidate GO terms can be prioritized within the same run and configuration.
+
+In the repository default configuration, `final_score` is built from a weighted combination of:
+
+- the best embedding-derived support (`max_ri`)
+- the best global alignment identity (`max_id_g`)
+- the best local alignment identity (`max_id_l`)
+- the support `count`
+
+This makes `final_score` useful for ranking candidate GO terms, filtering outputs, and downstream prioritization, but its numerical value should not be interpreted as a probability of correctness. Changing the configured metrics or weights changes the meaning of the score.
 
 ### TopGO exports
 
