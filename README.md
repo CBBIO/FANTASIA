@@ -77,7 +77,7 @@ Supports protein language models: **ESM-2**, **ProtT5**, **ProstT5**, **Ankh3-La
 
 The repository default is **CPU lookup** (`lookup.use_gpu: false`). For single-run workflows on CUDA-capable systems, enabling GPU lookup with `lookup.use_gpu: true` is recommended. In the current pipeline, embeddings are generated first and lookup runs afterward, so Stage A and Stage B do not overlap within the same run.
 
-When processing multiple proteomes on a single GPU-equipped machine, a sequential launcher script is recommended. Running one proteome at a time preserves the same non-overlapping execution model used within a single FANTASIA run and avoids GPU contention between concurrent jobs. This is often the simplest and most reliable strategy for small-to-medium batches of proteomes.
+When processing multiple proteomes on a single GPU-equipped machine, a [sequential launcher script](scripts/run_sequential_proteomes.sh) is recommended. Running one proteome at a time preserves the same non-overlapping execution model used within a single FANTASIA run and avoids GPU contention between concurrent jobs. This is often the simplest and most reliable strategy for small-to-medium batches of proteomes.
 
 The GPU memory required by the lookup stage depends mainly on:
 
@@ -114,6 +114,109 @@ Observed speedup in this benchmark:
 In this benchmark, no proteins were discarded before embedding: the input FASTA contained `20,223` proteins and the generated `embeddings.h5` also contained `20,223` embedded accessions.
 
 Long proteins were not removed either. Instead, when `embedding.max_sequence_length` is set, FANTASIA truncates sequences longer than that limit before embedding. This means lookup can still cover the full proteome while controlling the memory cost of the embedding stage.
+
+## Interpreting Outputs
+
+FANTASIA writes lookup results in three main forms:
+
+- Per-accession raw CSV files under `raw_results/{model}/layer_{k}/`
+- A global `summary.csv` produced during post-processing
+- TopGO-ready files under `topgo/`
+
+If you need to consolidate many per-accession raw CSV files into a single table for downstream analysis, use the [merge utility](scripts/merge_raw_results.py).
+
+### Raw per-accession CSV files
+
+The raw CSVs are the most detailed output. Each row represents one transferred GO annotation associated with one retrieved reference hit for one query protein.
+
+Typical columns include:
+
+- `accession`: query protein accession
+- `go_id`: transferred GO term
+- `go_description`: GO term name
+- `category`: GO namespace, typically `BP`, `MF`, or `CC`
+- `distance`: embedding-space distance between the query and the selected reference hit
+- `reliability_index`: similarity-derived score computed from `distance`
+- `model_name`: embedding model used for the lookup
+- `layer_index`: model layer used for the lookup
+- `protein_id`, `organism`, `gene_name`: metadata from the matched reference protein
+- `evidence_code`: evidence code associated with the transferred annotation
+- `query_len`, `ref_len`: query and reference sequence lengths
+
+If sequence-aware storage is enabled, the raw CSVs can also include alignment-derived metrics:
+
+- `identity`, `similarity`, `alignment_score`, `gaps_percentage`: global alignment metrics
+- `identity_sw`, `similarity_sw`, `alignment_score_sw`, `gaps_percentage_sw`: local Smith-Waterman-style alignment metrics
+- `alignment_length`, `alignment_length_sw`: aligned lengths for the global and local alignments
+
+### Distance and reliability_index
+
+`distance` is the nearest-neighbor distance in embedding space, so lower values indicate a closer reference match.
+
+`reliability_index` is derived from `distance` so that higher values indicate stronger support:
+
+- cosine lookup: `reliability_index = 1 - distance`
+- euclidean lookup: `reliability_index = 0.5 / (0.5 + distance)`
+- other metrics: `reliability_index = 1 / (1 + distance)`
+
+In practice:
+
+- lower `distance` is better
+- higher `reliability_index` is better
+- `reliability_index` is the easiest column to rank by in the raw files
+
+### Global versus local alignment metrics
+
+When alignment metrics are present:
+
+- `identity` and related columns summarize the global end-to-end alignment
+- `identity_sw` and related columns summarize the best local alignment segment
+
+This is useful because some hits may share only a conserved local region. A protein can therefore have:
+
+- moderate global identity but high local identity
+- strong embedding similarity together with weak sequence alignment, or the reverse
+
+These fields are best interpreted as complementary evidence rather than strict pass/fail filters.
+
+### summary.csv
+
+`summary.csv` is the post-processed accession-by-GO summary table. It aggregates all raw rows belonging to the same `(accession, go_id, model_name, layer_index)` combination and computes configured statistics such as `min`, `max`, and `mean`.
+
+By default, the repository configuration summarizes:
+
+- `reliability_index`
+- `identity`
+- `identity_sw`
+- support count normalized by `limit_per_entry`
+
+The default aliases are:
+
+- `ri` for `reliability_index`
+- `id_g` for global identity
+- `id_l` for local identity
+
+So columns such as `max_ri_ProtT5_L0`, `mean_id_g_ProtT5_L0`, or `max_id_l_ProtT5_L0` in `summary.csv` represent aggregated per-model, per-layer evidence for the same accession and GO term.
+
+If weights are configured, FANTASIA also writes:
+
+- weighted columns prefixed by `w_`
+- a composite `final_score`
+
+`final_score` is a configuration-driven ranking score, not a universal probability. It is most useful for prioritizing GO terms within the same run and configuration.
+
+### TopGO exports
+
+If `lookup.topgo: true`, FANTASIA also exports TopGO-compatible files under `topgo/`.
+
+- Per-model/layer exports keep rows separated by model, layer, and GO category
+- Ensemble exports keep the best `reliability_index` per `(accession, go_id, category)` across all models and layers
+
+These files contain three columns in tab-separated form:
+
+- accession
+- GO term
+- reliability index
 
 ## Setting Up Required Services with Docker Compose
 
