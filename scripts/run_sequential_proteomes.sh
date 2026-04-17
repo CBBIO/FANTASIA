@@ -74,25 +74,10 @@ if [[ ! -d "${ROOT}" ]]; then
 fi
 
 folders=(
-  acoela
-  brachiopoda
-  bryozoa
-  ctenophora
-  cycliophora
-  dicyemida
-  entoprocta
-  gastrotricha
-  hemichordata
-  micrognathozoa
-  nematomorpha
-  nemertodermatida
-  outgroup
-  phoronida
-  placozoa
-  porifera
-  priapulida
-  tardigrada
-  xenoturbellida
+  proteome1
+  proteome2
+  proteome3
+  proteome4
 )
 
 choose_input_file() {
