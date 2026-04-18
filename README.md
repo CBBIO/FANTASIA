@@ -255,6 +255,11 @@ FANTASIA requires two key services:
   A Conda environment based on Python 3.12 is a suitable local setup option.
 - Docker and Docker Compose installed
 
+Additional dependency notes:
+
+- **MMseqs2** is required if you enable redundancy filtering during lookup. FANTASIA invokes the external `mmseqs` executable, so it must be installed separately and available in your `PATH`.
+- **Parasail** is used for alignment-based post-processing through its Python package. When FANTASIA is installed through its declared Python dependencies, `parasail` is provided by the runtime environment and does not need to be invoked as a separate command-line tool.
+
 ### Quick Start
 
 1. **Start services** (from the FANTASIA directory):
