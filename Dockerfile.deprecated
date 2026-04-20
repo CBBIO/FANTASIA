@@ -1,0 +1,60 @@
+# Deprecated Dockerfile kept for reference only.
+# This file reflects the older container recipe and contains legacy
+# Singularity-oriented lines that are not valid for the current Docker build.
+# Use `Dockerfile` for the supported and tested Docker image build.
+
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    pkg-config \
+    git \
+    wget \
+    gnupg \
+    lsb-release \
+    ca-certificates \
+    mmseqs2
+
+# Install PostgreSQL client 16
+RUN apt-get update && \
+    apt-get install -y wget gnupg lsb-release && \
+    sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list' && \
+    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgres.gpg && \
+    apt-get update && \
+    apt-get install -y postgresql-client-16 && \
+    rm -rf /var/lib/apt/lists/*
+
+
+# Install Poetry
+ENV POETRY_VERSION=1.8.2
+RUN pip install "poetry==$POETRY_VERSION"
+
+# Set working directory
+export WORKDIR=\$RUN_DIR
+singularity exec  --nv \\
+      --bind \$RUN_DIR:\$RUN_DIR \\
+      --bind \$PWD/fantasia:\$PWD/fantasia \\
+      --bind \$PWD:\$PWD \\
+      \$FT_IMG fantasia initialize --config \$CFG
+
+singularity exec --nv \\
+      --bind \$RUN_DIR:\$RUN_DIR \\
+      --bind \$PWD/fantasia:\$PWD/fantasia \\
+      --bind \$PWD:\$PWD \\
+      \$FT_IMG fantasia run --config \$CFG
+
+# Copy project metadata
+COPY pyproject.toml ./
+
+# Primero copia
+COPY . .
+
+# Luego instala
+RUN poetry config virtualenvs.create false \
+ && poetry install --no-dev \
+ && rm -rf /root/.cache/pypoetry ...
+
+
+# Default command
+ENTRYPOINT ["fantasia"]

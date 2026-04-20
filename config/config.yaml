@@ -1,0 +1,91 @@
+log_path: ~/FANTASIA/logs/
+constants: ./fantasia/constants.yaml
+base_directory: ~/fantasia_runs/
+prefix: sample
+limit_execution: 20
+monitor_interval: 10
+input: data_sample/sample.fasta
+only_lookup: False
+
+DB_USERNAME: usuario
+DB_PASSWORD: clave
+DB_HOST: localhost
+DB_PORT: 5433
+DB_NAME: BioData
+
+rabbitmq_host: localhost
+rabbitmq_port: 5672
+rabbitmq_user: guest
+rabbitmq_password: guest
+delete_queues: true
+
+embedding:
+  device: cuda
+  queue_batch_size: 100
+  max_sequence_length: 2000
+  models:
+    ESM:
+      enabled: False
+      batch_size: 1
+      layer_index: [0]
+      distance_threshold: false
+    ESM3c:
+      enabled: False
+      batch_size: 1
+      layer_index: [0]
+      distance_threshold: false
+    Ankh3-Large:
+      enabled: False
+      batch_size: 1
+      layer_index: [0]
+      distance_threshold: false
+    Prot-T5:
+      enabled: True
+      batch_size: 1
+      layer_index: [0]
+      distance_threshold: false
+    Prost-T5:
+      enabled: False
+      batch_size: 1
+      layer_index: [0]
+      distance_threshold: false
+
+lookup:
+  use_gpu: False
+  batch_size: 516
+  distance_metric: cosine
+  limit_per_entry: 1
+  lookup_cache_max: 1
+  topgo: true
+  precision: 4
+
+redundancy:
+  identity: 0
+  coverage: 0.7
+  threads: 10
+
+taxonomy:
+  exclude: []
+  include_only: []
+  get_descendants: false
+
+postprocess:
+  keep_sequences: true
+  summary:
+    include_counts: true
+    normalize_count_by_limit_per_entry: true
+  export_raw_count: true
+  metrics:
+    reliability_index: [max]
+    identity: [min, max, mean]
+    identity_sw: [min, max, mean]
+  aliases:
+    reliability_index: ri
+    identity: id_g
+    identity_sw: id_l
+  weights:
+    reliability_index: {max: 0.4}
+    max_id_g: 0.20
+    max_id_l: 0.20
+    count: 0.2
+  weighted_prefix: "w_"

@@ -1,0 +1,11 @@
+[run]
+omit =
+    "*/site-packages/*",
+    fantasia/main.py
+
+[report]
+fail_under = 0
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    pass
