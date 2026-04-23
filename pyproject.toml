@@ -6,11 +6,20 @@ description = "Functional ANnoTAtion based on embedding space SImilArity"
 authors = ["Francisco Miguel Pérez Canales <frapercan1@alum.us.es>"]
 readme = "README.md"
 
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu128"
+priority = "explicit"
+
+[[tool.poetry.source]]
+name = "pypi"
+priority = "primary"
+
 [tool.poetry.scripts]
 fantasia = "fantasia.main:main"
 
 [tool.poetry.dependencies]
-python = ">=3.12,<4.0"
+python = ">=3.12,<3.13"
 docopt = "^0.6.2"
 parasail = "^1.3.4"
 ete3 = "^3.1.3"
@@ -20,6 +29,9 @@ goatools = "^1.4.12"
 polars = "^1.33.1"
 pyarrow = "^21.0.0"
 numpy = "^2.3.4"
+torch = { version = "2.10.0", source = "pytorch" }
+torchvision = { version = "0.25.0", source = "pytorch" }
+torchaudio = { version = "2.10.0", source = "pytorch" }
 
 
 
