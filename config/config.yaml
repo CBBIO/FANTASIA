@@ -51,7 +51,7 @@ embedding:
       distance_threshold: false
 
 lookup:
-  use_gpu: False
+  use_gpu: True
   batch_size: 516
   distance_metric: cosine
   limit_per_entry: 1

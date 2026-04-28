@@ -114,6 +114,7 @@ def initialize(conf):
     embeddings_dir = os.path.join(os.path.expanduser(conf["base_directory"]), "embeddings")
     os.makedirs(embeddings_dir, exist_ok=True)
 
+   
     # Nuevo: obtener nombre del archivo desde la URL
     filename = os.path.basename(urllib.parse.urlparse(conf["embeddings_url"]).path)
     tar_path = os.path.join(embeddings_dir, filename)
