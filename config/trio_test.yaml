@@ -6,11 +6,12 @@ limit_execution: 20
 monitor_interval: 10
 input: data_sample/sample.fasta
 only_lookup: False
+only_embedding: False
 
 DB_USERNAME: usuario
 DB_PASSWORD: clave
 DB_HOST: localhost
-DB_PORT: 5433
+DB_PORT: 5432
 DB_NAME: BioData
 
 rabbitmq_host: localhost
@@ -22,7 +23,7 @@ delete_queues: true
 embedding:
   device: cuda
   queue_batch_size: 100
-  max_sequence_length: 2000
+  max_sequence_length: 0
   models:
     ESM:
       enabled: False
@@ -51,7 +52,7 @@ embedding:
       distance_threshold: false
 
 lookup:
-  use_gpu: False
+  use_gpu: true
   batch_size: 516
   distance_metric: cosine
   limit_per_entry: 1
@@ -74,18 +75,18 @@ postprocess:
   summary:
     include_counts: true
     normalize_count_by_limit_per_entry: true
-  export_raw_count: true
-  metrics:
-    reliability_index: [max]
-    identity: [min, max, mean]
-    identity_sw: [min, max, mean]
-  aliases:
-    reliability_index: ri
-    identity: id_g
-    identity_sw: id_l
-  weights:
-    reliability_index: {max: 0.4}
-    max_id_g: 0.20
-    max_id_l: 0.20
-    count: 0.2
-  weighted_prefix: "w_"
+    export_raw_count: true
+    metrics:
+      reliability_index: [max]
+      identity: [min, max, mean]
+      identity_sw: [min, max, mean]
+    aliases:
+      reliability_index: ri
+      identity: id_g
+      identity_sw: id_l
+    weights:
+      reliability_index: {max: 0.4}
+      max_id_g: 0.20
+      max_id_l: 0.20
+      count: 0.2
+    weighted_prefix: "w_"

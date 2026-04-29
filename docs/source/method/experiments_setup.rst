@@ -74,7 +74,7 @@ embedding.distance_metric
   - Recommended: **cosine** (scale-invariant, better comparability across models/layers).
   - Note: Euclidean distance depends on vector magnitudes; unless vectors are normalized,
     cross-model/layer comparisons can be distorted.
-  - In the repository defaults, lookup runs on **CPU** unless ``lookup.use_gpu: true`` is enabled.
+  - In the repository defaults, lookup runs on **GPU** with ``lookup.use_gpu: true``. Set it to ``false`` only to force CPU lookup.
 
 redundancy_filter / alignment_coverage
   - Optional MMseqs2-based query-aware redundancy masking during lookup.
@@ -126,10 +126,10 @@ embedding.queue_batch_size
     the effective batch will be bounded by the queue packet size.
 
 embedding.max_sequence_length
-  - Truncation length (tokens/residues) applied **before** embedding.
-  - ``0`` = **no truncation**; sequences exceeding the model’s internal limit will **error out**
+  - Optional truncation length (tokens/residues) applied **before** embedding.
+  - Default: ``0`` = **no truncation**; sequences exceeding the model’s internal limit will **error out**
     and no embedding will be written.
-  - Positive values (e.g., 512, 1024, …) depend on VRAM and your use case.
+  - Set a positive value (e.g., 512, 1024, …) only when you explicitly want to truncate long sequences for VRAM/runtime reasons.
 
 embedding.models.<ModelKey>.batch_size
   - Per-model embedding batch size (forward pass).
@@ -177,7 +177,7 @@ Batching & limits
 ^^^^^^^^^^^^^^^^^
 - **Lookup OOM** → lower global ``batch_size`` (and, if needed, reduce ``limit_per_entry``).
 - **Embedding OOM** → lower per-model ``embedding.models.<ModelKey>.batch_size`` or select fewer layers.
-- Very long sequences cost more memory/time; cap via ``embedding.max_sequence_length`` if required.
+- Very long sequences cost more memory/time; optionally cap them via ``embedding.max_sequence_length`` if required.
 - ``embedding.queue_batch_size`` controls **enqueue granularity** (not the forward batch). It should be
   **greater than** every per-model ``batch_size`` to avoid being bottlenecked by the queue packet size.
 

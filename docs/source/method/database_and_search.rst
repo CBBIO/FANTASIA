@@ -108,8 +108,8 @@ Execution flow (layer-aware):
    (legacy format without layers is also supported).
 4. Distance kernels: compute **cosine** or **euclidean** distances on GPU
    (PyTorch) or CPU (SciPy), as configured via ``lookup.use_gpu``.
-   In the repository defaults, lookup runs on **CPU** unless ``lookup.use_gpu: true``
-   is enabled.
+   In the repository defaults, lookup runs on **GPU** with ``lookup.use_gpu: true``.
+   Set it to ``false`` only to force CPU lookup.
 5. Neighbor selection: if a per-model `distance_threshold` is set, filter by
    threshold and then cap to `limit_per_entry`; otherwise, take the top
    `limit_per_entry` nearest neighbors.

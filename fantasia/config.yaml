@@ -16,6 +16,7 @@ monitor_interval: 10
 
 input: data_sample/sample.fasta  # str | Default FASTA (can be overridden via CLI --input)
 only_lookup: False            # bool | If true: skip Stage A (embedding) and run Stage B using existing embeddings.h5
+only_embedding: False         # bool | If true: run Stage A only and stop after writing embeddings.h5
 
 # ------------------------------------------------------------------------------
 # Database (PIS: PostgreSQL + pgvector)
@@ -59,9 +60,9 @@ delete_queues: true           # bool | Drop queues on boot/teardown to avoid sta
 # Produces HDF5 with per-layer query embeddings (no DB required here).
 # ==============================================================================
 embedding:
-  device: cpu                # enum{cuda,cpu} | Primary device for PLMs; set to cpu to force CPU execution
+  device: cuda               # enum{cuda,cpu} | Primary device for PLMs; set to cpu only to force CPU execution
   queue_batch_size: 100       # int  | Number of sequences per published batch to RabbitMQ
-  max_sequence_length: 2000      # int  | 0 disables truncation; otherwise sequences are truncated to this length
+  max_sequence_length: 0      # int  | Optional truncation length; 0 disables truncation (default)
 
   # Per-model configuration.
   # name: logical model identifier used across the pipeline (case-sensitive).
@@ -113,7 +114,7 @@ embedding:
 # Consumes embeddings.h5 + in-memory references (IDs, vectors, GO) to produce CSV/TSV.
 # ==============================================================================
 lookup:
-  use_gpu: False               # bool | If true, run vector distances on GPU when available
+  use_gpu: true                # bool | If true, run vector distances on GPU; set false to force CPU lookup
   batch_size: 516            # int  | Vector distance batch size (tune to GPU memory)
   distance_metric: cosine     # enum{cosine,euclidean} | Distance for nearest-neighbor search
   limit_per_entry: 1          # int  | k neighbors returned per query (a.k.a. “k”)

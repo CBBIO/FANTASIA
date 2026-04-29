@@ -110,16 +110,23 @@ def initialize(conf):
         If loading the embeddings into the database fails.
     """
 
-    logger = logging.getLogger("fantasia")
+    logger = logging.getLogger("FANTASIA")
+    embeddings_url = conf.get("embeddings_url")
+    if not embeddings_url:
+        logger.info(
+            "No embeddings_url configured; skipping reference dump download and database restore."
+        )
+        return
+
     embeddings_dir = os.path.join(os.path.expanduser(conf["base_directory"]), "embeddings")
     os.makedirs(embeddings_dir, exist_ok=True)
 
     # Nuevo: obtener nombre del archivo desde la URL
-    filename = os.path.basename(urllib.parse.urlparse(conf["embeddings_url"]).path)
+    filename = os.path.basename(urllib.parse.urlparse(embeddings_url).path)
     tar_path = os.path.join(embeddings_dir, filename)
 
     logger.info(f"Downloading reference embeddings to {tar_path}...")
-    download_embeddings(conf["embeddings_url"], tar_path)
+    download_embeddings(embeddings_url, tar_path)
 
     logger.info("Loading embeddings into the database...")
     load_dump_to_db(tar_path, conf)

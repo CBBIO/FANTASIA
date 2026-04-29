@@ -118,10 +118,10 @@ PostgreSQL and RabbitMQ are launched with dedicated folders per job. Then:
 .. code-block:: bash
 
     singularity exec --nv --bind "$FANTASIA_RUN_DIR:/fantasia" "$FANTASIA_SIF" \
-        fantasia initialize
+        fantasia initialize --config "$CONFIG_PATH" --base_directory /fantasia
 
     singularity exec --nv --bind "$FANTASIA_RUN_DIR:/fantasia" "$FANTASIA_SIF" \
-        fantasia run --input "$INPUT" --prefix "$OUTPUT" $EXTRA
+        fantasia run --config "$CONFIG_PATH" --input "$INPUT" --prefix "$OUTPUT" $EXTRA --base_directory /fantasia
 
 Cleanup
 -------

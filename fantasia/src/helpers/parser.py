@@ -203,7 +203,7 @@ def build_parser():
     run.add_argument(
         "--length_filter",
         type=int,
-        help="Maximum accepted sequence length (maps to embedding.max_sequence_length).",
+        help="Optional truncation length before embedding; 0 disables truncation (maps to embedding.max_sequence_length).",
     )
     run.add_argument(
         "--sequence_queue_package",

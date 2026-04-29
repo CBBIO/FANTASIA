@@ -19,7 +19,7 @@ Description:
 Arguments:
   CONFIG_PATH
       Optional path to the FANTASIA YAML config.
-      Default: ${REPO_ROOT}/../config/prott5_full.yaml
+      Default: ${REPO_ROOT}/config/prott5_full.yaml
 
   PROTEOMES_ROOT
       Root directory containing the expected taxon subfolders (for example:
@@ -61,13 +61,13 @@ Behavior:
   - Executes runs sequentially, one proteome at a time.
 
 Examples:
-  $(basename "$0") ../config/prott5_full.yaml /data/proteomes
-  $(basename "$0") ../config/ankh_test.yaml /data/proteomes /data/fantasia_runs/experiments
-  $(basename "$0") ../config/prott5_full.yaml /data/proteomes /data/fantasia_runs/experiments prott5
-  $(basename "$0") --all-folders --exclude-folders arthropoda ../config/prott5_full.yaml /data/proteomes /data/fantasia_runs/experiments prott5
-  $(basename "$0") --folders arthropoda ../config/prott5_full.yaml /data/proteomes /data/fantasia_runs/experiments prott5
-  $(basename "$0") --size-batch lt10 ../config/prott5_full.yaml /data/proteomes /data/fantasia_runs/experiments prott5
-  $(basename "$0") --size-batch nonarth-rest ../config/prott5_full.yaml /data/proteomes /data/fantasia_runs/experiments prott5
+  $(basename "$0") config/prott5_full.yaml /data/proteomes
+  $(basename "$0") config/ankh_test.yaml /data/proteomes /data/fantasia_runs/experiments
+  $(basename "$0") config/prott5_full.yaml /data/proteomes /data/fantasia_runs/experiments prott5
+  $(basename "$0") --all-folders --exclude-folders arthropoda config/prott5_full.yaml /data/proteomes /data/fantasia_runs/experiments prott5
+  $(basename "$0") --folders arthropoda config/prott5_full.yaml /data/proteomes /data/fantasia_runs/experiments prott5
+  $(basename "$0") --size-batch lt10 config/prott5_full.yaml /data/proteomes /data/fantasia_runs/experiments prott5
+  $(basename "$0") --size-batch nonarth-rest config/prott5_full.yaml /data/proteomes /data/fantasia_runs/experiments prott5
 EOF
 }
 
@@ -113,7 +113,7 @@ while (($# > 0)); do
   esac
 done
 
-CONFIG_PATH="${1:-${REPO_ROOT}/../config/prott5_full.yaml}"
+CONFIG_PATH="${1:-${REPO_ROOT}/config/prott5_full.yaml}"
 ROOT="${2:-}"
 EXPERIMENTS_DIR="${3:-$HOME/fantasia_runs/experiments}"
 RUN_TAG="${4:-$(basename "${CONFIG_PATH}" .yaml)}"

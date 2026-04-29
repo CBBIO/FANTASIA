@@ -133,10 +133,10 @@ After a short delay, the pipeline is launched:
 .. code-block:: bash
 
    apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-       fantasia initialize
+       fantasia initialize --config "$CONFIG_FILE" --base_directory /fantasia
 
    apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-       fantasia run --input "$INPUT" --prefix "$OUTPUT" $EXTRA
+       fantasia run --config "$CONFIG_FILE" --input "$INPUT" --prefix "$OUTPUT" $EXTRA --base_directory /fantasia
 
 Cleanup
 -------

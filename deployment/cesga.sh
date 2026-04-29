@@ -55,6 +55,7 @@ export PIP_CACHE_DIR="$PIP_CACHE"
 # =======================
 # Define working directories
 # =======================
+STORE="${STORE:-$PWD}"
 PROJECT_DIR="$STORE/FANTASIA"
 EXECUTION_DIR="$STORE/fantasia"
 SHARED_MEM_DIR="/tmp/fantasia"
@@ -101,7 +102,7 @@ fi
 
 if [ ! -f "$FANTASIA_IMAGE" ]; then
     echo "🔨 Building FANTASIA container..."
-    apptainer build --disable-cache "$FANTASIA_IMAGE" docker://frapercan/fantasia:latest
+    apptainer build --disable-cache "$FANTASIA_IMAGE" docker://cbbio/fantasia:v4.1.1
 fi
 
 # =======================
@@ -156,10 +157,10 @@ echo "📂 Listing FANTASIA contents:"
 ls -l "$PROJECT_DIR/fantasia/"
 
 apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-    fantasia initialize
+    fantasia initialize --config "$CONFIG_FILE" --base_directory /fantasia
 
 apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-    fantasia run
+    fantasia run --config "$CONFIG_FILE" --base_directory /fantasia
 
 # =======================
 # Cleanup services on exit
@@ -182,3 +183,5 @@ cleanup() {
         rm -rf "$SHARED_MEM_DIR"
     fi
 }
+
+trap cleanup EXIT

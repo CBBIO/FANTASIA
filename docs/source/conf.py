@@ -10,8 +10,8 @@ sys.path.insert(0, os.path.abspath('../..'))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'fantasia'
-copyright = '2024, frapercan'
-author = 'frapercan'
+copyright = '2024, CBBIO'
+author = 'CBBIO'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

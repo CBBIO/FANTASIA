@@ -21,7 +21,7 @@ Prerequisites
 System Requirements
 -------------------
 - **OS**: Linux (Ubuntu recommended)
-- **Python**: 3.12+
+- **Python**: 3.12 (project metadata constrains runtime support to ``>=3.12,<3.13``)
 - **Docker**: installed and running (configured for non-root use)
 
 External Tools
@@ -137,6 +137,15 @@ Minimal settings in ``fantasia/config.yaml``:
    rabbitmq_host: localhost
    rabbitmq_user: guest
    rabbitmq_password: guest
+
+   embedding:
+     device: cuda
+
+   lookup:
+     use_gpu: true
+
+For CPU-only deployments, set ``embedding.device: cpu`` and
+``lookup.use_gpu: false`` before running the pipeline.
 
 .. note::
    If running FANTASIA in a user-defined Docker network with the services,

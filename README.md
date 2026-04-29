@@ -6,7 +6,7 @@
 
 
 
-# FANTASIA v4.1
+# FANTASIA v4.1.1
 
 **Functional ANnoTAtion based on embedding space SImilArity**
 
@@ -67,7 +67,7 @@ Supports protein language models: **ESM-2**, **ProtT5**, **ProstT5**, **Ankh3-La
   relational PostgreSQL database** using **pgvector**.
 
 - **Efficient Similarity Lookup**  
-  High-throughput similarity search with a **hybrid approach**: reference embeddings are stored in a **PostgreSQL + pgvector** database, then loaded **per model/layer into memory** so similarities can be computed efficiently in the application with vectorized CPU or GPU operations. In the repository default configuration, lookup runs on **CPU** unless `lookup.use_gpu: true` is enabled.
+  High-throughput similarity search with a **hybrid approach**: reference embeddings are stored in a **PostgreSQL + pgvector** database, then loaded **per model/layer into memory** so similarities can be computed efficiently in the application with vectorized GPU or CPU operations. In the repository default configuration, lookup runs on **GPU** (`lookup.use_gpu: true`). CPU lookup is available by setting `lookup.use_gpu: false`.
 
 - **Sequential Embedding + Lookup**  
   FANTASIA first computes query embeddings and stores them in `embeddings.h5`, then runs the lookup stage. These stages execute sequentially within a run, so embedding and lookup do not compete for GPU resources unless multiple FANTASIA jobs are launched at the same time.
@@ -94,18 +94,23 @@ Supports protein language models: **ESM-2**, **ProtT5**, **ProstT5**, **Ankh3-La
 
 2. **GO Term Lookup**  
    Performs vector similarity searches using **in-memory computations** to assign Gene Ontology terms. Reference
-   embeddings are retrieved from a **PostgreSQL database with pgvector-backed storage** and loaded per model/layer into memory. In the default configuration, this stage runs on **CPU** (`lookup.use_gpu: false`). Only experimental evidence codes are used for transfer.
+   embeddings are retrieved from a **PostgreSQL database with pgvector-backed storage** and loaded per model/layer into memory. In the default configuration, this stage runs on **GPU** (`lookup.use_gpu: true`). Only experimental evidence codes are used for transfer.
 
 ## GPU Recommendation
 
-The repository default is **CPU lookup** (`lookup.use_gpu: false`). For single-run workflows on CUDA-capable systems, enabling GPU lookup with `lookup.use_gpu: true` is recommended. In the current pipeline, embeddings are generated first and lookup runs afterward, so Stage A and Stage B do not overlap within the same run.
+The repository default is **GPU execution** for both embedding (`embedding.device: cuda`) and lookup (`lookup.use_gpu: true`). CPU remains available as an explicit fallback by setting `embedding.device: cpu` and `lookup.use_gpu: false`. In the current pipeline, embeddings are generated first and lookup runs afterward, so Stage A and Stage B do not overlap within the same run.
 
 When processing multiple proteomes on a single GPU-equipped machine, a [sequential launcher script](scripts/run_sequential_proteomes.sh) is recommended. Running one proteome at a time preserves the same non-overlapping execution model used within a single FANTASIA run and avoids GPU contention between concurrent jobs. This is often the simplest and most reliable strategy for small-to-medium batches of proteomes.
+
+If you plan to annotate with several embedding models, it is usually better to
+run one model at a time rather than enabling all models in a single launch. This
+keeps GPU memory use predictable, makes failures easier to isolate, and avoids
+contention between large model loads on remote or shared machines.
 
 Example:
 
 ```bash
-./scripts/run_sequential_proteomes.sh ../config/prott5_full.yaml /path/to/proteomes /path/to/experiments prott5
+./scripts/run_sequential_proteomes.sh config/prott5_full.yaml /path/to/proteomes /path/to/experiments prott5
 ```
 
 The GPU memory required by the lookup stage depends mainly on:
@@ -142,7 +147,7 @@ Observed speedup in this benchmark:
 
 In this benchmark, no proteins were discarded before embedding: the input FASTA contained `20,223` proteins and the generated `embeddings.h5` also contained `20,223` embedded accessions.
 
-Long proteins were not removed either. Instead, when `embedding.max_sequence_length` is set, FANTASIA truncates sequences longer than that limit before embedding. This means lookup can still cover the full proteome while controlling the memory cost of the embedding stage.
+Long proteins are not removed either. FANTASIA only truncates query sequences before embedding when `embedding.max_sequence_length` is set to a positive value. The repository default is `0` (no truncation).
 
 ## Interpreting Outputs
 
@@ -276,7 +281,7 @@ FANTASIA requires two key services:
 - **RabbitMQ**: Message broker for distributed embedding task processing
 
 ### Prerequisites
-- **Python 3.12** (the project metadata specifies `>=3.12,<4.0`)
+- **Python 3.12** (the project metadata specifies `>=3.12,<3.13`)
   A Conda environment based on Python 3.12 is a suitable local setup option.
 - Docker and Docker Compose installed
 
@@ -295,6 +300,13 @@ Execution modes:
 - `only_embedding: true`: stop after generating `embeddings.h5`
 - `only_lookup: true` and `only_embedding: true` cannot be used together
 
+To run **Stage A only** (embedding generation with no lookup search), set this in your config:
+
+```yaml
+only_lookup: false
+only_embedding: true
+```
+
 > **Deployment note**
 > These updates do not change the overall deployment strategy for Docker, Slurm, or array-based cluster execution. The main changes are at the application level:
 > - explicit support for `only_embedding: true`
@@ -302,19 +314,33 @@ Execution modes:
 > - corrected and clarified taxonomy filtering behavior
 > - recommendation to use decompressed FASTA files for full embedding and full-pipeline runs
 > - optional generation of `query_index_mapping.csv` for sequence-aware outputs
+> - GPU-oriented defaults in the packaged config (`embedding.device: cuda`, `lookup.use_gpu: true`);
+>   CPU-only deployments should set `embedding.device: cpu` and `lookup.use_gpu: false`
 >
 > Existing deployment wrappers should therefore remain structurally valid, but may require small updates if they assume the previous threshold convention, gzipped FASTA inputs, or older output expectations.
 
 ### Quick Start
 
+FANTASIA needs two local services while it runs:
+
+- PostgreSQL + pgvector for the reference database
+- RabbitMQ for the embedding queue
+
+Start the services once, run as many FANTASIA jobs as needed, then stop them
+when you are done.
+
+#### Option A: Docker Compose
+
 1. **Start services** (from the FANTASIA directory):
    ```bash
-   docker-compose up -d
+   docker compose up -d
+   # or: docker-compose up -d
    ```
 
 2. **Verify services are running**:
    ```bash
-   docker-compose ps
+   docker compose ps
+   # or: docker-compose ps
    ```
 
    Expected output:
@@ -328,6 +354,76 @@ Execution modes:
    ```bash
    PGPASSWORD=clave psql -h localhost -U usuario -d BioData -c "SELECT 1"
    ```
+
+#### Option B: Docker Without Compose
+
+Some shared servers have Docker installed but neither `docker compose` nor
+`docker-compose`. In that case, start the same services with plain `docker run`.
+This example maps PostgreSQL to host port `5433` to avoid conflicts with an
+existing system PostgreSQL on `5432`.
+
+```bash
+docker run -d \
+  --name fantasia-postgres \
+  -e POSTGRES_USER=usuario \
+  -e POSTGRES_PASSWORD=clave \
+  -e POSTGRES_DB=BioData \
+  -p 5433:5432 \
+  -v fantasia_postgres_data:/var/lib/postgresql/data \
+  pgvector/pgvector:0.7.0-pg16
+
+docker run -d \
+  --name fantasia-rabbitmq \
+  -e RABBITMQ_DEFAULT_USER=guest \
+  -e RABBITMQ_DEFAULT_PASS=guest \
+  -p 5672:5672 \
+  -p 15672:15672 \
+  -v fantasia_rabbitmq_data:/var/lib/rabbitmq \
+  rabbitmq:3.13-management-alpine
+```
+
+Check the services:
+
+```bash
+nc -z localhost 5433 && echo "Postgres OK"
+nc -z localhost 5672 && echo "RabbitMQ OK"
+```
+
+When using this plain-Docker setup, run FANTASIA with the matching database
+port:
+
+```bash
+FANTASIA_DB_PORT=5433 ./tests/benchmark/run_benchmark_example.sh
+```
+
+For direct `fantasia`/`python -m fantasia.main` commands, pass the port as a CLI
+override instead:
+
+```bash
+python -m fantasia.main initialize \
+  --config ./fantasia/config.yaml \
+  --DB_HOST localhost \
+  --DB_PORT 5433
+```
+
+#### Returning Later
+
+After logging out and back in, reactivate your environment and restart existing
+containers:
+
+```bash
+cd /path/to/FANTASIA
+source ~/anaconda3/etc/profile.d/conda.sh
+conda activate fantasia-py312
+docker start fantasia-postgres fantasia-rabbitmq
+```
+
+Then check the ports before launching a job:
+
+```bash
+nc -z localhost 5433 && echo "Postgres OK"
+nc -z localhost 5672 && echo "RabbitMQ OK"
+```
 
 ### Service Credentials
 
@@ -344,18 +440,49 @@ RabbitMQ Management UI is available at: http://localhost:15672 (user: guest, pas
 
 ### Troubleshooting
 
+**Docker Compose is unavailable**:
+If both of these fail:
+```bash
+docker compose version
+docker-compose --version
+```
+use the plain `docker run` commands in **Option B** above.
+
 **Connection refused error**:
 ```bash
 # Check if containers are running
-docker-compose ps
+docker compose ps
+# or: docker-compose ps
 
 # If stopped, restart them
-docker-compose restart
+docker compose restart
+# or: docker-compose restart
 
 # View logs
-docker-compose logs postgres
-docker-compose logs rabbitmq
+docker compose logs postgres
+docker compose logs rabbitmq
+# or:
+# docker-compose logs postgres
+# docker-compose logs rabbitmq
 ```
+
+For plain Docker, use:
+```bash
+docker ps -a --filter name=fantasia-postgres
+docker ps -a --filter name=fantasia-rabbitmq
+docker start fantasia-postgres fantasia-rabbitmq
+docker logs fantasia-postgres
+docker logs fantasia-rabbitmq
+```
+
+**Wrong PostgreSQL port**:
+If host port `5432` is already occupied by a system PostgreSQL, the plain-Docker
+example uses host port `5433`. In that case, run FANTASIA with:
+```bash
+FANTASIA_DB_PORT=5433 ./tests/benchmark/run_benchmark_example.sh
+```
+For direct CLI calls, use `--DB_PORT 5433`; environment variables are only
+interpreted by the helper scripts.
 
 **Password authentication failed**:
 Ensure the credentials in `docker-compose.yml` match those in `config.yaml`:
@@ -366,9 +493,30 @@ POSTGRES_PASSWORD: clave
 POSTGRES_DB: BioData
 ```
 
+**Permission denied for schema public**:
+If startup fails while creating PIS support tables, grant schema permissions to
+the configured database user:
+```bash
+PGPASSWORD=clave psql -h localhost -p 5432 -U usuario -d BioData \
+  -c "GRANT USAGE, CREATE ON SCHEMA public TO usuario;"
+```
+
+With the local Docker service, you can also run the grant inside the container:
+```bash
+docker compose exec postgres psql -U usuario -d BioData \
+  -c "ALTER SCHEMA public OWNER TO usuario; GRANT USAGE, CREATE ON SCHEMA public TO usuario;"
+# or:
+docker-compose exec postgres psql -U usuario -d BioData \
+  -c "ALTER SCHEMA public OWNER TO usuario; GRANT USAGE, CREATE ON SCHEMA public TO usuario;"
+```
+
+If that user is not allowed to grant privileges, run the same grant with a
+PostgreSQL admin user for the `BioData` database.
+
 **Cleaning up**: To remove containers and volumes:
 ```bash
-docker-compose down -v
+docker compose down -v
+# or: docker-compose down -v
 ```
 
 ## Supported Embedding Models

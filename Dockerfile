@@ -1,55 +1,39 @@
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    pkg-config \
-    git \
-    wget \
-    gnupg \
-    lsb-release \
-    ca-certificates \
-    mmseqs2
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    POETRY_VERSION=1.8.2
 
-# Install PostgreSQL client 16
-RUN apt-get update && \
-    apt-get install -y wget gnupg lsb-release && \
-    sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list' && \
-    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgres.gpg && \
-    apt-get update && \
-    apt-get install -y postgresql-client-16 && \
-    rm -rf /var/lib/apt/lists/*
-
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        git \
+        gnupg \
+        lsb-release \
+        mmseqs2 \
+        pkg-config \
+        wget \
+    && sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list' \
+    && wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgres.gpg \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
-ENV POETRY_VERSION=1.8.2
-RUN pip install "poetry==$POETRY_VERSION"
+RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
 
 # Set working directory
-export WORKDIR=\$RUN_DIR
-singularity exec  --nv \\
-      --bind \$RUN_DIR:\$RUN_DIR \\
-      --bind \$PWD/fantasia:\$PWD/fantasia \\
-      --bind \$PWD:\$PWD \\
-      \$FT_IMG fantasia initialize --config \$CFG
+WORKDIR /app
 
-singularity exec --nv \\
-      --bind \$RUN_DIR:\$RUN_DIR \\
-      --bind \$PWD/fantasia:\$PWD/fantasia \\
-      --bind \$PWD:\$PWD \\
-      \$FT_IMG fantasia run --config \$CFG
-
-# Copy project metadata
-COPY pyproject.toml ./
-
-# Primero copia
+# Copy project and install runtime dependencies
 COPY . .
 
-# Luego instala
 RUN poetry config virtualenvs.create false \
- && poetry install --no-dev \
- && rm -rf /root/.cache/pypoetry ...
-
+    && poetry install --only main --no-interaction --no-ansi \
+    && rm -rf /root/.cache/pypoetry
 
 # Default command
 ENTRYPOINT ["fantasia"]
+CMD ["--help"]

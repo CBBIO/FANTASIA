@@ -279,8 +279,11 @@ class SequenceEmbedder(SequenceEmbeddingManager):
 
             # --- 0) Truncation limit ---
             max_len = getattr(self, "max_sequence_length", None)
-            if max_len is not None and (not isinstance(max_len, int) or max_len <= 0):
+            if max_len is not None and not isinstance(max_len, int):
                 self.logger.warning("enqueue: invalid 'max_sequence_length'=%r → ignoring truncation.", max_len)
+                max_len = None
+            elif max_len is not None and max_len <= 0:
+                self.logger.info("enqueue: max_sequence_length=%r → truncation disabled.", max_len)
                 max_len = None
 
             # --- 1) Load FASTA ---

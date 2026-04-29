@@ -1,0 +1,21 @@
+.git
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.log
+
+fantasia_*_runs/
+model_organism_runs/
+
+# Local reduced sample files
+data_sample/*_10random.*
+data_sample/PRUB1_longiso.pep
+
+*.h5
+*.hdf5
+raw_results/
+topgo/

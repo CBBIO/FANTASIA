@@ -91,7 +91,7 @@ fi
 
 if [ ! -f "$FANTASIA_IMAGE" ]; then
     echo "🔨 Building FANTASIA container..."
-    apptainer build --disable-cache "$FANTASIA_IMAGE" docker://frapercan/fantasia:dev
+    apptainer build --disable-cache "$FANTASIA_IMAGE" docker://cbbio/fantasia:v4.1.1
 fi
 
 # =======================
@@ -146,10 +146,10 @@ echo "📂 Listing FANTASIA contents:"
 ls -l "$PROJECT_DIR/fantasia/"
 
 apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-    fantasia initialize
+    fantasia initialize --config "$CONFIG_FILE" --base_directory /fantasia
 
 apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-    fantasia run --input "$INPUT" --prefix "$OUTPUT" $EXTRA
+    fantasia run --config "$CONFIG_FILE" --input "$INPUT" --prefix "$OUTPUT" $EXTRA --base_directory /fantasia
 
 # =======================
 # Cleanup services on exit
@@ -173,3 +173,4 @@ cleanup() {
     fi
 }
 
+trap cleanup EXIT

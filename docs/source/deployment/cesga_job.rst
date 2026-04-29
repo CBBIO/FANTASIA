@@ -84,7 +84,7 @@ Images are built automatically if missing:
 
 .. code-block:: bash
 
-   apptainer build fantasia.sif docker://frapercan/fantasia:latest
+   apptainer build fantasia.sif docker://cbbio/fantasia:v4.1.1
 
 Execution Phase
 ---------------
@@ -94,10 +94,10 @@ After services are launched in the background, the FANTASIA pipeline is initiali
 .. code-block:: bash
 
    apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-       fantasia initialize
+       fantasia initialize --config "$CONFIG_FILE" --base_directory /fantasia
 
    apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-       fantasia run
+       fantasia run --config "$CONFIG_FILE" --base_directory /fantasia
 
 - The ``--nv`` flag enables GPU passthrough.
 - All outputs are written under ``$EXECUTION_DIR``.
@@ -135,4 +135,3 @@ Summary
 -------
 
 This job script enables fully reproducible, self-contained execution of the FANTASIA pipeline on CESGA's GPU nodes using Apptainer. No root access or external services are required. All data, services, and containers are managed within the node, ensuring high portability and reproducibility.
-

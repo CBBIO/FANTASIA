@@ -120,3 +120,20 @@ cython_debug/
 # Others
 .idea/
 poetry.lock
+
+# Local benchmark / annotation run outputs
+fantasia_*_runs/
+model_organism_runs/
+raw_results/
+topgo/
+*.h5
+*.hdf5
+
+# Ad hoc benchmark logs generated during release validation
+benchmark_nohup.log
+full_*_k1_k5.log
+prub_all_models_k1_cosine_no_topgo.log
+
+# Local reduced sample files
+data_sample/*_10random.*
+data_sample/PRUB1_longiso.pep

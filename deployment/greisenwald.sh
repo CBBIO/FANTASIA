@@ -67,7 +67,7 @@ fi
 
 if [ ! -f "$FANTASIA_SIF" ]; then
     echo "🔨 Building fantasia.sif..."
-    singularity build --disable-cache "$FANTASIA_SIF" docker://frapercan/fantasia:latest
+    singularity build --disable-cache "$FANTASIA_SIF" docker://cbbio/fantasia:v4.1.1
 fi
 
 # =======================
@@ -139,11 +139,11 @@ ls -l "$REPO_DIR/fantasia/"
 
 # Initialize the information system
 singularity exec --nv --bind "$FANTASIA_RUN_DIR:/fantasia" "$FANTASIA_SIF" \
-    fantasia initialize
+    fantasia initialize --config "$CONFIG_PATH" --base_directory /fantasia
 
 # Run analysis
 singularity exec --nv --bind "$FANTASIA_RUN_DIR:/fantasia" "$FANTASIA_SIF" \
-    fantasia run
+    fantasia run --config "$CONFIG_PATH" --base_directory /fantasia
 
 # =======================
 # Cleanup function

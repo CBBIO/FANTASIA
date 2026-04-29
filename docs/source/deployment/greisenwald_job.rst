@@ -75,7 +75,7 @@ If containers are missing, they are built with:
 
    singularity build pgvector.sif docker://pgvector/pgvector:pg16
    singularity build rabbitmq.sif docker://rabbitmq:management
-   singularity build --disable-cache fantasia.sif docker://frapercan/fantasia:latest
+   singularity build --disable-cache fantasia.sif docker://cbbio/fantasia:v4.1.1
 
 PostgreSQL Configuration
 ------------------------
@@ -106,10 +106,10 @@ The pipeline is executed with:
 .. code-block:: bash
 
    singularity exec --nv --bind "$FANTASIA_RUN_DIR:/fantasia" "$FANTASIA_SIF" \
-       fantasia initialize
+       fantasia initialize --config "$CONFIG_PATH" --base_directory /fantasia
 
    singularity exec --nv --bind "$FANTASIA_RUN_DIR:/fantasia" "$FANTASIA_SIF" \
-       fantasia run
+       fantasia run --config "$CONFIG_PATH" --base_directory /fantasia
 
 Cleanup
 -------
@@ -127,5 +127,3 @@ Logs
 
 - SLURM output: ``fantasia_<jobid>.log``
 - SLURM error: ``fantasia_<jobid>.err``
-
-
