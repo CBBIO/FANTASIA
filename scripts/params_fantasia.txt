@@ -1,0 +1,23 @@
+# Config principal
+--config /home/avelasco/FANTASIA-test-upload-v2/fantasia/config.yaml
+
+# Carpeta con batches
+--batches-dir /home/avelasco/FANTASIA-test-upload-v2/data_sample/uniref50_batches_sorted_500k
+
+# Descubrir solo FASTA batch
+--batch-pattern "*_batch_*.fasta"
+
+# Qué batches procesar
+--batch-select 1,last
+
+# Ejecución
+--runner-cmd "poetry run fantasia run"
+
+# Claves del config
+--input-key input
+--prefix-key prefix
+--prefix-mode suffix_stem
+
+# Salidas del runner
+--checkpoint /home/avelasco/fantasia/fantasia_batches_checkpoint_v5.json
+--logs-dir /home/avelasco/fantasia/fantasia_batch_logs_v5

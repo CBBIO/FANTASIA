@@ -1,0 +1,36 @@
+# =========================
+# Entrada y salida
+# =========================
+--input /home/avelasco/FANTASIA-test-upload-v2/data_sample/uniref50_reps_in_goa_minus_9m.fasta
+--output-dir /home/avelasco/FANTASIA-test-upload-v2/data_sample/uniref50_batches_sorted_500k
+
+# =========================
+# Batching
+# =========================
+--batch-size 500000
+--min-length-kept 51
+
+# =========================
+# Prefijo opcional de salida
+# =========================
+--output-prefix uniref50_sorted
+
+# =========================
+# Umbrales a reportar
+# (el script ya trae 30 y 50 por defecto,
+# pero puedes dejarlos explícitos)
+# =========================
+--report-threshold 30
+--report-threshold 50
+
+# =========================
+# Nombres de trazabilidad
+# de proteínas eliminadas
+# =========================
+--filtered-fasta-name filtered_out_below_51aa.fasta
+--filtered-manifest-name filtered_out_below_51aa_manifest.csv
+
+# =========================
+# Comportamiento general
+# =========================
+--overwrite
