@@ -1,0 +1,37 @@
+# =========================
+# Config principal
+# =========================
+--config /home/avelasco/FANTASIA/fantasia/config.yaml
+
+# =========================
+# Batches
+# =========================
+--batches-dir /home/avelasco/FANTASIA/data_sample/uniref50_batches_sorted_500k
+--batch-pattern "*_batch_*.fasta"
+--batch-select all
+
+# =========================
+# Modelos
+# =========================
+--model-select all
+
+# Nombre base de la sesión
+--session-name-base sample_uniref50_sorted_batches
+
+# =========================
+# Ejecución
+# =========================
+--runner-cmd "poetry run fantasia run"
+
+# =========================
+# Claves del config
+# =========================
+--input-key input
+--prefix-key prefix
+--log-path-key log_path
+
+# =========================
+# Estado y logs del runner
+# =========================
+--checkpoint /home/avelasco/fantasia/fantasia_batches_checkpoint_v6.json
+--logs-dir /home/avelasco/fantasia/fantasia_batch_runner_logs_v6

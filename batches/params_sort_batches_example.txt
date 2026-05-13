@@ -1,0 +1,34 @@
+# =========================
+# Entrada y salida
+# =========================
+--input /home/avelasco/FANTASIA/data_sample/uniref50_representatives.fasta
+--output-dir /home/avelasco/fantasia/experiments/uniref50_batches_sorted_500k
+
+# =========================
+# Batching
+# =========================
+--batch-size 500000
+--min-length-kept 51
+
+# =========================
+# Prefijo de salida
+# =========================
+--output-prefix uniref50_sorted
+
+# =========================
+# Umbrales a reportar
+# =========================
+--report-threshold 30
+--report-threshold 50
+
+# =========================
+# Archivos de trazabilidad
+# de secuencias filtradas
+# =========================
+--filtered-fasta-name filtered_out_below_51aa.fasta
+--filtered-manifest-name filtered_out_below_51aa_manifest.csv
+
+# =========================
+# Comportamiento general
+# =========================
+--overwrite
