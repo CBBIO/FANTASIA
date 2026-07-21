@@ -50,6 +50,29 @@ Two packaged reference datasets are available; select one depending on your anal
   Suitable for comparative and exploratory analyses requiring layer-wise representations.  
   *Record*: https://zenodo.org/records/17793273
 
+## Benchmark Companion Data
+
+The manuscript-associated annotation examples and benchmark outputs are
+maintained as a versioned [Zenodo companion dataset](https://doi.org/10.5281/zenodo.20305840).
+Use this concept DOI when referring generally to the evolving companion
+dataset.
+
+- **Full-length benchmark extension:** [Zenodo record 20687741](https://doi.org/10.5281/zenodo.20687741)
+  contains mouse and worm embedding and lookup runs generated with
+  `embedding.max_sequence_length: 0` (no query truncation). It includes
+  ProtT5, ESM-2, ESM3c, Ankh3-Large, and ProstT5 baseline runs at `k = 1` and
+  `k = 5`, model-specific missing-embedding reports, timing tables, and ProtT5
+  leakage-control runs. Within the downloaded archive, these data are under
+  `fantasia_full_proteome_benchmark_runs/`.
+- **Historical capped-query benchmark:** [Zenodo record 20305841](https://doi.org/10.5281/zenodo.20305841)
+  preserves the earlier mouse benchmark generated with a 2,000-amino-acid
+  query cap. It remains available through the Zenodo version history for exact
+  reproduction and capped-versus-full-length comparisons.
+
+For exact benchmark values, cite the corresponding version-specific DOI. The
+reference embedding databases used for lookup are separate from these
+companion benchmark outputs and are listed in the preceding section.
+
 
 ## Key Features
 
