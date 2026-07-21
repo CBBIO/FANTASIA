@@ -56,6 +56,68 @@ Two packaged reference datasets are available; select one depending on your anal
 **Available Embedding Models**  
 Supports protein language models: **ESM-2**, **ProtT5**, **ProstT5**, **Ankh3-Large**, and **ESM3c** for sequence representation.
 
+### Recording exact model revisions for reproducibility
+
+A model repository name identifies a model family, but it does not by itself
+guarantee that the same weights will be retrieved in the future. For published
+or benchmarked analyses, record the immutable repository commit, the weight
+serialization actually loaded, and the software environment together with the
+run outputs.
+
+The model identifiers used by FANTASIA are:
+
+| FANTASIA name | Model repository or loader identifier |
+|---|---|
+| ESM-2 | `facebook/esm2_t33_650M_UR50D` |
+| ESM3c | `EvolutionaryScale/esmc-600m-2024-12` (`esmc_600m` in the ESM loader) |
+| Ankh3-Large | `ElnaggarLab/ankh3-large` |
+| ProstT5 | `Rostlab/ProstT5` |
+| ProtT5 | `Rostlab/prot_t5_xl_uniref50` |
+
+When loading a Hugging Face model directly, pin a full commit hash and choose
+the serialization explicitly:
+
+```python
+from transformers import AutoModel, AutoTokenizer
+
+model_id = "Rostlab/prot_t5_xl_uniref50"
+revision = "<full Hugging Face commit hash>"
+
+tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
+model = AutoModel.from_pretrained(
+    model_id,
+    revision=revision,
+    use_safetensors=True,
+)
+```
+
+Do not infer the revision used by a completed analysis merely from the contents
+of the local Hugging Face cache: several revisions and both
+`model.safetensors` and `pytorch_model.bin` can coexist there. Instead, create
+a model manifest at run time containing at least:
+
+```yaml
+model_id: Rostlab/prot_t5_xl_uniref50
+requested_revision: <full commit hash>
+resolved_commit_hash: <full commit hash>
+serialization: safetensors
+weight_file: model.safetensors
+weight_sha256: <SHA-256 checksum>
+config_sha256: <SHA-256 checksum>
+tokenizer_sha256: <SHA-256 checksum>
+transformers_version: <version>
+huggingface_hub_version: <version>
+torch_version: <version>
+```
+
+For Transformers models, the resolved commit is normally available after
+loading as `model.config._commit_hash`. Also retain the run configuration, Git
+commit, Python version, CUDA version where applicable, and package environment
+(`pip freeze` or `conda env export`). For ESM-C, additionally record the
+installed `esm` package version. SHA-256 checksums provide an independent way
+to verify the exact configuration, tokenizer, and weight files even if the
+upstream repository or local cache layout later changes.
+
 - **Redundancy Filtering**  
   Provides optional **MMseqs2-based query-aware redundancy masking** during lookup. This masks donor
   sequences that MMseqs2 assigns to the same cluster as the query, but it does **not** guarantee
