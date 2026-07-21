@@ -52,8 +52,8 @@ input / only_lookup / only_embedding
   - ``only_lookup: true`` → ``input`` is **HDF5** containing per-layer embeddings; only lookup runs.
   - ``only_embedding: true`` → ``input`` is **FASTA**; the pipeline stops after generating ``embeddings.h5``.
   - ``only_lookup: true`` and ``only_embedding: true`` cannot be used together.
-  - In the current full FANTASIA workflow, FASTA inputs should be **decompressed** before use.
-    If your proteome file is gzip-compressed (for example ``.fasta.gz``), unpack it first.
+  - FASTA input can be plain text or gzip-compressed (for example
+    ``.fasta.gz``). Compressed files are read directly during embedding.
 
 prefix
   - Name used for the experiment folder and outputs.

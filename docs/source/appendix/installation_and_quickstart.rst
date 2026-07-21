@@ -81,9 +81,9 @@ environment. You can open a Poetry shell (``poetry shell``) or prefix commands w
 
 .. important::
 
-   For the full FANTASIA pipeline, input proteomes should be provided as **decompressed FASTA files**.
-   If your proteome is distributed as ``.fa.gz`` or ``.fasta.gz``, decompress it before running
-   embedding or full-pipeline jobs.
+   The full FANTASIA pipeline accepts both plain and gzip-compressed FASTA
+   inputs. Files ending in ``.gz`` or ``.gzip`` are decompressed on the fly
+   during embedding and do not require manual preparation.
 
 2b) Alternative: install as a package (``pip``)
 ===============================================

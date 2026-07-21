@@ -93,6 +93,7 @@ using the stored embeddings.
 """
 
 # --- Standard library ---
+import gzip
 import os
 import traceback
 
@@ -227,7 +228,8 @@ class SequenceEmbedder(SequenceEmbeddingManager):
         cur_seq_parts = []
         seq_started = False
 
-        with open(fasta_path, 'r', encoding='utf-8') as handle:
+        open_text = gzip.open if str(fasta_path).lower().endswith(('.gz', '.gzip')) else open
+        with open_text(fasta_path, 'rt', encoding='utf-8') as handle:
             for raw in handle:
                 line = raw.rstrip('\n')
                 if not line:

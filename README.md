@@ -13,9 +13,9 @@
 FANTASIA is an advanced pipeline for the automatic functional annotation of protein sequences using state-of-the-art protein language models. It integrates deep learning embeddings and in-memory similarity searches, retrieving reference vectors from a PostgreSQL database with pgvector-backed storage, to associate Gene Ontology (GO) terms with proteins.
 
 > [!NOTE]
-> For the full FANTASIA workflow, input proteomes should be provided as **decompressed FASTA files**.
-> If your source file is gzip-compressed, such as `.fa.gz` or `.fasta.gz`, decompress it before
-> running embedding or full-pipeline jobs.
+> FANTASIA accepts plain FASTA files and gzip-compressed FASTA files such as
+> `.fa.gz`, `.faa.gz`, and `.fasta.gz`. Compressed inputs are read directly
+> during embedding and do not need to be decompressed manually.
 
 > [!IMPORTANT]
 > **Two intended usage modes**

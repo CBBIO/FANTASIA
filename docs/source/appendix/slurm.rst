@@ -45,10 +45,10 @@ This file allows you to specify key execution parameters, including:
    strategy. The main changes are: explicit support for ``only_embedding: true``, clearer
    disabling of ``distance_threshold`` (for example ``false`` instead of legacy ``0``, while
    keeping backward compatibility), corrected and clarified taxonomy filtering behavior,
-   recommendation to use decompressed FASTA files for full embedding and full-pipeline runs,
+   direct support for gzip-compressed FASTA files in embedding and full-pipeline runs,
    and optional generation of ``query_index_mapping.csv`` for sequence-aware outputs.
    Existing deployment wrappers should therefore remain structurally valid, but may require
-   small updates if they assume the previous threshold convention, gzipped FASTA inputs, or
+   small updates if they assume the previous threshold convention or
    older output expectations.
 
 .. note::
