@@ -36,7 +36,7 @@ coverage = {extras = ["toml"], version = "^7.2.1"}
 flake8 = "^6.0.0"
 flake8-bugbear = "^23.2.13"
 taskipy = "^1.10.3"
-sphinx = "^7.2.6"
+sphinx = ">=8,<9"
 sphinx-rtd-theme = "^1.2.0"
 furo = "^2024.8.6"
 sphinx-copybutton = "^0.5.2"
@@ -56,7 +56,7 @@ omit = ["*/site-packages/*"]
 fail_under = 95
 
 [tool.taskipy.tasks]
-html_docs = "make html -C docs"
+html_docs = "sphinx-build -W --keep-going -b html docs/source docs/build/html"
 lint = "poetry run flake8 fantasia"
 coverage = "poetry run coverage run -m --source=fantasia pytest tests && poetry run coverage report -m"
 

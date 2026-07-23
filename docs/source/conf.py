@@ -35,23 +35,26 @@ html_static_path = ['_static']
 html_title = 'FANTASIA'
 
 #
-html_logo = "_static/FANTASIA.png"
-html_favicon = "_static/favicon.png"
-
 
 html_theme = "shibuya"
-html_theme_options = {
-    "light_logo": "_static/FANTASIA.png",
-    "dark_logo": "_static/FANTASIA.png",
-}
+html_theme_options = {}
 
 autodoc_mock_imports = [
     "yaml", "h5py",
     "Bio", "numpy", "protein_information_system",
-    "torch", "pandas", "sklearn", "scipy","polars","parasail", "goatools", "ete3"
+    "torch", "pandas", "sklearn", "scipy", "polars", "parasail", "goatools", "ete3",
+    "sqlalchemy", "tqdm"
 ]
 
 
 
 
 master_doc = 'index'
+
+# These DOI targets are valid, but their publishers reject automated HEAD/GET
+# requests from Sphinx linkcheck with HTTP 403.
+linkcheck_ignore = [
+    r"https://doi.org/10\.1093/molbev/msw046",
+    r"https://doi.org/10\.1093/nargab/lqae078",
+    r"https://doi.org/10\.1002/cpz1\.113",
+]

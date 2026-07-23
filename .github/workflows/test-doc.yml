@@ -1,28 +1,20 @@
-name: Compile sphinx documentation
+name: Validate documentation
 
 on:
-  push
+  push:
+  pull_request:
 
 jobs:
-  ci:
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: [ "3.12"]
-        poetry-version: ["1.4.0"]
-        os: [ubuntu-22.04 ]
-    runs-on: ${{ matrix.os }}
+  documentation:
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Run image
-        uses: abatilo/actions-poetry@v2
-        with:
-          poetry-version: ${{ matrix.poetry-version }}
-      - name: install dependecies
-        run: poetry install --only dev
-
-      - name: doc_compile
-        run: poetry run task html_docs
+          python-version: "3.12"
+      - name: Install documentation dependencies
+        run: python -m pip install -r docs/requirements.txt PyYAML
+      - name: Check documented files and commands
+        run: python scripts/check_documentation.py
+      - name: Build documentation with warnings as errors
+        run: sphinx-build -W --keep-going -b html docs/source docs/build/html

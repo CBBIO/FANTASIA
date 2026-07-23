@@ -15,4 +15,3 @@ Our work leverages protein language models (PLMs) to explore functional annotati
 
 - **Future perspectives**
   Beyond benchmarking, FANTASIA is already being used to provide a first approximation of the functions of proteins that remain unannotated. This exploratory capacity opens the door to its integration into a wide variety of bioinformatics pipelines, where preliminary functional hints can guide downstream analyses.
-  In parallel, extending the evaluation to upcoming challenges such as **CAFA6** will further strengthen benchmarking and provide continuity with the international community efforts in protein function prediction.

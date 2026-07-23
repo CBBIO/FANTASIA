@@ -24,8 +24,13 @@ Run the bundled sample **from the project root**, so the default relative paths
 .. code-block:: bash
 
    cd /path/to/FANTASIA
-   fantasia initialize
-   fantasia run
+   fantasia initialize --config ./config/prott5_test.yaml \
+     --base_directory ./lookup --log_path ./lookup/logs \
+     --embeddings_url '<reference-dump-url>'
+   fantasia run --config ./config/prott5_test.yaml \
+     --input ./data_sample/sample.fasta --prefix first_search \
+     --base_directory ./lookup --log_path ./lookup/logs \
+     --limit_per_entry 1
 
 .. important::
    If you execute the CLI **outside** the project root, you must provide explicit
@@ -66,10 +71,10 @@ batch_size
   - Larger batches increase throughput but may exhaust memory.
 
 limit_per_entry
-  - Number of nearest neighbors retained per query (per model/layer).
+  - Number of nearest neighbors retained per query (per model/layer); this is ``k``.
   - Increasing this typically **raises recall**; it may **lower precision** and increase runtime.
 
-embedding.distance_metric
+lookup.distance_metric
   - Distance metric used by the **lookup** stage (configured under ``embedding``).
   - Recommended: **cosine** (scale-invariant, better comparability across models/layers).
   - Note: Euclidean distance depends on vector magnitudes; unless vectors are normalized,
@@ -100,7 +105,7 @@ taxonomy_ids_included_exclusively
   - Matching is also exact-ID based.
 
 get_descendants
-  - Currently disabled.
+  - Deprecated and disabled; any true value raises an error.
   - Keep ``false`` and provide explicit taxonomy IDs in
     ``taxonomy_ids_to_exclude`` or
     ``taxonomy_ids_included_exclusively`` instead.

@@ -1,6 +1,9 @@
 import importlib
 import sys
 import types
+from types import SimpleNamespace
+
+import pytest
 
 
 def _install_import_stubs(monkeypatch):
@@ -158,3 +161,65 @@ def test_default_runs_embedding_then_lookup(monkeypatch, tmp_path):
         "lookup",
     ]
 
+
+@pytest.mark.parametrize(
+    "yaml_config",
+    [
+        {"lookup": {"taxonomy": {"get_descendants": True}}},
+        {"taxonomy": {"get_descendants": True}},
+    ],
+)
+def test_get_descendants_true_is_rejected_at_all_supported_paths(
+    monkeypatch, yaml_config
+):
+    main = _load_main(monkeypatch)
+    monkeypatch.setattr(main, "read_yaml_config", lambda _path: yaml_config)
+
+    with pytest.raises(ValueError, match="deprecated and disabled"):
+        main.load_and_merge_config(
+            SimpleNamespace(command="run", config="unused.yaml"), []
+        )
+
+
+def test_get_descendants_is_forced_false_in_resolved_config(monkeypatch):
+    main = _load_main(monkeypatch)
+    yaml_config = {
+        "lookup": {
+            "taxonomy": {
+                "exclude": ["10090"],
+                "get_descendants": False,
+            }
+        }
+    }
+    monkeypatch.setattr(main, "read_yaml_config", lambda _path: yaml_config)
+
+    resolved = main.load_and_merge_config(
+        SimpleNamespace(command="run", config="unused.yaml"), []
+    )
+
+    assert resolved["get_descendants"] is False
+    assert resolved["lookup"]["taxonomy"]["get_descendants"] is False
+
+
+def test_embedding_cli_overrides_map_to_canonical_yaml_keys(monkeypatch):
+    main = _load_main(monkeypatch)
+    monkeypatch.setattr(
+        main,
+        "read_yaml_config",
+        lambda _path: {"embedding": {}, "lookup": {"taxonomy": {}}},
+    )
+
+    resolved = main.load_and_merge_config(
+        SimpleNamespace(
+            command="run",
+            config="unused.yaml",
+            device="cpu",
+            length_filter=0,
+            sequence_queue_package=25,
+        ),
+        [],
+    )
+
+    assert resolved["embedding"]["device"] == "cpu"
+    assert resolved["embedding"]["max_sequence_length"] == 0
+    assert resolved["embedding"]["queue_batch_size"] == 25

@@ -101,6 +101,6 @@ Configuration Notes
 - **Layer indexing convention**: indices are relative to the output end of the network:
   ``0 = final/output layer``, ``1 = penultimate layer``, ``2 = second-to-last``, and so on.
 - **Distance metric**: set ``distance_metric`` under ``embedding``; the lookup stage reads it from
-  ``embedding.distance_metric``.
+  ``lookup.distance_metric``.
 - **Batching & device**: ``batch_size`` (per model) and global ``device`` control throughput and
   memory pressure during embedding; tune to your hardware budget.

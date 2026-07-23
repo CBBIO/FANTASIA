@@ -2,9 +2,9 @@
 Installation and Quickstart
 ===========================
 
-This quickstart brings up a **local development environment** for FANTASIA:
-database, message broker, and core dependencies. For an end-user installation
-(e.g., via ``pip``), refer to the production deployment section when available.
+This page describes a complete local installation: Python environment,
+database, message broker, reference restore, GPU/CPU selection, and the first
+run. For the shortest runnable path, start with :doc:`/quickstart`.
 
 What you’ll set up
 ==================
@@ -119,10 +119,10 @@ RabbitMQ UI: ``http://localhost:15672`` (default credentials: ``guest/guest``).
 4) Configure FANTASIA
 =====================
 
-Use the default workspace path and set permissions::
+Create the example input and working directories. They are not part of the Git
+repository::
 
-   mkdir -p ~/fantasia
-   chmod -R 755 ~/fantasia
+   mkdir -p data lookup/{logs,experiments,embeddings}
 
 Minimal settings in ``fantasia/config.yaml``:
 
@@ -156,9 +156,15 @@ For CPU-only deployments, set ``embedding.device: cpu`` and
 
 .. code-block:: bash
 
-   poetry run fantasia initialize
+   poetry run fantasia initialize \
+     --config ./config/prott5_test.yaml \
+     --base_directory ./lookup \
+     --log_path ./lookup/logs \
+     --embeddings_url 'https://zenodo.org/records/17795871/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup?download=1'
 
-During initialization, required embeddings are downloaded and indexed.
+During initialization, the reference dump is downloaded and restored into the
+configured PostgreSQL database. This operation resets the database's ``public``
+schema; use a dedicated FANTASIA database.
 
 5.1) (Optional) Load dumps from the host
 ========================================
@@ -175,19 +181,30 @@ Custom-format dump (``pg_dump -Fc``) with ``pg_restore``::
      -h localhost -p 5432 -U usuario -d BioData \
       sample.dump
 
-6) Run the pipeline (development)
-=================================
+6) Run the bundled example
+==========================
 
 .. code-block:: bash
 
-   poetry run fantasia run
+   poetry run fantasia run \
+     --config ./config/prott5_test.yaml \
+     --input ./data_sample/sample.fasta \
+     --prefix first_search \
+     --base_directory ./lookup \
+     --log_path ./lookup/logs \
+     --device cuda \
+     --limit_per_entry 1
+
+The test config limits execution to 20 sequences. For a complete proteome, use
+``config/prott5_full.yaml`` or set ``limit_execution: 0``.
 
 7) CLI help
 ===========
 
 .. code-block:: bash
 
-   fantasia --help
+   poetry run fantasia --help
+   poetry run fantasia run --help
 
 Notes
 =====

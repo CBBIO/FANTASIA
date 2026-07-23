@@ -37,7 +37,7 @@ flexibility.
   models as they become available.
 - Allowing users to **select hidden layers** from the underlying PLMs, enabling fine-grained control
   over the embeddings used for annotation.
-- Enabling **flexible benchmarking**, including compatibility with CAFA standards.
+- Enabling **flexible benchmarking** with explicit taxonomy and identity controls.
 - Providing a streamlined and extensible **command-line interface**.
 
 Validation and scope
@@ -48,8 +48,8 @@ complementary use cases:
 
 - **Proteome-wide annotation**, extending functional coverage to proteins overlooked by homology-based
   tools.
-- **Evaluation in CAFA3**, ensuring rigorous validation of accuracy and
-  generalizability under community standards.
+- **Controlled within-proteome comparisons**, examining model concordance after
+  explicit reference exclusions.
 
 
 .. _Protein Information System: https://github.com/CBBIO/protein-information-system

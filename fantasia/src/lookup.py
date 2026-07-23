@@ -89,7 +89,7 @@ from scipy.spatial.distance import cdist
 from sqlalchemy import text
 
 # --- Project-specific imports ---
-from fantasia.src.helpers.helpers import compute_metrics, get_descendant_ids
+from fantasia.src.helpers.helpers import compute_metrics
 from protein_information_system.sql.model.entities.embedding.sequence_embedding import (
     SequenceEmbedding,
     SequenceEmbeddingType,
@@ -110,7 +110,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
 
     Features
     --------
-    - Taxonomy-based filtering (include/exclude, optional descendant expansion).
+    - Taxonomy-based filtering (exact-ID include/exclude; descendant expansion is disabled).
     - Optional query-aware redundancy masking (MMseqs2 clusters).
     - Multiple embedding models with per-model distance thresholds and layer control.
     - Distance computation on GPU (PyTorch) or CPU (SciPy).
@@ -140,7 +140,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
           - Initializes paths for embeddings, results, and optional exports.
           - Loads the Gene Ontology DAG.
           - Optionally generates MMseqs2 clusters for query-aware redundancy masking.
-          - Sets up taxonomy filters with optional descendant expansion.
+          - Sets up exact-ID taxonomy filters.
           - Prepares lazy reference lookups per (model, layer) using an in-memory cache.
           - Loads model definitions and preloads GO annotations.
           - Prepares internal structures for sequence indexing.
@@ -153,7 +153,8 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 - lookup (dict): Optional nested section. If present, its fields are mapped
                   to the flat config (e.g., ``lookup.distance_metric``, ``lookup.batch_size``,
                   ``lookup.redundancy.identity``/``coverage``, taxonomy include/exclude, etc.).
-                - embedding.distance_metric (str): ``"cosine"`` (default) or ``"euclidean"``.
+                - lookup.distance_metric (str): ``"cosine"`` (default) or ``"euclidean"``;
+                  the legacy ``embedding.distance_metric`` path is also accepted.
                 - batch_size (int): Maximum number of queries per batch.
                 - limit_per_entry (int): Maximum neighbors retained per query.
                 - topgo (bool): Whether to produce TopGO-ready exports later.
@@ -161,15 +162,14 @@ class EmbeddingLookUp(GPUTaskInitializer):
                   requires ``alignment_coverage`` and ``threads``.
                 - taxonomy_ids_to_exclude (list[int]): Optional taxonomy IDs to exclude.
                 - taxonomy_ids_included_exclusively (list[int]): Optional allow-list.
-                - get_descendants (bool): If True, expands provided taxonomy IDs to all
-                  descendants before filtering.
+                - get_descendants (bool): Deprecated and disabled; must be false.
                 - lookup_cache_max (int): Max distinct (model, layer) lookups cached in RAM.
             current_date (str): Timestamp suffix for versioning artifacts.
 
         Side Effects:
             - Logs configuration and derived options.
             - Loads GO DAG from ``go-basic.obo`` with ``relationship`` attributes.
-            - Initializes taxonomy filters (optionally expanded via descendants).
+            - Initializes exact-ID taxonomy filters.
             - Optionally generates MMseqs2 clusters and caches cluster mappings used for
               query-aware masking.
             - Loads model definitions and caches GO annotations from the DB.
@@ -189,7 +189,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
         lk = self.conf.get("lookup", {}) or {}
 
         # Copy direct options if not already in root
-        for k in ("use_gpu", "batch_size", "limit_per_entry", "topgo", "lookup_cache_max"):
+        for k in ("use_gpu", "batch_size", "limit_per_entry", "topgo", "lookup_cache_max", "precision"):
             if k not in self.conf and k in lk:
                 self.conf[k] = lk[k]
 
@@ -260,21 +260,18 @@ class EmbeddingLookUp(GPUTaskInitializer):
             self.distance_metric = "cosine"
         self.logger.info("Distance metric set to: %s", self.distance_metric)
 
-        # ---- Taxonomy filters (integers; optional descendant expansion) -------
-        def _expand_tax_ids(ids):
-            ids = ids or []
-            clean = [int(t) for t in ids if str(t).isdigit()]
-            if self.conf.get("get_descendants", False) and clean:
-                return [int(t) for t in get_descendant_ids(clean)]
-            return clean
+        # ---- Taxonomy filters (exact IDs only) -------------------------------
+        def _clean_tax_ids(ids):
+            return [int(t) for t in (ids or []) if str(t).isdigit()]
 
-        self.exclude_taxon_ids = _expand_tax_ids(self.conf.get("taxonomy_ids_to_exclude"))
-        self.include_taxon_ids = _expand_tax_ids(self.conf.get("taxonomy_ids_included_exclusively"))
+        # Descendant expansion is deliberately absent here. Configuration loading
+        # rejects any true deprecated value and resolves get_descendants to false.
+        self.exclude_taxon_ids = _clean_tax_ids(self.conf.get("taxonomy_ids_to_exclude"))
+        self.include_taxon_ids = _clean_tax_ids(self.conf.get("taxonomy_ids_included_exclusively"))
         self.logger.info(
-            "Taxonomy filters initialized | exclude = %s | include = %s | expand_descendants = %s",
+            "Exact-ID taxonomy filters initialized | exclude = %s | include = %s",
             self.exclude_taxon_ids or "[]",
             self.include_taxon_ids or "[]",
-            bool(self.conf.get("get_descendants", False)),
         )
 
         # ---- Lazy reference lookup cache -------------------------------------

@@ -37,7 +37,7 @@ Verification
 
 You can verify the image is available online by visiting:
 
-    https://hub.docker.com/r/your-username/your-project
+    ``hub.docker.com/r/YOUR-NAME/YOUR-IMAGE``
 
 Additional Notes
 -----------------

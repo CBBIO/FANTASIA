@@ -68,7 +68,7 @@ redundancy:
 taxonomy:
   exclude: []
   include_only: []
-  get_descendants: false
+  get_descendants: false  # Deprecated and disabled; true is rejected
 
 postprocess:
   keep_sequences: true

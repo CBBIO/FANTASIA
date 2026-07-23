@@ -13,9 +13,8 @@ Francisco Miguel Pérez Canales
 
 FANTASIA is currently being evaluated in both model and non-model organisms
 using semantic similarity procedures. By analyzing the recovery of annotations
-after applying taxonomic and redundancy filters, we can assess the potential of
-each protein language model (PLM) beyond the naïve evaluation performed on the
-CAFA3 benchmark.
+after applying taxonomic and redundancy filters, we can assess how donor and
+annotation selection varies among protein language models (PLMs).
 
 For model organisms, taxonomic and redundancy filters are systematically applied
 to ensure that predictions are not trivially recovered from closely related

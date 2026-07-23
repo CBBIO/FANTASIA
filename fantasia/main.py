@@ -368,10 +368,15 @@ def load_and_merge_config(args, unknown_args):
         if conf.get("get_descendants") is None and "get_descendants" in legacy_taxonomy:
             conf["get_descendants"] = legacy_taxonomy["get_descendants"]
 
-    # 3.1 Device → embedding.device (also keep flat 'device' for any legacy consumer)
+    # 3.1 Embedding CLI overrides -> canonical embedding keys. Keep the flat
+    # values as provenance for legacy consumers.
+    emb = conf.setdefault("embedding", {})
     if conf.get("device") is not None:
-        emb = conf.setdefault("embedding", {})
         emb["device"] = conf["device"]  # "cpu" | "cuda"
+    if conf.get("length_filter") is not None:
+        emb["max_sequence_length"] = int(conf["length_filter"])
+    if conf.get("sequence_queue_package") is not None:
+        emb["queue_batch_size"] = int(conf["sequence_queue_package"])
 
     # 3.2 Redundancy thresholds and threads → lookup.redundancy.*
     #     Keep flat duplicates for compatibility with components that read flat keys.
@@ -389,34 +394,39 @@ def load_and_merge_config(args, unknown_args):
         if th is not None:
             r["threads"] = int(th)
 
-    # 3.3 Taxonomy filters → lookup.taxonomy.{exclude, include_only, get_descendants}
+    # 3.3 Taxonomy filters. Descendant expansion is deprecated and disabled.
     tx_ex = conf.get("taxonomy_ids_to_exclude")
     tx_in = conf.get("taxonomy_ids_included_exclusively")
-    tx_desc = conf.get("get_descendants")
+    lk = conf.setdefault("lookup", {})
+    t = lk.setdefault("taxonomy", {})
 
-    # Descendant-based taxonomy expansion is currently disabled because it
-    # depends on an external local ete3/NCBI taxonomy database that is not a
-    # stable part of the supported runtime.
-    if isinstance(tx_desc, str):
-        tx_desc_enabled = tx_desc.strip().lower() in ("1", "true", "yes", "on")
-    else:
-        tx_desc_enabled = bool(tx_desc)
-    if tx_desc_enabled:
+    # Check every accepted historical location before forcing the resolved value to
+    # false. This prevents a nested lookup.taxonomy.get_descendants value from
+    # bypassing validation and reaching the lookup component.
+    descendant_values = [
+        conf.get("get_descendants"),
+        t.get("get_descendants"),
+    ]
+    if isinstance(legacy_taxonomy, dict):
+        descendant_values.append(legacy_taxonomy.get("get_descendants"))
+
+    def _is_truthy(value):
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "t", "yes", "y", "on")
+        return bool(value)
+
+    if any(_is_truthy(value) for value in descendant_values if value is not None):
         raise ValueError(
-            "taxonomy.get_descendants / --get_descendants is currently disabled. "
-            "Use explicit taxonomy IDs with get_descendants: false."
+            "get_descendants is deprecated and disabled. Provide every taxonomy ID "
+            "explicitly and set get_descendants: false."
         )
 
-    if any(v not in (None, [], "") for v in (tx_ex, tx_in, tx_desc)):
-        lk = conf.setdefault("lookup", {})
-        t = lk.setdefault("taxonomy", {})
-        if tx_ex not in (None, []):
-            t["exclude"] = tx_ex
-        if tx_in not in (None, []):
-            t["include_only"] = tx_in
-        if tx_desc is not None:
-            # Accept truthy/falsy shapes; coerce to bool
-            t["get_descendants"] = tx_desc_enabled
+    if tx_ex not in (None, []):
+        t["exclude"] = tx_ex
+    if tx_in not in (None, []):
+        t["include_only"] = tx_in
+    conf["get_descendants"] = False
+    t["get_descendants"] = False
 
     # 4) Sanitize taxonomy lists (always list[str] of digits like ["559292", "6239"])
     import re

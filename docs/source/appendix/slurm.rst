@@ -61,7 +61,11 @@ Example:
 
 .. code-block:: bash
 
-    fantasia run --input my_proteins.fasta --prefix TEST_RUN --redundancy_filter 1.0 --taxonomy_ids_to_exclude 9606,<additional_related_taxa> --k 5
+    fantasia run --config ./config/prott5_full.yaml \
+      --input my_proteins.fasta --prefix TEST_RUN \
+      --redundancy_filter 1.0 \
+      --taxonomy_ids_to_exclude 9606,<additional_related_taxa> \
+      --limit_per_entry 5
 
 
 HPC Deployment Examples

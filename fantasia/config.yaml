@@ -132,11 +132,11 @@ lookup:
     coverage: 0.7             # float in (0,1]  | Alignment coverage threshold used in deduplication
     threads: 10               # int  | CPU threads for redundancy filtering tools
 
-  # Taxonomy filters (applied after NN retrieval to prune/keep specific taxa).
+  # Taxonomy filters (applied while loading eligible references, before distance computation).
   taxonomy:
     exclude: [ ]              # list[str] | Taxonomy IDs to exclude (e.g., ["559292","6239"])
     include_only: [ ]          # list[str] | If non-empty, restrict results to these IDs (takes precedence)
-    get_descendants: false    # bool | Currently disabled; leave false and provide explicit taxonomy IDs
+    get_descendants: false    # deprecated/disabled | true is rejected; list exact taxonomy IDs
 
 
 # ------------------------------------------------------------------------------

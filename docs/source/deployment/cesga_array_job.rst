@@ -61,11 +61,11 @@ Example:
    The recent application-level updates do not change the overall CESGA array-deployment model.
    The main changes are: explicit support for ``only_embedding: true``, clearer disabling of
    ``distance_threshold`` (for example ``false`` instead of legacy ``0``, while keeping backward
-   compatibility), corrected and clarified taxonomy filtering behavior, recommendation to use
-   decompressed FASTA files for full embedding and full-pipeline runs, and optional generation
+   compatibility), corrected and clarified taxonomy filtering behavior, direct support for
+   plain or gzip-compressed FASTA files, and optional generation
    of ``query_index_mapping.csv`` for sequence-aware outputs. Existing wrappers should therefore
    remain structurally valid, but may require small updates if they assume the previous
-   threshold convention, gzipped FASTA inputs, or older output expectations.
+   threshold convention or older output expectations.
 
 This file must be located at ``$HOME/fantasia_input_list.txt`` (can be customized).
 

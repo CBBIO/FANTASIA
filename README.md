@@ -1,681 +1,305 @@
-![FANTASIA Logo](docs/source/_static/FANTASIA.png)
+[![PyPI version](https://img.shields.io/pypi/v/fantasia)](https://pypi.org/project/fantasia/)
+[![Documentation](https://readthedocs.org/projects/fantasia/badge/?version=latest)](https://fantasia.readthedocs.io/en/latest/)
+[![Linting](https://github.com/CBBIO/FANTASIA/actions/workflows/test-lint.yml/badge.svg?branch=main)](https://github.com/CBBIO/FANTASIA/actions/workflows/test-lint.yml)
 
-[![PyPI - Version](https://img.shields.io/pypi/v/fantasia)](https://pypi.org/project/fantasia/)
-[![Documentation Status](https://readthedocs.org/projects/fantasia/badge/?version=latest)](https://fantasia.readthedocs.io/en/latest/?badge=latest)
-![Linting Status](https://github.com/CBBIO/fantasia/actions/workflows/test-lint.yml/badge.svg?branch=main)
+# FANTASIA
 
-
-
-# FANTASIA v4.1.1
+Current release: **4.1.1**
 
 **Functional ANnoTAtion based on embedding space SImilArity**
 
-FANTASIA is an advanced pipeline for the automatic functional annotation of protein sequences using state-of-the-art protein language models. It integrates deep learning embeddings and in-memory similarity searches, retrieving reference vectors from a PostgreSQL database with pgvector-backed storage, to associate Gene Ontology (GO) terms with proteins.
+FANTASIA annotates protein FASTA files by embedding query sequences with a
+protein language model, comparing them with experimentally annotated reference
+proteins, and transferring Gene Ontology (GO) terms from nearby references. The
+Full workflow uses PostgreSQL/pgvector and RabbitMQ and supports ProtT5,
+ProstT5, ESM-2, ESM3c, and Ankh3-Large.
 
-> [!NOTE]
-> FANTASIA accepts plain FASTA files and gzip-compressed FASTA files such as
-> `.fa.gz`, `.faa.gz`, and `.fasta.gz`. Compressed inputs are read directly
-> during embedding and do not need to be decompressed manually.
+## Choose Full or Lite
 
-> [!IMPORTANT]
-> **Two intended usage modes**
->
-> **1. Annotation mode**
-> - Use `k = 1`
-> - Do **not** apply self-exclusion-style identity filtering
-> - Goal: maximize annotation coverage for unknown genomes or proteomes not present in the reference set
->
-> **2. Benchmark / leakage-control mode**
-> - Use `k > 1`
-> - Apply explicit sequence-identity exclusion against the query
-> - Keep the best remaining donor by highest `reliability_index` after filtering
-> - Goal: reduce near-self or near-orthologue leakage during benchmarking
-
-For full documentation, visit [FANTASIA Documentation](https://fantasia.readthedocs.io/en/latest/).
-
-For users who need a lightweight, standalone alternative, FANTASIA-Lite provides fast Gene Ontology annotation directly from local FASTA files, without requiring a database server or the full FANTASIA infrastructure. It leverages protein language model embeddings and nearest-neighbor similarity in embedding space to deliver high-quality functional annotations with minimal setup.
-
-For FANTASIA-Lite, visit https://github.com/CBBIO/FANTASIA-Lite
-
-## Reference Datasets
-Two packaged reference datasets are available; select one depending on your analysis needs:
-
-- **Main Reference (last layer, default)**  
-  Embeddings extracted only from the **final hidden layer** of each PLM.  
-  Recommended for most annotation tasks (smaller, faster to load).  
-  *Record*: https://zenodo.org/records/17795871
-
-- **Multilayer Reference (early layers + final layers)**  
-  Embeddings extracted from **multiple hidden layers** (including intermediate and final).  
-  Suitable for comparative and exploratory analyses requiring layer-wise representations.  
-  *Record*: https://zenodo.org/records/17793273
-
-## Benchmark Companion Data
-
-The manuscript-associated annotation examples and benchmark outputs are
-maintained as a versioned [Zenodo companion dataset](https://doi.org/10.5281/zenodo.20305840).
-Use this concept DOI when referring generally to the evolving companion
-dataset.
-
-- **Full-length benchmark extension:** [Zenodo record 20687741](https://doi.org/10.5281/zenodo.20687741)
-  contains mouse and worm embedding and lookup runs generated with
-  `embedding.max_sequence_length: 0` (no query truncation). It includes
-  ProtT5, ESM-2, ESM3c, Ankh3-Large, and ProstT5 baseline runs at `k = 1` and
-  `k = 5`, model-specific missing-embedding reports, timing tables, and ProtT5
-  leakage-control runs. Within the downloaded archive, these data are under
-  `fantasia_full_proteome_benchmark_runs/`.
-- **Historical capped-query benchmark:** [Zenodo record 20305841](https://doi.org/10.5281/zenodo.20305841)
-  preserves the earlier mouse benchmark generated with a 2,000-amino-acid
-  query cap. It remains available through the Zenodo version history for exact
-  reproduction and capped-versus-full-length comparisons.
-
-For exact benchmark values, cite the corresponding version-specific DOI. The
-reference embedding databases used for lookup are separate from these
-companion benchmark outputs and are listed in the preceding section.
-
-
-## Key Features
-
-**Available Embedding Models**  
-Supports protein language models: **ESM-2**, **ProtT5**, **ProstT5**, **Ankh3-Large**, and **ESM3c** for sequence representation.
-
-### Recording exact model revisions for reproducibility
-
-A model repository name identifies a model family, but it does not by itself
-guarantee that the same weights will be retrieved in the future. For published
-or benchmarked analyses, record the immutable repository commit, the weight
-serialization actually loaded, and the software environment together with the
-run outputs.
-
-The model identifiers used by FANTASIA are:
-
-| FANTASIA name | Model repository or loader identifier |
+| Use | Choose |
 |---|---|
-| ESM-2 | `facebook/esm2_t33_650M_UR50D` |
-| ESM3c | `EvolutionaryScale/esmc-600m-2024-12` (`esmc_600m` in the ESM loader) |
-| Ankh3-Large | `ElnaggarLab/ankh3-large` |
-| ProstT5 | `Rostlab/ProstT5` |
-| ProtT5 | `Rostlab/prot_t5_xl_uniref50` |
+| Proteome-scale runs, five embedding models, database-backed references, taxonomy filters, detailed donor and alignment outputs | **Full FANTASIA** (this repository) |
+| A standalone local workflow without PostgreSQL or RabbitMQ | [**FANTASIA-Lite**](https://github.com/CBBIO/FANTASIA-Lite) |
 
-When loading a Hugging Face model directly, pin a full commit hash and choose
-the serialization explicitly:
+Full FANTASIA is not a lightweight demonstration: the recommended reference
+dump is approximately 3.1 GB before database restoration, and the first model
+run downloads model weights. Use Lite for classroom, laptop, or simple local
+use when the Full infrastructure is unnecessary.
 
-```python
-from transformers import AutoModel, AutoTokenizer
+## Quick start
 
-model_id = "Rostlab/prot_t5_xl_uniref50"
-revision = "<full Hugging Face commit hash>"
+The commands below run a complete 20-sequence ProtT5 annotation example with
+cosine distance and `k=1`. Run them from the repository root.
 
-tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
-model = AutoModel.from_pretrained(
-    model_id,
-    revision=revision,
-    use_safetensors=True,
-)
-```
+### Requirements
 
-Do not infer the revision used by a completed analysis merely from the contents
-of the local Hugging Face cache: several revisions and both
-`model.safetensors` and `pytorch_model.bin` can coexist there. Instead, create
-a model manifest at run time containing at least:
+- Linux
+- Python `>=3.12,<3.13`
+- [Poetry](https://python-poetry.org/)
+- Docker with the Compose plugin
+- NVIDIA GPU for the commands as written; see the [CPU guide](docs/source/deployment/cpu.rst) for CPU configuration
+- Disk space for the reference database and model cache
 
-```yaml
-model_id: Rostlab/prot_t5_xl_uniref50
-requested_revision: <full commit hash>
-resolved_commit_hash: <full commit hash>
-serialization: safetensors
-weight_file: model.safetensors
-weight_sha256: <SHA-256 checksum>
-config_sha256: <SHA-256 checksum>
-tokenizer_sha256: <SHA-256 checksum>
-transformers_version: <version>
-huggingface_hub_version: <version>
-torch_version: <version>
-```
+Recommended starting resources for **one model at a time** are:
 
-For Transformers models, the resolved commit is normally available after
-loading as `model.config._commit_hash`. Also retain the run configuration, Git
-commit, Python version, CUDA version where applicable, and package environment
-(`pip freeze` or `conda env export`). For ESM-C, additionally record the
-installed `esm` package version. SHA-256 checksums provide an independent way
-to verify the exact configuration, tokenizer, and weight files even if the
-upstream repository or local cache layout later changes.
+| Workload | Free disk | System RAM | GPU VRAM |
+|---|---:|---:|---:|
+| 20-protein test | 30 GB | 16 GB | 12 GB |
+| Full proteome, final-layer reference | 100 GB | 32 GB | 16 GB minimum; 24 GB recommended |
+| Full proteome, multilayer/all-model work | 200 GB | 64 GB | 24 GB recommended |
 
-- **Redundancy Filtering**  
-  Provides optional **MMseqs2-based query-aware redundancy masking** during lookup. This masks donor
-  sequences that MMseqs2 assigns to the same cluster as the query, but it does **not** guarantee
-  removal of all clearly similar or high-identity donors. For benchmark or leakage-control workflows,
-  retrieving more neighbors and applying explicit sequence-identity filtering is the more reliable approach.
+These are operational starting points, not hard guarantees. Peak memory depends
+strongly on the selected model, sequence length, model batch size and lookup
+batch size. Uncapped long proteins may require more VRAM. CPU execution needs
+no VRAM but remains RAM- and disk-bound and is substantially slower. Lower the
+model `batch_size` after an embedding out-of-memory error and
+`lookup.batch_size` after a lookup out-of-memory error.
 
-- **Optimized Data Storage**  
-  Embeddings are stored in **HDF5 format** for input sequences. The reference table, however, is hosted in a **public
-  relational PostgreSQL database** using **pgvector**.
+The 100/200 GB disk recommendations include headroom beyond the compressed
+3.1/17.1 GB downloads for PostgreSQL restoration, model caches, embeddings,
+raw per-protein CSVs and consolidated results. Do not size storage from the
+compressed archive alone.
 
-- **Efficient Similarity Lookup**  
-  High-throughput similarity search with a **hybrid approach**: reference embeddings are stored in a **PostgreSQL + pgvector** database, then loaded **per model/layer into memory** so similarities can be computed efficiently in the application with vectorized GPU or CPU operations. In the repository default configuration, lookup runs on **GPU** (`lookup.use_gpu: true`). CPU lookup is available by setting `lookup.use_gpu: false`.
+MMseqs2 is required only when redundancy masking is enabled. Parasail is
+installed as a Python dependency.
 
-- **Sequential Embedding + Lookup**  
-  FANTASIA first computes query embeddings and stores them in `embeddings.h5`, then runs the lookup stage. These stages execute sequentially within a run, so embedding and lookup do not compete for GPU resources unless multiple FANTASIA jobs are launched at the same time.
-
-- **Global & Local Alignment of Hits**  
-  Candidate hits from the reference table are **aligned both globally and locally** against the input protein for validation and scoring.
-
-- **Multi-layer Embedding Support**  
-  Optional support for **intermediate + final layers** to enable layer-wise analyses and improved exploration.
-  Layer indices are specified per model in the YAML config under `embedding.models.<Model>.layer_index`.
-  Indexing is relative to the output end of the network: `0 = final/output layer`, `1 = penultimate layer`, `2 = second-to-last`, and so on.
-
-- **Raw Outputs & Flexible Post-processing**  
-  Exposes **raw result tables** for custom analyses and includes a **flexible post-processing & scoring system** that produces **TopGO-ready** files.  
-  Performs high-speed searches using **in-memory computations**. Reference vectors are retrieved from a PostgreSQL database with pgvector-backed storage for comparison.
-
-- **Functional Annotation by Similarity**  
-  Assigns Gene Ontology (GO) terms to proteins based on **embedding space similarity**, using pre-trained embeddings from all supported models.
-
-## Pipeline Overview (Simplified)
-
-1. **Embedding Generation**  
-   Computes protein embeddings using deep learning models (**ProtT5**, **ProstT5**, **ESM-2**, **Ankh3-Large**, and **ESM3c**).
-
-2. **GO Term Lookup**  
-   Performs vector similarity searches using **in-memory computations** to assign Gene Ontology terms. Reference
-   embeddings are retrieved from a **PostgreSQL database with pgvector-backed storage** and loaded per model/layer into memory. In the default configuration, this stage runs on **GPU** (`lookup.use_gpu: true`). Only experimental evidence codes are used for transfer.
-
-## GPU Recommendation
-
-The repository default is **GPU execution** for both embedding (`embedding.device: cuda`) and lookup (`lookup.use_gpu: true`). CPU remains available as an explicit fallback by setting `embedding.device: cpu` and `lookup.use_gpu: false`. In the current pipeline, embeddings are generated first and lookup runs afterward, so Stage A and Stage B do not overlap within the same run.
-
-When processing multiple proteomes on a single GPU-equipped machine, a [sequential launcher script](scripts/run_sequential_proteomes.sh) is recommended. Running one proteome at a time preserves the same non-overlapping execution model used within a single FANTASIA run and avoids GPU contention between concurrent jobs. This is often the simplest and most reliable strategy for small-to-medium batches of proteomes.
-
-If you plan to annotate with several embedding models, it is usually better to
-run one model at a time rather than enabling all models in a single launch. This
-keeps GPU memory use predictable, makes failures easier to isolate, and avoids
-contention between large model loads on remote or shared machines.
-
-Example:
+### 1. Clone, install, and start services
 
 ```bash
-./scripts/run_sequential_proteomes.sh config/prott5_full.yaml /path/to/proteomes /path/to/experiments prott5
+git clone https://github.com/CBBIO/FANTASIA.git
+cd FANTASIA
+poetry install
+docker compose up -d
+docker compose ps
 ```
 
-The GPU memory required by the lookup stage depends mainly on:
+Wait until `fantasia-postgres` and `fantasia-rabbitmq` report a healthy status.
+The bundled credentials are for local development only; use managed secrets
+and non-default credentials for shared or production deployments.
 
-- the size of the reference embedding matrix
-- the lookup query batch size
-- the embedding dimensionality
-- temporary tensors created during cosine or euclidean distance computation
+### 2. Create local working folders
 
-Because FANTASIA runs embeddings first and lookup afterward, GPU lookup memory requirements do **not** depend on the embedding step being active within the same run.
+`data/` and `lookup/` are intentionally absent from Git:
 
-For a typical single-model **Prot-T5 layer-0** lookup on a proteome, the reference matrix may be on the order of `123,977 x 1024`, with lookup batches such as `516 x 1024` using `float32` tensors. In practice, this fits comfortably on a `24 GB` GPU and is generally expected to fit on a `16 GB` GPU as well. Actual memory requirements still depend on the selected reference dataset, enabled layers/models, and lookup batch size.
+```bash
+mkdir -p data lookup/{logs,experiments,embeddings}
+```
 
-### Example Benchmark: CPU vs GPU Lookup
+### 3. Load the reference database once
 
-The table below summarizes a lookup-only benchmark on a single proteome using the same precomputed Prot-T5 embeddings and the same reference table. Only the lookup execution device was changed.
+```bash
+poetry run fantasia initialize \
+  --config ./config/prott5_test.yaml \
+  --base_directory ./lookup \
+  --log_path ./lookup/logs \
+  --embeddings_url 'https://zenodo.org/records/17795871/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup?download=1'
+```
 
-Benchmark hardware for the GPU run:
+> **Warning:** initialization resets the `public` schema in the configured
+> database. Use the dedicated FANTASIA database created by
+> `docker-compose.yml`, never a database containing unrelated data.
 
-- GPU: `NVIDIA GeForce RTX 3090 Ti`
-- VRAM: `24 GB`
-- CUDA available in the runtime environment: `True`
-- PyTorch build used for the benchmark: `2.11.0+cu130`
+### 4. Run the included example
 
-| Proteome | Input proteins | Mean protein length (aa) | Max protein length (aa) | Embedded proteins | Lookup tasks | Lookup device | Distance time (total) | Distance time / batch | Lookup wall time |
-|----------|----------------|--------------------------|--------------------------|-------------------|--------------|---------------|------------------------|-----------------------|------------------|
-| A proteome (Prot-T5, layer 0) | 20,223 | 392.25 | 8,215 | 20,223 | 20,223 | CPU | 1,835.89 s | 45.90 s | 1,933.08 s |
-| A proteome (Prot-T5, layer 0) | 20,223 | 392.25 | 8,215 | 20,223 | 20,223 | GPU | 17.05 s | 0.43 s | 126.95 s |
+```bash
+poetry run fantasia run \
+  --config ./config/prott5_test.yaml \
+  --input ./data_sample/sample.fasta \
+  --prefix first_search \
+  --base_directory ./lookup \
+  --log_path ./lookup/logs \
+  --device cuda \
+  --limit_per_entry 1
+```
 
-Observed speedup in this benchmark:
+### 5. Verify and inspect the result
 
-- Distance kernel: about `108x` faster on GPU (`1835.89 s` → `17.05 s`)
-- Lookup wall time: about `15x` faster on GPU (`1933.08 s` → `126.95 s`)
+```bash
+experiment=$(find ./lookup/experiments -maxdepth 1 -type d \
+  -name 'first_search_*' | sort | tail -n 1)
+test -s "$experiment/summary.csv"
+head -n 5 "$experiment/summary.csv"
+```
 
-In this benchmark, no proteins were discarded before embedding: the input FASTA contained `20,223` proteins and the generated `embeddings.h5` also contained `20,223` embedded accessions.
+A successful run produces:
 
-Long proteins are not removed either. FANTASIA only truncates query sequences before embedding when `embedding.max_sequence_length` is set to a positive value. The repository default is `0` (no truncation).
+```text
+lookup/experiments/first_search_<timestamp>/
+├── embeddings.h5
+├── experiment_config.yaml
+├── raw_results/prot-t5/layer_0/*.csv
+├── summary.csv
+├── sequences.fasta
+├── query_index_mapping.csv
+└── topgo/
+```
 
-## Interpreting Outputs
-
-FANTASIA writes lookup results in three main forms:
-
-- Per-accession raw CSV files under `raw_results/{model}/layer_{k}/`
-- A global `summary.csv` produced during post-processing
-- TopGO-ready files under `topgo/`
-
-If you need to consolidate many per-accession raw CSV files into a single table for downstream analysis, use the [merge utility](scripts/merge_raw_results.py).
-
-Example:
+`summary.csv` is the main consolidated accession-by-GO result. It is not one
+row per protein: a protein can have many GO rows. The CSV files in each
+`raw_results/<model>/layer_<n>/` directory are **per query protein**, not one
+proteome-level table. Each file can contain multiple donor–GO rows. Merge the
+raw files for one model and layer into a single proteome table with:
 
 ```bash
 python scripts/merge_raw_results.py \
-  /path/to/experiment/raw_results/prot-t5/layer_0 \
-  -o /path/to/experiment/raw_results/prot-t5/layer_0_merged.csv \
+  "$experiment/raw_results/prot-t5/layer_0" \
+  --output "$experiment/raw_results/prot-t5/layer_0_merged.csv" \
   --add-source-file
 ```
 
-### Raw per-accession CSV files
+The merge concatenates the original rows without calculating minima, maxima,
+means, or other aggregates. `final_score`, when present in `summary.csv`, is a
+configuration-dependent ranking score, not a probability.
 
-The raw CSVs are the most detailed output. Each row represents one transferred GO annotation associated with one retrieved reference hit for one query protein.
+## Basic usage
 
-Typical columns include:
-
-- `accession`: query protein accession
-- `go_id`: transferred GO term
-- `go_description`: GO term name
-- `category`: GO namespace, typically `BP`, `MF`, or `CC`
-- `distance`: embedding-space distance between the query and the selected reference hit
-- `reliability_index`: similarity-derived score computed from `distance`
-- `model_name`: embedding model used for the lookup
-- `layer_index`: model layer used for the lookup
-- `protein_id`, `organism`, `gene_name`: metadata from the matched reference protein
-- `evidence_code`: evidence code associated with the transferred annotation
-- `query_len`, `ref_len`: query and reference sequence lengths
-
-If sequence-aware storage is enabled, the raw CSVs can also include alignment-derived metrics:
-
-- `identity`, `similarity`, `alignment_score`, `gaps_percentage`: global alignment metrics
-- `identity_sw`, `similarity_sw`, `alignment_score_sw`, `gaps_percentage_sw`: local Smith-Waterman-style alignment metrics
-- `alignment_length`, `alignment_length_sw`: aligned lengths for the global and local alignments
-
-### Distance and reliability_index
-
-`distance` is the nearest-neighbor distance in embedding space, so lower values indicate a closer reference match.
-
-`reliability_index` is derived from `distance` so that higher values indicate stronger support:
-
-- cosine lookup: `reliability_index = 1 - distance`
-- euclidean lookup: `reliability_index = 0.5 / (0.5 + distance)`
-- other metrics: `reliability_index = 1 / (1 + distance)`
-
-In practice:
-
-- lower `distance` is better
-- higher `reliability_index` is better
-- `reliability_index` is the easiest column to rank by in the raw files
-
-### Global versus local alignment metrics
-
-When alignment metrics are present:
-
-- `identity` and related columns summarize the global end-to-end alignment
-- `identity_sw` and related columns summarize the best local alignment segment
-
-This is useful because some hits may share only a conserved local region. A protein can therefore have:
-
-- moderate global identity but high local identity
-- strong embedding similarity together with weak sequence alignment, or the reverse
-
-These fields are best interpreted as complementary evidence rather than strict pass/fail filters.
-
-### summary.csv
-
-`summary.csv` is the post-processed accession-by-GO summary table. It should be interpreted as the output of a heuristic ranking procedure, not as a table of probabilities. In particular, `final_score` is not a probability score and should not be read as a calibrated confidence value. The table aggregates all raw rows belonging to the same `(accession, go_id, model_name, layer_index)` combination and computes configured statistics such as `min`, `max`, and `mean`.
-
-When sequence-aware exports are enabled, FANTASIA can also write auxiliary files such as `sequences.fasta` and `query_index_mapping.csv` to help relate internal `Q*` identifiers back to parsed query accessions. These mapping aids are provided as optional conveniences for downstream inspection. Their use is left to the user, since FANTASIA's primary goal is to provide a solid and flexible annotation framework rather than to impose a single interpretation or accuracy-estimation workflow.
-
-By default, the repository configuration summarizes:
-
-- `reliability_index`
-- `identity`
-- `identity_sw`
-- support count normalized by `limit_per_entry`
-
-The default aliases are:
-
-- `ri` for `reliability_index`
-- `id_g` for global identity
-- `id_l` for local identity
-
-In the current code, the support `count` metric is derived from the number of raw rows supporting the same `(accession, go_id, model_name, layer_index)` group, normalized by `limit_per_entry`. This means `count` acts as a support-strength signal rather than a probability: GO terms supported repeatedly across raw hits receive a larger value.
-
-So columns such as `max_ri_ProtT5_L0`, `mean_id_g_ProtT5_L0`, or `max_id_l_ProtT5_L0` in `summary.csv` represent aggregated per-model, per-layer evidence for the same accession and GO term.
-
-If weights are configured, FANTASIA also writes:
-
-- weighted columns prefixed by `w_`
-- a composite `final_score`
-
-`final_score` is a configuration-driven heuristic ranking score, not a universal probability or calibrated confidence value. Its objective is to combine several evidence signals into one sortable value so candidate GO terms can be prioritized within the same run and configuration.
-
-In the repository default configuration, `final_score` is built from a weighted combination of:
-
-- the best embedding-derived support (`max_ri`)
-- the best global alignment identity (`max_id_g`)
-- the best local alignment identity (`max_id_l`)
-- the support `count`
-
-This makes `final_score` useful for ranking candidate GO terms, filtering outputs, and downstream prioritization, but its numerical value should not be interpreted as a probability of correctness. Changing the configured metrics or weights changes the meaning of the score.
-
-### TopGO exports
-
-If `lookup.topgo: true`, FANTASIA also exports TopGO-compatible files under `topgo/`.
-
-- Per-model/layer exports keep rows separated by model, layer, and GO category
-- Ensemble exports keep the best `reliability_index` per `(accession, go_id, category)` across all models and layers
-
-These files contain three columns in tab-separated form:
-
-- accession
-- GO term
-- reliability index
-
-## Setting Up Required Services with Docker Compose
-
-FANTASIA requires two key services:
-- **PostgreSQL 16 with pgvector**: Stores reference protein embeddings used by the lookup stage
-- **RabbitMQ**: Message broker for distributed embedding task processing
-
-### Prerequisites
-- **Python 3.12** (the project metadata specifies `>=3.12,<3.13`)
-  A Conda environment based on Python 3.12 is a suitable local setup option.
-- Docker and Docker Compose installed
-
-Additional dependency notes:
-
-- **MMseqs2** is required if you enable redundancy filtering during lookup. FANTASIA invokes the external `mmseqs` executable, so it must be installed separately and available in your `PATH`.
-  In the current workflow, this feature should be interpreted as query-aware redundancy masking rather
-  than a guaranteed exclusion of all clearly similar donors.
-- **Parasail** is used for alignment-based post-processing through its Python package. When FANTASIA is installed through its declared Python dependencies, `parasail` is provided by the runtime environment and does not need to be invoked as a separate command-line tool.
-- **Taxonomy descendant expansion** (`taxonomy.get_descendants: true`) is currently disabled. The original implementation relied on `ete3.NCBITaxa` and its local NCBI taxonomy database rather than on the FANTASIA PostgreSQL reference database, which introduced environment-dependent behavior. The current taxonomy filter therefore works on the exact taxonomy IDs you provide. For benchmark-style exclusions, manually list the relevant species, subspecies, or related taxa in `taxonomy_ids_to_exclude` and keep `get_descendants: false`.
-
-Execution modes:
-
-- Default run: embedding + lookup
-- `only_lookup: true`: skip embedding and use an existing `embeddings.h5`
-- `only_embedding: true`: stop after generating `embeddings.h5`
-- `only_lookup: true` and `only_embedding: true` cannot be used together
-
-To run **Stage A only** (embedding generation with no lookup search), set this in your config:
-
-```yaml
-only_lookup: false
-only_embedding: true
-```
-
-> **Deployment note**
-> These updates do not change the overall deployment strategy for Docker, Slurm, or array-based cluster execution. The main changes are at the application level:
-> - explicit support for `only_embedding: true`
-> - clearer disabling of `distance_threshold` (for example `false` instead of legacy `0`, while keeping backward compatibility)
-> - corrected and clarified taxonomy filtering behavior
-> - recommendation to use decompressed FASTA files for full embedding and full-pipeline runs
-> - optional generation of `query_index_mapping.csv` for sequence-aware outputs
-> - GPU-oriented defaults in the packaged config (`embedding.device: cuda`, `lookup.use_gpu: true`);
->   CPU-only deployments should set `embedding.device: cpu` and `lookup.use_gpu: false`
->
-> Existing deployment wrappers should therefore remain structurally valid, but may require small updates if they assume the previous threshold convention, gzipped FASTA inputs, or older output expectations.
-
-### Quick Start
-
-FANTASIA needs two local services while it runs:
-
-- PostgreSQL + pgvector for the reference database
-- RabbitMQ for the embedding queue
-
-Start the services once, run as many FANTASIA jobs as needed, then stop them
-when you are done.
-
-#### Option A: Docker Compose
-
-1. **Start services** (from the FANTASIA directory):
-   ```bash
-   docker compose up -d
-   # or: docker-compose up -d
-   ```
-
-2. **Verify services are running**:
-   ```bash
-   docker compose ps
-   # or: docker-compose ps
-   ```
-
-   Expected output:
-   ```
-   CONTAINER ID   IMAGE                           STATUS
-   xxx            pgvector/pgvector:0.7.0-pg16   Up (healthy)
-   xxx            rabbitmq:3.13-management       Up (healthy)
-   ```
-
-3. **Test database connection**:
-   ```bash
-   PGPASSWORD=clave psql -h localhost -U usuario -d BioData -c "SELECT 1"
-   ```
-
-#### Option B: Docker Without Compose
-
-Some shared servers have Docker installed but neither `docker compose` nor
-`docker-compose`. In that case, start the same services with plain `docker run`.
-This example maps PostgreSQL to host port `5433` to avoid conflicts with an
-existing system PostgreSQL on `5432`.
+For a complete proteome, use the full config (`limit_execution: 0`) and replace
+the FASTA path. Plain and gzip-compressed protein FASTA files are accepted.
 
 ```bash
-docker run -d \
-  --name fantasia-postgres \
-  -e POSTGRES_USER=usuario \
-  -e POSTGRES_PASSWORD=clave \
-  -e POSTGRES_DB=BioData \
-  -p 5433:5432 \
-  -v fantasia_postgres_data:/var/lib/postgresql/data \
-  pgvector/pgvector:0.7.0-pg16
-
-docker run -d \
-  --name fantasia-rabbitmq \
-  -e RABBITMQ_DEFAULT_USER=guest \
-  -e RABBITMQ_DEFAULT_PASS=guest \
-  -p 5672:5672 \
-  -p 15672:15672 \
-  -v fantasia_rabbitmq_data:/var/lib/rabbitmq \
-  rabbitmq:3.13-management-alpine
+poetry run fantasia run \
+  --config ./config/prott5_full.yaml \
+  --input ./data/my_proteome.faa.gz \
+  --prefix my_proteome \
+  --base_directory ./lookup \
+  --log_path ./lookup/logs \
+  --device cuda \
+  --limit_per_entry 1
 ```
 
-Check the services:
+## Understand the configuration
+
+The YAML file is part of the scientific definition of a run; do not treat it
+only as a list of paths. Start from [`config/prott5_test.yaml`](config/prott5_test.yaml)
+for the 20-protein check or [`config/prott5_full.yaml`](config/prott5_full.yaml)
+for a complete proteome, copy it, and record your changes.
+
+The main sections are:
+
+| Section/key | Controls |
+|---|---|
+| Top-level paths and services | Input/output locations and PostgreSQL/RabbitMQ connections |
+| `limit_execution` | Number of input sequences processed; `0` means all sequences |
+| `embedding` | Device, queue size, sequence-length cap, enabled models, model batch sizes, and layers |
+| `lookup` | CPU/GPU lookup, distance metric, lookup batch size, and `limit_per_entry` (`k`) |
+| `redundancy` | Optional MMseqs2 identity/coverage filtering; `identity: 0` disables it |
+| `taxonomy` | Exact reference taxonomy IDs; `get_descendants` is deprecated/disabled and true is rejected |
+| `postprocess` | Sequence retention, summary metrics, aliases, counts, and heuristic score weights |
+
+Critical points:
+
+- At least one entry under `embedding.models` must have `enabled: true`.
+- `layer_index: [0]` means the final model layer. The enabled model and layer
+  must exist in the restored reference database; query and reference
+  embeddings are not interchangeable across models or layers.
+- `embedding.max_sequence_length: 0` applies no FANTASIA length cap. A positive
+  value truncates sequences before embedding.
+- `lookup.distance_metric` selects `cosine` or `euclidean` distance.
+- `lookup.limit_per_entry` is the number of nearest reference embeddings
+  retained per query. It does not guarantee that many unique donor accessions
+  or GO-bearing donors after expansion and filtering.
+- `postprocess.summary.metrics` controls the min/max/mean columns in
+  `summary.csv`; these aggregations are separate from raw-file merging.
+- `taxonomy.get_descendants` is retained only for compatibility. It is
+  deprecated and disabled; any true value in CLI, legacy YAML, or nested YAML
+  raises an error. List every taxonomy ID explicitly.
+- Database passwords in the example files are local Compose defaults. Replace
+  them for shared or production deployments and never commit secrets.
+
+### Packaged full-run defaults
+
+`config/prott5_full.yaml` processes all inputs (`limit_execution: 0`) using
+uncapped ProtT5 final-layer embeddings (`max_sequence_length: 0`, batch size 1)
+on CUDA. Lookup uses GPU cosine distance, batch size 516, `k=1`, one cached
+model/layer table, TopGO enabled and four-decimal output. Redundancy masking is
+disabled (`identity: 0`; coverage 0.7 and 10 threads apply only when enabled),
+and both exact taxonomy lists are empty. Sequence-aware post-processing is
+enabled; it summarizes reliability by maximum and global/local identities by
+minimum, maximum and mean, with configured weights 0.4/0.2/0.2/0.2.
+
+All other models are disabled by default; each retains batch size 1, final
+layer `[0]`, and no distance threshold. The test config changes the prefix and
+sets `limit_execution: 20`. The complete parameter-by-parameter table—including
+paths, local service credentials, initialization URL behavior, types, defaults,
+and compatibility keys—is the
+[configuration defaults reference](docs/source/reference/configuration_reference.rst).
+
+CLI options such as `--input`, `--device`, and `--limit_per_entry` override the
+corresponding supported YAML values. See all overrides with:
 
 ```bash
-nc -z localhost 5433 && echo "Postgres OK"
-nc -z localhost 5672 && echo "RabbitMQ OK"
+poetry run fantasia run --help
 ```
 
-When using this plain-Docker setup, run FANTASIA with the matching database
-port:
+Every experiment saves the resolved `experiment_config.yaml`. Keep it with the
+results so the enabled model, layer, distance, `k`, filters, and post-processing
+settings can be audited. See the complete
+[configuration reference](docs/source/reference/configuration_reference.rst).
 
-```bash
-FANTASIA_DB_PORT=5433 ./tests/benchmark/run_benchmark_example.sh
-```
+## Execution modes
 
-For direct `fantasia`/`python -m fantasia.main` commands, pass the port as a CLI
-override instead:
+| Mode | Setting | Intended use |
+|---|---|---|
+| Annotation | `limit_per_entry: 1`; no self-exclusion | Annotate unknown proteomes and maximize coverage |
+| Benchmark/leakage control | `limit_per_entry > 1`; explicit taxonomy and post-hoc identity filtering | Retain alternative donors after exclusion |
+| Embedding only | `--only_embedding true` | Produce `embeddings.h5` without lookup |
+| Lookup only | `--only_lookup true --input <embeddings.h5>` | Reuse compatible query embeddings |
 
-```bash
-python -m fantasia.main initialize \
-  --config ./fantasia/config.yaml \
-  --DB_HOST localhost \
-  --DB_PORT 5433
-```
+Taxonomy filters match exact IDs. `get_descendants` is deprecated and disabled; any true value is rejected.
+For benchmark filtering, retrieve several neighbours and use
+[`scripts/filter_raw_results_by_identity.py`](scripts/filter_raw_results_by_identity.py).
+To combine the per-query raw CSVs into one proteome-level file for each
+model/layer, use
+[`scripts/merge_raw_results.py`](scripts/merge_raw_results.py), as shown above.
 
-#### Returning Later
+## Reference data
 
-After logging out and back in, reactivate your environment and restart existing
-containers:
+- [Final-layer reference, recommended](https://zenodo.org/records/17795871): approximately 3.1 GB download.
+- [Multilayer reference](https://zenodo.org/records/17793273): approximately 17.1 GB download.
+- [Versioned benchmark companion dataset](https://doi.org/10.5281/zenodo.20305840).
 
-```bash
-cd /path/to/FANTASIA
-source ~/anaconda3/etc/profile.d/conda.sh
-conda activate fantasia-py312
-docker start fantasia-postgres fantasia-rabbitmq
-```
+The reference database and benchmark outputs are different resources. See the
+[reference-data guide](docs/source/getting_started/reference_data.rst)
+before initialization.
 
-Then check the ports before launching a job:
+## Documentation
 
-```bash
-nc -z localhost 5433 && echo "Postgres OK"
-nc -z localhost 5672 && echo "RabbitMQ OK"
-```
+- [Getting started](docs/source/getting_started/index.rst)
+- [User guide](docs/source/user_guide/index.rst)
+- [Configuration reference](docs/source/reference/configuration_reference.rst)
+- [Output files](docs/source/reference/output_files.rst)
+- [Deployment](docs/source/deployment/index.rst)
+- [Troubleshooting](docs/source/troubleshooting/index.rst)
 
-### Service Credentials
+## Citation
 
-The `docker-compose.yml` is configured with the following default credentials (matching `config.yaml`):
+If you use FANTASIA, cite:
 
-| Service    | Host       | Port  | User     | Password | Database |
-|------------|-----------|-------|----------|----------|----------|
-| PostgreSQL | localhost | 5432  | usuario  | clave    | BioData  |
-| RabbitMQ   | localhost | 5672  | guest    | guest    | -        |
+1. Martínez-Redondo GI, Barrios I, Vázquez-Valls M, Rojas AM, Fernández R.
+   *Illuminating the functional landscape of the dark proteome across the
+   Animal Tree of Life.* [doi:10.1101/2024.02.28.582465](https://doi.org/10.1101/2024.02.28.582465)
+2. Barrios-Núñez I, Martínez-Redondo GI, Medina-Burgos P, Cases I, Fernández R,
+   Rojas AM. *Decoding proteome functional information in model organisms
+   using protein language models.*
+   [doi:10.1101/2024.02.14.580341](https://doi.org/10.1101/2024.02.14.580341)
 
-`BioData` is the default local PostgreSQL database name used for the restored reference lookup table downloaded from Zenodo. It is a configurable database name, not a separate repository requirement.
+## Licence
 
-RabbitMQ Management UI is available at: http://localhost:15672 (user: guest, password: guest)
+FANTASIA is distributed under the
+[GNU Affero General Public License v3.0](LICENSE).
 
-### Troubleshooting
+## Project team and acknowledgements
 
-**Docker Compose is unavailable**:
-If both of these fail:
-```bash
-docker compose version
-docker-compose --version
-```
-use the plain `docker run` commands in **Option B** above.
+FANTASIA is developed by Ana Rojas' Lab (CBBIO, CABD-CSIC) and Rosa
+Fernández's Lab (Metazoa Phylogenomics Lab, IBE-CSIC-UPF). Project team: Ana M.
+Rojas, Rosa Fernández, Belén Carbonetto, and Àlex Domínguez Rodríguez. Past
+contributors include Gemma I. Martínez-Redondo, Francisco Miguel Pérez
+Canales, and Francisco J. Ruiz Mota.
 
-**Connection refused error**:
-```bash
-# Check if containers are running
-docker compose ps
-# or: docker-compose ps
-
-# If stopped, restart them
-docker compose restart
-# or: docker-compose restart
-
-# View logs
-docker compose logs postgres
-docker compose logs rabbitmq
-# or:
-# docker-compose logs postgres
-# docker-compose logs rabbitmq
-```
-
-For plain Docker, use:
-```bash
-docker ps -a --filter name=fantasia-postgres
-docker ps -a --filter name=fantasia-rabbitmq
-docker start fantasia-postgres fantasia-rabbitmq
-docker logs fantasia-postgres
-docker logs fantasia-rabbitmq
-```
-
-**Wrong PostgreSQL port**:
-If host port `5432` is already occupied by a system PostgreSQL, the plain-Docker
-example uses host port `5433`. In that case, run FANTASIA with:
-```bash
-FANTASIA_DB_PORT=5433 ./tests/benchmark/run_benchmark_example.sh
-```
-For direct CLI calls, use `--DB_PORT 5433`; environment variables are only
-interpreted by the helper scripts.
-
-**Password authentication failed**:
-Ensure the credentials in `docker-compose.yml` match those in `config.yaml`:
-```bash
-# Current values in docker-compose.yml
-POSTGRES_USER: usuario
-POSTGRES_PASSWORD: clave
-POSTGRES_DB: BioData
-```
-
-**Permission denied for schema public**:
-If startup fails while creating PIS support tables, grant schema permissions to
-the configured database user:
-```bash
-PGPASSWORD=clave psql -h localhost -p 5432 -U usuario -d BioData \
-  -c "GRANT USAGE, CREATE ON SCHEMA public TO usuario;"
-```
-
-With the local Docker service, you can also run the grant inside the container:
-```bash
-docker compose exec postgres psql -U usuario -d BioData \
-  -c "ALTER SCHEMA public OWNER TO usuario; GRANT USAGE, CREATE ON SCHEMA public TO usuario;"
-# or:
-docker-compose exec postgres psql -U usuario -d BioData \
-  -c "ALTER SCHEMA public OWNER TO usuario; GRANT USAGE, CREATE ON SCHEMA public TO usuario;"
-```
-
-If that user is not allowed to grant privileges, run the same grant with a
-PostgreSQL admin user for the `BioData` database.
-
-**Cleaning up**: To remove containers and volumes:
-```bash
-docker compose down -v
-# or: docker-compose down -v
-```
-
-## Supported Embedding Models
-
-| Name         | Model ID                                 | Params | Architecture      | Description                                                                 |
-|--------------|-------------------------------------------|--------|-------------------|-----------------------------------------------------------------------------|
-| **ESM-2**     | `facebook/esm2_t33_650M_UR50D`            | 650M   | Encoder (33L)     | Learns structure/function from UniRef50. No MSAs. Optimized for accuracy.  |
-| **ProtT5**    | `Rostlab/prot_t5_xl_uniref50`             | 1.2B   | Encoder-Decoder   | Trained on UniRef50. Strong transfer for structure/function tasks.         |
-| **ProstT5**   | `Rostlab/ProstT5`                         | 1.2B   | Multi-modal T5     | Learns 3Di structural states + function. Enhances contact/function tasks.  |
-| **Ankh3-Large** | `ElnaggarLab/ankh3-large`              | 620M   | Encoder (T5-style)| Fast inference. Good semantic/structural representation.                   |
-| **ESM3c**     | `esmc_600m`                               | 600M   | Encoder (36L)     | New gen. model trained on UniRef + MGnify + JGI. High precision & speed.   |
-
-
-## Acknowledgments
-
-FANTASIA is the result of a collaborative effort between **Ana Rojas’ Lab (CBBIO)** (Andalusian Center for Developmental
-Biology, CSIC) and **Rosa Fernández’s Lab** (Metazoa Phylogenomics Lab, Institute of Evolutionary Biology, CSIC-UPF).
-This project demonstrates the synergy between research teams with diverse expertise.
-
-This version of FANTASIA builds upon previous work from:
-
-- [`Metazoa Phylogenomics Lab's FANTASIA`](https://github.com/MetazoaPhylogenomicsLab/FANTASIA)  
-  The original implementation of FANTASIA for functional annotation.
-
-- [`bio_embeddings`](https://github.com/sacdallago/bio_embeddings)  
-  A state-of-the-art framework for generating protein sequence embeddings.
-
-- [`GoPredSim`](https://github.com/Rostlab/goPredSim)  
-  A similarity-based approach for Gene Ontology annotation.
-
-- [`MMseqs2`](https://github.com/soedinglab/MMseqs2)  
-  Used for optional query-aware redundancy masking during lookup workflows.
-
-- [`Parasail`](https://github.com/jeffdaily/parasail)  
-  Provides high-performance pairwise sequence alignment routines used in hit validation and post-processing.
-
-- [`protein-information-system`](https://github.com/CBBIO/protein-information-system)  
-  Serves as the **reference biological information system**, providing a robust data model and curated datasets for
-  protein structural and functional analysis.
-
-We also extend our gratitude to **LifeHUB-CSIC** for inspiring this initiative and fostering innovation in computational
-biology.
-
-## Citing FANTASIA
-
-If you use **FANTASIA** in your research, please cite the following publications:
-
-1. Martínez-Redondo, G. I., Barrios, I., Vázquez-Valls, M., Rojas, A. M., & Fernández, R. (2024).  
-   *Illuminating the functional landscape of the dark proteome across the Animal Tree of Life.*  
-   [DOI: 10.1101/2024.02.28.582465](https://doi.org/10.1101/2024.02.28.582465)
-
-2. Barrios-Núñez, I., Martínez-Redondo, G. I., Medina-Burgos, P., Cases, I., Fernández, R., & Rojas, A. M. (2024).  
-   *Decoding proteome functional information in model organisms using protein language models.*  
-   [DOI: 10.1101/2024.02.14.580341](https://doi.org/10.1101/2024.02.14.580341)
-
-
-## License
-
-FANTASIA is distributed under the terms of the [GNU Affero General Public License v3.0](LICENSE).
-
-
----
-
-### Project Team
-
-- **Ana M. Rojas**: [a.rojas.m@csic.es](mailto:a.rojas.m@csic.es)
-- **Rosa Fernández**: [rosa.fernandez@ibe.upf-csic.es](mailto:rosa.fernandez@ibe.upf-csic.es)
-- **Belén Carbonetto**: [belen.carbonetto.metazomics@gmail.com](mailto:belen.carbonetto.metazomics@gmail.com)
-- **Àlex Domínguez Rodríguez**: [adomrod4@upo.es](mailto:adomrod4@upo.es)
-
-### Past Contributors
-
-- **Gemma I. Martínez-Redondo**: [gemma.martinez@ibe.upf-csic.es](mailto:gemma.martinez@ibe.upf-csic.es)
-- **Francisco Miguel Pérez Canales**: [fmpercan@upo.es](mailto:fmpercan@upo.es)
-- **Francisco J. Ruiz Mota**: [fraruimot@alum.us.es](mailto:fraruimot@alum.us.es)
-
----
+The project builds on the original
+[Metazoa Phylogenomics Lab FANTASIA](https://github.com/MetazoaPhylogenomicsLab/FANTASIA),
+[`bio_embeddings`](https://github.com/sacdallago/bio_embeddings),
+[`GoPredSim`](https://github.com/Rostlab/goPredSim),
+[`MMseqs2`](https://github.com/soedinglab/MMseqs2),
+[`Parasail`](https://github.com/jeffdaily/parasail), and the
+[`protein-information-system`](https://github.com/CBBIO/protein-information-system).

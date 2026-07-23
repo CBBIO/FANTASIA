@@ -1,102 +1,114 @@
-FANTASIA
-========
+FANTASIA 4.1.1
+==============
 
-**Functional ANnoTAtion based on embedding space SImilArity**
+**Functional annotation through protein-language-model embedding similarity.**
 
-FANTASIA is an advanced pipeline designed for automatic functional annotation of protein sequences
-using state-of-the-art protein language models. It integrates deep learning embeddings and similarity
-searches in vector databases to associate Gene Ontology (GO) terms with proteins.
+FANTASIA embeds protein sequences, searches an experimentally annotated
+reference database, and transfers Gene Ontology terms from nearby reference
+proteins. Full FANTASIA supports five models and detailed database-backed
+workflows; `FANTASIA-Lite <https://github.com/CBBIO/FANTASIA-Lite>`_ is the
+standalone alternative without PostgreSQL or RabbitMQ.
 
-.. raw:: html
+New user?
+---------
 
-   <div style="margin: 1rem 0;"></div>
+1. :doc:`Choose Full or Lite <getting_started/choosing_version>`.
+2. :doc:`Confirm requirements <getting_started/requirements>`.
+3. :doc:`Install FANTASIA <getting_started/installation>`.
+4. :doc:`Set up reference data <getting_started/reference_data>`.
+5. :doc:`Run the included example <getting_started/quickstart>`.
+6. :doc:`Inspect the first results <getting_started/first_results>`.
 
-.. grid:: 1 2 2 3
-   :gutter: 2
-   :margin: 2 0 2 0
+.. note::
 
-   .. grid-item-card:: Quickstart
-      :link: appendix/installation_and_quickstart
-      :link-type: doc
-      :shadow: md
-      :text-align: left
+   Full FANTASIA requires service deployment and an approximately 3.1 GB
+   reference download before the first annotation. It is not a five-minute
+   standalone demonstration.
 
-      Set up FANTASIA and run your first annotation. :bdg:`5 min` :bdg-primary:`Beginner`
-      See :doc:`Start here → <introduction>`.
+Common tasks
+------------
 
-   .. grid-item-card:: Method
-      :link: method/index
-      :link-type: doc
-      :shadow: md
-      :text-align: left
-
-      Embeddings, lookups, and evaluation details. :bdg-info:`PLMs` :bdg:`ESM` :bdg:`ProtT5` :bdg:`ProSTT5`
-      Explore :doc:`method/index`.
-
-   .. grid-item-card:: Results
-      :link: results/index
-      :link-type: doc
-      :shadow: md
-      :text-align: left
-
-      Performance, metrics, and species panels. :bdg-success:`Benchmarks`
-      See :doc:`results/index`.
-
-   .. grid-item-card:: API Reference
-      :link: reference/index
-      :link-type: doc
-      :shadow: md
-      :text-align: left
-
-      Autodoc-driven reference for modules and classes. :bdg-secondary:`autodoc`
-      Browse :doc:`reference/index`.
-
-   .. grid-item-card:: How to Cite
-      :link: references
-      :link-type: doc
-      :shadow: md
-      :text-align: left
-
-      Citation info, datasets and reproducibility. :bdg:`BibTeX`
-      See :doc:`references`.
-
-   .. grid-item-card:: Contact
-      :link: contact
-      :link-type: doc
-      :shadow: md
-      :text-align: left
-
-      Questions, issues, and collaborations. :bdg-warning:`Get in touch`
-      Go to :doc:`contact`.
-
-.. raw:: html
-
-   <div style="margin: 1.5rem 0;"></div>
-
-.. admonition:: What is FANTASIA?
-   :class: tip
-
-   A vector-search based functional annotation pipeline leveraging protein language models and Gene
-   Ontology mappings.
+- :doc:`Annotate a proteome <user_guide/annotation_mode>`
+- :doc:`Select models and settings <user_guide/configuration>`
+- :doc:`Reuse embeddings <user_guide/lookup_only>`
+- :doc:`Control benchmark leakage <user_guide/benchmark_mode>`
+- :doc:`Run on GPU <deployment/gpu>` or :doc:`CPU <deployment/cpu>`
+- :doc:`Deploy with Docker <deployment/docker>` or :doc:`Slurm <deployment/hpc_slurm>`
+- :doc:`Understand output files <reference/output_files>`
+- :doc:`Diagnose failures <troubleshooting/index>`
 
 .. toctree::
-   :caption: Paper-like structure
+   :caption: Getting started
    :maxdepth: 2
 
+   getting_started/index
+
+.. toctree::
+   :caption: User guide
+   :maxdepth: 2
+
+   user_guide/index
+
+.. toctree::
+   :caption: Deployment
+   :maxdepth: 2
+
+   deployment/index
+
+.. toctree::
+   :caption: Reference
+   :maxdepth: 2
+
+   reference/index
+
+.. toctree::
+   :caption: How FANTASIA works
+   :maxdepth: 2
+
+   explanation/index
+
+.. toctree::
+   :caption: Benchmarks and validation
+   :maxdepth: 2
+
+   benchmarks/index
+
+.. toctree::
+   :caption: Performance
+   :maxdepth: 2
+
+   performance/index
+
+.. toctree::
+   :caption: Troubleshooting
+   :maxdepth: 2
+
+   troubleshooting/index
+
+.. toctree::
+   :caption: Development
+   :maxdepth: 2
+
+   development/index
+
+.. toctree::
+   :caption: Citation and licence
+   :maxdepth: 1
+
+   citation
+   changelog
+
+.. toctree::
+   :caption: Legacy pages
+   :hidden:
+
+   quickstart
+   appendix/index
+   method/index
    abstract
    introduction
-   method/index
-   results/index
    discussion
    conclusions
-   appendix/index
    references
    acknowledgments
    contact
-
-.. toctree::
-   :caption: API Reference
-   :maxdepth: 2
-   :hidden:
-
-   reference/index

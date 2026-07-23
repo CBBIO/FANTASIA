@@ -25,8 +25,8 @@ Typical operator workflow (two paths)
 .. rubric:: Path A — Use an existing reference dump
 
 #. Start **PostgreSQL (pgvector enabled)** locally or on the cluster.
-#. Run **FANTASIA’s initializer** pointing to the chosen reference dump
-   (e.g., *UniProt2025*, *CAFA3*, *CAFA5*). This step **loads the dump into PostgreSQL**
+#. Run **FANTASIA’s initializer** pointing to the chosen UniProt reference dump.
+   This step **loads the dump into PostgreSQL**
    and makes the reference available for lookup.
 #. Run experiments and collect results.
 
@@ -50,6 +50,5 @@ Typical operator workflow (two paths)
 
    There is **no centrally hosted PIS** at present. Each operator provisions PostgreSQL
    and loads the dump locally.
-
 
 

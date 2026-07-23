@@ -71,13 +71,13 @@ def build_parser():
             "\n"
             "  Explicitly use Final layer only (smaller, faster)\n"
             "  fantasia initialize --config ./fantasia/config.yaml \\\n"
-            "    --embeddings_url https://zenodo.org/records/17167843/files/"
-            "FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1\n"
+            "    --embeddings_url https://zenodo.org/records/17795871/files/"
+            "BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup?download=1\n"
             "\n"
             "  Explicitly use Final + intermediate layers (larger, more detailed)\n"
             "  fantasia initialize --config ./fantasia/config.yaml \\\n"
-            "    --embeddings_url https://zenodo.org/records/17151847/files/"
-            "FANTASIA_UniProt_Sep2025_Final+Interm_ExpOnly.dump?download=1\n"
+            "    --embeddings_url https://zenodo.org/records/17793273/files/"
+            "BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layers_3Frist_3Last.backup?download=1\n"
         ),
 
     )
@@ -251,7 +251,7 @@ def build_parser():
     run.add_argument(
         "--get_descendants",
         type=_boolish,
-        help="Currently disabled. Leave false and provide explicit taxonomy IDs instead.",
+        help="Deprecated and disabled. True raises an error; provide explicit taxonomy IDs and leave false.",
     )
 
     return parser

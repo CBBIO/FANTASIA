@@ -29,13 +29,15 @@ Two packaged reference datasets are available; select one depending on your anal
 
 - **Main Reference (last layer, default)**
   Embeddings extracted only from the **final hidden layer** of each PLM.
-  Recommended for most annotation tasks (smaller, faster to load).
-  *Config URL*: https://zenodo.org/records/17167843/files/FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1
+  Recommended for most annotation tasks (approximately 3.1 GB download;
+  smaller and faster to load).
+  *Record*: https://zenodo.org/records/17795871
 
 - **Multilayer Reference (intermediate + final layers)**
   Embeddings extracted from **multiple hidden layers** (including intermediate and final).
-  Suitable for comparative and exploratory analyses requiring layer-wise representations.
-  *Config URL*: https://zenodo.org/records/17151847/files/FANTASIA_UniProt_Sep2025_Final+Interm_ExpOnly.dump?download=1
+  Suitable for comparative and exploratory analyses requiring layer-wise representations
+  (approximately 17.1 GB download).
+  *Record*: https://zenodo.org/records/17793273
 
 
 Provisioning Reference Data
@@ -68,16 +70,13 @@ Examples
 
 .. code-block:: bash
 
-   # Initialize with default from YAML (Final layer only)
-   fantasia initialize --config ./fantasia/config.yaml
-
-   # Explicitly use Final layer only (smaller, faster)
+   # Final layer only (recommended for most annotation runs)
    fantasia initialize --config ./fantasia/config.yaml \
-     --embeddings_url https://zenodo.org/records/17167843/files/FANTASIA_UniProt_Sep2025_Last_ExpOnly.dump?download=1
+     --embeddings_url 'https://zenodo.org/records/17795871/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup?download=1'
 
    # Explicitly use Final + intermediate layers (larger, more detailed)
    fantasia initialize --config ./fantasia/config.yaml \
-     --embeddings_url https://zenodo.org/records/17151847/files/FANTASIA_UniProt_Sep2025_Final+Interm_ExpOnly.dump?download=1
+     --embeddings_url 'https://zenodo.org/records/17793273/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layers_3Frist_3Last.backup?download=1'
 
 
 Query Embeddings (experiment-local)
@@ -119,8 +118,8 @@ Execution flow (layer-aware):
 
 Configuration notes:
 
-- Distance metric is read from: ``embedding.distance_metric`` (``euclidean`` | ``cosine``).
-- Defaults: ``limit_per_entry: 5`` unless overridden.
+- Distance metric is read from: ``lookup.distance_metric`` (``euclidean`` | ``cosine``).
+- The repository default is ``limit_per_entry: 1`` (annotation mode).
 - Redundancy (optional): set ``redundancy_filter > 0`` to enable MMseqs2-based query-aware masking of same-cluster neighbors during selection.
 - This is a heuristic masking step and does **not** guarantee exclusion of all clearly similar donors.
 - If you need stricter leakage control, retrieve more neighbors and apply explicit sequence-identity filtering after lookup.
@@ -135,13 +134,13 @@ Configuration Surfaces (DB & Similarity Search only)
 
 **Lookup (similarity search)**
 
-- ``embedding.distance_metric`` — ``euclidean`` | ``cosine`` (metric used by the lookup stage).
+- ``lookup.distance_metric`` — ``euclidean`` | ``cosine`` (metric used by the lookup stage).
 - ``limit_per_entry`` — number of nearest neighbors retained per query (per model/layer).
 - ``batch_size`` — lookup processing batch size for distance computation.
 - ``redundancy_filter`` / ``alignment_coverage`` — optional MMseqs2-based query-aware redundancy masking.
 - ``taxonomy_ids_to_exclude`` / ``taxonomy_ids_included_exclusively`` — taxonomy filters applied
   to the exact IDs provided.
-- ``get_descendants`` — currently disabled; use an explicit curated list of taxonomy IDs instead.
+- ``get_descendants`` — deprecated and disabled; true is rejected; use an explicit curated list of taxonomy IDs instead.
 - ``embedding.models.<ModelKey>.distance_threshold`` — optional per-model cutoff applied before capping to ``limit_per_entry``. Use ``false`` to disable it.
 
 **Database (PIS)**

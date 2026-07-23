@@ -1,11 +1,17 @@
-API Reference
-=============
+Reference
+=========
 
-This section documents the main modules of **FANTASIA V4**.
+User-facing technical definitions and Python API pages.
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
+   cli
+   configuration_reference
+   supported_models
+   reference_databases
+   output_files
+   data_schemas
    lookup
    embedder
    main
