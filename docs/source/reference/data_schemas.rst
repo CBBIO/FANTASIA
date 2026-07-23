@@ -20,6 +20,6 @@ CSV
 
 Raw CSV schemas are stable around query–donor–GO rows; sequence and alignment
 fields depend on configuration. Summary CSV columns depend on configured
-models, layers, metrics, aliases, and weights. See :doc:`output_files` for the
-canonical description. The old :doc:`/appendix/schemas` page is retained only
+models, layers, metrics, aliases, and weights. See `Output files <output_files.rst>`_ for the
+canonical description. The old `Schemas <../appendix/schemas.rst>`_ page is retained only
 for URL compatibility.

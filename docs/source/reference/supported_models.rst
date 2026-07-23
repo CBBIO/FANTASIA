@@ -48,4 +48,4 @@ FANTASIA truncation is disabled.
 The revision is an audit record. Current upstream Protein Information System
 loaders do not all expose or enforce a Hugging Face ``revision`` argument, so
 verify the resolved cache snapshot when byte-for-byte reproducibility is
-required. See :doc:`/explanation/reproducibility`.
+required. See `Reproducibility <../explanation/reproducibility.rst>`_.

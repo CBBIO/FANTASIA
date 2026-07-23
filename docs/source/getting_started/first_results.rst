@@ -32,5 +32,5 @@ Run the command separately for each model/layer directory. It performs no
 min/max/mean aggregation; ``--add-source-file`` records the source shard.
 
 Keep ``experiment_config.yaml`` and the log with any shared result. See
-:doc:`/reference/output_files` for the complete output tree and column
+`Output files <../reference/output_files.rst>`_ for the complete output tree and column
 interpretation.

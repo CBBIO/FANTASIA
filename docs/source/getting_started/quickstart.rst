@@ -17,7 +17,7 @@ Prerequisites
 - Enough disk space for the selected reference database and model cache
 
 For CPU execution or manual service setup, see
-:doc:`../appendix/installation_and_quickstart`.
+`Installation and Quickstart <../appendix/installation_and_quickstart.rst>`_.
 
 1. Install and start services
 =============================
@@ -204,8 +204,8 @@ donors using sequence identity after lookup.
 Next steps
 ==========
 
-- :doc:`installation` — package installation
-- :doc:`reference_data` — reference database setup
-- :doc:`/user_guide/configuration` — models, layers, filters, and run modes
-- :doc:`first_results` — output tables and validation
-- :doc:`/deployment/hpc_slurm` — HPC and Slurm examples
+- `Installation <installation.rst>`_ — package installation
+- `Reference data setup <reference_data.rst>`_ — reference database setup
+- `Configure a run <../user_guide/configuration.rst>`_ — models, layers, filters, and run modes
+- `Validate and inspect a first result <first_results.rst>`_ — output tables and validation
+- `HPC and Slurm <../deployment/hpc_slurm.rst>`_ — HPC and Slurm examples

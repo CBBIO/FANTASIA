@@ -11,4 +11,4 @@ directory, output base, and prefix:
      ./config/prott5_full.yaml ./data/proteomes ./lookup batch
 
 Inspect the script and configuration before production use. For scheduler
-arrays and per-job service deployment, see :doc:`/deployment/hpc_slurm`.
+arrays and per-job service deployment, see `HPC and Slurm <../deployment/hpc_slurm.rst>`_.

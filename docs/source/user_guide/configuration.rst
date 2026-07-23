@@ -18,5 +18,5 @@ The main decisions are:
 
 Use one model per launch for predictable resource use. CLI model selection is
 not supported; model enablement is YAML-only. See
-:doc:`/reference/configuration_reference` for paths, types, defaults, and
+`Configuration defaults <../reference/configuration_reference.rst>`_ for paths, types, defaults, and
 interactions.

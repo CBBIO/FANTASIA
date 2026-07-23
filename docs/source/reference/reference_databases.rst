@@ -2,7 +2,7 @@ Reference databases
 ===================
 
 Current final-layer and multilayer releases are listed in
-:doc:`/getting_started/reference_data`. They contain PostgreSQL/PIS records for
+`Reference data setup <../getting_started/reference_data.rst>`_. They contain PostgreSQL/PIS records for
 reference sequences, experimentally supported GO annotations, model metadata,
 and vector embeddings. During lookup, the selected model/layer vectors are
 loaded into memory; pgvector provides storage while the application performs

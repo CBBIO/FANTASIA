@@ -15,6 +15,6 @@ General requirements:
 - request GPU resources for configs using CUDA;
 - use ``--limit_per_entry`` to set the neighbourhood size.
 
-The legacy detailed site pages remain available at :doc:`cesga_job`,
-:doc:`cesga_array_job`, :doc:`greisenwald_job`, and
-:doc:`greisenwald_array_job`.
+The legacy detailed site pages remain available at `Single FANTASIA Job Execution on CESGA (GPU + Apptainer) <cesga_job.rst>`_,
+`Running FANTASIA at CESGA (SLURM + Apptainer + GPU) <cesga_array_job.rst>`_, `Single FANTASIA Job Execution on Greisenwald HPC (GPU + Singularity) <greisenwald_job.rst>`_, and
+`FANTASIA Array Job Execution on Greisenwald HPC (GPU + Singularity) <greisenwald_array_job.rst>`_.

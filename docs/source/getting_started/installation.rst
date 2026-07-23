@@ -38,6 +38,6 @@ workflow above.
 Developer installation
 ----------------------
 
-Use ``poetry install`` and see :doc:`/development/testing`. This release does
+Use ``poetry install`` and see `Testing and contributions <../development/testing.rst>`_. This release does
 not include a ``poetry.lock`` file, so record the resolved environment for
 reproducible development and publication runs.

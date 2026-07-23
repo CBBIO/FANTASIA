@@ -9,7 +9,7 @@ Authentication failed
    Ensure YAML credentials match the deployed database. Test with ``psql``.
 
 Vector extension missing
-   Query ``pg_extension`` as shown in :doc:`/deployment/postgresql`. Use a
+   Query ``pg_extension`` as shown in `PostgreSQL and pgvector <../deployment/postgresql.rst>`_. Use a
    pgvector-enabled server and a user allowed to create the extension.
 
 Schema permission denied

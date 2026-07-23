@@ -16,4 +16,4 @@ Connection checks:
 
 Initialization uses ``pg_restore`` and resets ``public``. The configured user
 must be able to recreate the schema and create/use the vector extension. See
-:doc:`/troubleshooting/postgresql` for authentication and permission failures.
+`PostgreSQL failures <../troubleshooting/postgresql.rst>`_ for authentication and permission failures.

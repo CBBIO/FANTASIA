@@ -12,12 +12,12 @@ standalone alternative without PostgreSQL or RabbitMQ.
 New user?
 ---------
 
-1. :doc:`Choose Full or Lite <getting_started/choosing_version>`.
-2. :doc:`Confirm requirements <getting_started/requirements>`.
-3. :doc:`Install FANTASIA <getting_started/installation>`.
-4. :doc:`Set up reference data <getting_started/reference_data>`.
-5. :doc:`Run the included example <getting_started/quickstart>`.
-6. :doc:`Inspect the first results <getting_started/first_results>`.
+1. `Choose Full or Lite <getting_started/choosing_version.rst>`_.
+2. `Confirm requirements <getting_started/requirements.rst>`_.
+3. `Install FANTASIA <getting_started/installation.rst>`_.
+4. `Set up reference data <getting_started/reference_data.rst>`_.
+5. `Run the included example <getting_started/quickstart.rst>`_.
+6. `Inspect the first results <getting_started/first_results.rst>`_.
 
 .. note::
 
@@ -28,14 +28,14 @@ New user?
 Common tasks
 ------------
 
-- :doc:`Annotate a proteome <user_guide/annotation_mode>`
-- :doc:`Select models and settings <user_guide/configuration>`
-- :doc:`Reuse embeddings <user_guide/lookup_only>`
-- :doc:`Control benchmark leakage <user_guide/benchmark_mode>`
-- :doc:`Run on GPU <deployment/gpu>` or :doc:`CPU <deployment/cpu>`
-- :doc:`Deploy with Docker <deployment/docker>` or :doc:`Slurm <deployment/hpc_slurm>`
-- :doc:`Understand output files <reference/output_files>`
-- :doc:`Diagnose failures <troubleshooting/index>`
+- `Annotate a proteome <user_guide/annotation_mode.rst>`_
+- `Select models and settings <user_guide/configuration.rst>`_
+- `Reuse embeddings <user_guide/lookup_only.rst>`_
+- `Control benchmark leakage <user_guide/benchmark_mode.rst>`_
+- `Run on GPU <deployment/gpu.rst>`_ or `CPU <deployment/cpu.rst>`_
+- `Deploy with Docker <deployment/docker.rst>`_ or `Slurm <deployment/hpc_slurm.rst>`_
+- `Understand output files <reference/output_files.rst>`_
+- `Diagnose failures <troubleshooting/index.rst>`_
 
 .. toctree::
    :caption: Getting started

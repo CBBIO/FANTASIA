@@ -4,7 +4,7 @@ Installation and Quickstart
 
 This page describes a complete local installation: Python environment,
 database, message broker, reference restore, GPU/CPU selection, and the first
-run. For the shortest runnable path, start with :doc:`/quickstart`.
+run. For the shortest runnable path, start with `Quickstart moved <../quickstart.rst>`_.
 
 What you’ll set up
 ==================

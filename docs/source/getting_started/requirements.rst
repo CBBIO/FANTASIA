@@ -48,7 +48,7 @@ These values are operational guidance rather than guaranteed minima. The
 final-layer and multilayer downloads are approximately 3.1 and 17.1 GB, but
 restored PostgreSQL data, model caches, embeddings and results require much
 more space than the compressed archive. Uncapped long sequences may exceed the
-listed VRAM. See :doc:`/performance/resource_requirements`.
+listed VRAM. See `Resource requirements <../performance/resource_requirements.rst>`_.
 
 Network access
 --------------
