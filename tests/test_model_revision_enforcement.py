@@ -59,6 +59,14 @@ class ModelRevisionEnforcementTests(unittest.TestCase):
             self.assertEqual(_FakeModule.model_argument, str(snapshot.resolve()))
             self.assertEqual(_FakeModule.tokenizer_argument, str(snapshot.resolve()))
             self.assertEqual(embedder.model_instances["Prot-T5"], "model")
+            self.assertEqual(
+                embedder.conf["embedding"]["models"]["Prot-T5"]["repository"],
+                "example/model",
+            )
+            self.assertEqual(
+                embedder.conf["embedding"]["models"]["Prot-T5"]["revision"],
+                revision,
+            )
 
     def test_legacy_config_without_provenance_keys_uses_supported_defaults(self):
         revision = "973be27c52ee6474de9c945952a8008aeb2a1a73"
