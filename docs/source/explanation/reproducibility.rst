@@ -19,8 +19,9 @@ and immutable revision for every supported model, requested layers, enabled
 state, and relevant installed package versions. ESM3c also includes its known
 serialization filename and weight checksum.
 
-The recorded revision is an audit record. Current upstream loaders do not all
-accept or enforce a ``revision`` argument, so verify the resolved cache snapshot
-when exact byte-for-byte reproducibility is required. Input, reference-database,
-and output checksums and detailed hardware information must still be recorded
-externally.
+FANTASIA enforces each recorded revision by resolving the immutable Hugging
+Face snapshot before passing its local path to the model and tokenizer loaders.
+For ESM3c, the pinned snapshot is selected explicitly and the serialized weight
+file is verified against its recorded SHA-256 before loading. Input,
+reference-database, and output checksums and detailed hardware information must
+still be recorded externally.

@@ -236,8 +236,8 @@ poetry run fantasia run --help
 Every experiment saves the resolved `experiment_config.yaml` and an automatic
 `model_provenance.yaml`. The latter records model repositories and immutable
 revision identifiers, requested layers, and relevant package versions. Keep
-both with the results. The revision is an audit record; current upstream loaders
-may not enforce it in every code path. See the complete
+both with the results. FANTASIA resolves the pinned snapshot before loading the
+model and tokenizer; ESM3c additionally verifies its weight SHA-256. See the complete
 [configuration reference](docs/source/reference/configuration_reference.rst).
 
 ## Execution modes

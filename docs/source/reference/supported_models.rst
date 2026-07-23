@@ -45,7 +45,7 @@ the requested model/layer. CPU and CUDA loaders are available, but CPU runtime
 can be impractical. Model-owned input limits can still cause failures when
 FANTASIA truncation is disabled.
 
-The revision is an audit record. Current upstream Protein Information System
-loaders do not all expose or enforce a Hugging Face ``revision`` argument, so
-verify the resolved cache snapshot when byte-for-byte reproducibility is
-required. See `Reproducibility <../explanation/reproducibility.rst>`_.
+FANTASIA resolves each recorded Hugging Face revision to an immutable local
+snapshot before model and tokenizer loading. ESM3c additionally verifies the
+recorded serialization SHA-256. See
+`Reproducibility <../explanation/reproducibility.rst>`_.

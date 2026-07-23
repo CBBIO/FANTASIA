@@ -103,7 +103,7 @@ def build_run_provenance(conf):
         record["enabled"] = bool(settings.get("enabled", False))
         record["layer_index"] = settings.get("layer_index", [])
         record["revision_enforcement"] = (
-            "recorded for provenance; verify the upstream loader resolves this revision"
+            "enforced: pinned snapshot is resolved before model/tokenizer loading"
         )
         models[model_name] = record
     return {
@@ -118,9 +118,9 @@ def build_run_provenance(conf):
             "esm": _package_version("esm"),
         },
         "note": (
-            "Repository revisions are recorded automatically. Current upstream model "
-            "loaders may resolve a local cache or branch unless they explicitly enforce "
-            "the recorded revision."
+            "Repository revisions are recorded and enforced by resolving the pinned "
+            "snapshot before model and tokenizer loading. ESM3c weights are also "
+            "verified by SHA-256."
         ),
     }
 

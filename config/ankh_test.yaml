@@ -35,6 +35,8 @@ embedding:
     ESM3c:
       repository: EvolutionaryScale/esmc-600m-2024-12
       revision: e4d83bc7e10fd55c92e598e545f4a76bf04a6e5c
+      serialization: esmc_600m_2024_12_v0.pth
+      weights_sha256: 8ef856e1a237ee3f995442df997a962e70057faadecf38fc0c8561bd3c2f4324
       enabled: False
       batch_size: 1
       layer_index: [0]

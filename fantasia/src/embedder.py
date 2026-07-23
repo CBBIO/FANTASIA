@@ -94,14 +94,42 @@ using the stored embeddings.
 
 # --- Standard library ---
 import gzip
+import hashlib
 import os
 import traceback
+from pathlib import Path
 
 # --- Third-party libraries ---
 import h5py
 
 # --- Project-specific imports ---
 from protein_information_system.operation.embedding.sequence_embedding import SequenceEmbeddingManager
+
+
+SUPPORTED_MODEL_REVISIONS = {
+    "ESM": {
+        "repository": "facebook/esm2_t33_650M_UR50D",
+        "revision": "08e4846e537177426273712802403f7ba8261b6c",
+    },
+    "ESM3c": {
+        "repository": "EvolutionaryScale/esmc-600m-2024-12",
+        "revision": "e4d83bc7e10fd55c92e598e545f4a76bf04a6e5c",
+        "serialization": "esmc_600m_2024_12_v0.pth",
+        "weights_sha256": "8ef856e1a237ee3f995442df997a962e70057faadecf38fc0c8561bd3c2f4324",
+    },
+    "Ankh3-Large": {
+        "repository": "ElnaggarLab/ankh3-large",
+        "revision": "2be091622e8a393f0ef21735070084123c874b6e",
+    },
+    "Prot-T5": {
+        "repository": "Rostlab/prot_t5_xl_uniref50",
+        "revision": "973be27c52ee6474de9c945952a8008aeb2a1a73",
+    },
+    "Prost-T5": {
+        "repository": "Rostlab/ProstT5",
+        "revision": "d7d097d5bf9a993ab8f68488b4681d6ca70db9e5",
+    },
+}
 
 
 class SequenceEmbedder(SequenceEmbeddingManager):
@@ -196,6 +224,89 @@ class SequenceEmbedder(SequenceEmbeddingManager):
             self.logger.info("Enabled models: %s", ", ".join(enabled_models))
         else:
             self.logger.warning("No embedding models enabled in configuration")
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        """Return the SHA-256 checksum of a model serialization."""
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def load_model(self, model_type):
+        """Load a model and tokenizer from the configured immutable revision."""
+        from huggingface_hub import snapshot_download
+
+        type_obj = self.types[model_type]
+        module = type_obj["module"]
+        configured_model = (
+            self.conf.get("embedding", {}).get("models", {}).get(model_type, {})
+        )
+        model_config = {
+            **SUPPORTED_MODEL_REVISIONS.get(model_type, {}),
+            **configured_model,
+        }
+        repository = model_config.get("repository")
+        revision = model_config.get("revision")
+        if not repository or not revision:
+            raise ValueError(
+                f"Model {model_type!r} requires repository and revision provenance."
+            )
+
+        snapshot_path = Path(
+            snapshot_download(repo_id=repository, revision=revision)
+        ).resolve()
+        if snapshot_path.name != revision:
+            raise RuntimeError(
+                f"Resolved snapshot {snapshot_path.name!r} does not match "
+                f"configured revision {revision!r} for {model_type}."
+            )
+
+        self.logger.info(
+            "Loading %s from pinned snapshot %s (%s)",
+            model_type,
+            repository,
+            revision,
+        )
+
+        if model_type == "ESM3c":
+            import esm.pretrained
+
+            serialization = model_config.get(
+                "serialization", "esmc_600m_2024_12_v0.pth"
+            )
+            expected_sha256 = model_config.get(
+                "weights_sha256",
+                "8ef856e1a237ee3f995442df997a962e70057faadecf38fc0c8561bd3c2f4324",
+            )
+            weight_path = snapshot_path / "data" / "weights" / serialization
+            if not weight_path.is_file():
+                raise FileNotFoundError(
+                    f"Pinned ESM3c serialization not found: {weight_path}"
+                )
+            actual_sha256 = self._sha256(weight_path)
+            if actual_sha256 != expected_sha256:
+                raise RuntimeError(
+                    "ESM3c weight checksum mismatch: "
+                    f"expected {expected_sha256}, found {actual_sha256}"
+                )
+
+            original_data_root = esm.pretrained.data_root
+            try:
+                esm.pretrained.data_root = lambda _model: snapshot_path
+                model = module.load_model(type_obj["model_name"], self.conf)
+            finally:
+                esm.pretrained.data_root = original_data_root
+            tokenizer = module.load_tokenizer(type_obj["model_name"])
+        else:
+            # Existing PIS loaders accept a local model path. Passing the pinned
+            # snapshot enforces the same revision for model and tokenizer.
+            model = module.load_model(str(snapshot_path), self.conf)
+            tokenizer = module.load_tokenizer(str(snapshot_path))
+
+        self.model_instances[model_type] = model
+        self.tokenizer_instances[model_type] = tokenizer
 
     def _parse_fasta_robust(self, fasta_path: str) -> list:
         """
