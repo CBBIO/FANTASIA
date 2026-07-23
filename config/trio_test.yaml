@@ -26,26 +26,36 @@ embedding:
   max_sequence_length: 0
   models:
     ESM:
+      repository: facebook/esm2_t33_650M_UR50D
+      revision: 08e4846e537177426273712802403f7ba8261b6c
       enabled: False
       batch_size: 1
       layer_index: [0]
       distance_threshold: false
     ESM3c:
+      repository: EvolutionaryScale/esmc-600m-2024-12
+      revision: e4d83bc7e10fd55c92e598e545f4a76bf04a6e5c
       enabled: True
       batch_size: 1
       layer_index: [0]
       distance_threshold: false
     Ankh3-Large:
+      repository: ElnaggarLab/ankh3-large
+      revision: 2be091622e8a393f0ef21735070084123c874b6e
       enabled: True
       batch_size: 1
       layer_index: [0]
       distance_threshold: false
     Prot-T5:
+      repository: Rostlab/prot_t5_xl_uniref50
+      revision: 973be27c52ee6474de9c945952a8008aeb2a1a73
       enabled: True
       batch_size: 1
       layer_index: [0]
       distance_threshold: false
     Prost-T5:
+      repository: Rostlab/ProstT5
+      revision: d7d097d5bf9a993ab8f68488b4681d6ca70db9e5
       enabled: False
       batch_size: 1
       layer_index: [0]
@@ -57,7 +67,7 @@ lookup:
   distance_metric: cosine
   limit_per_entry: 1
   lookup_cache_max: 1
-  topgo: true
+  topgo: false
   precision: 4
 
 redundancy:

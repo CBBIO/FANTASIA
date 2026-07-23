@@ -13,6 +13,10 @@ Output files
      - final metadata
      - run
      - Resolved configuration; retain
+   * - ``model_provenance.yaml``
+     - final metadata
+     - run
+     - Model repositories/revisions, layers, and software versions
    * - ``embeddings.h5``
      - reusable intermediate
      - query/model/layer dataset
@@ -26,11 +30,11 @@ Output files
      - accession–GO pair
      - Configured wide metrics and donor list
    * - ``topgo/<model>/layer_<n>/<category>.topgo``
-     - downstream export
+     - optional downstream export
      - accession–GO pair
      - TopGO input
    * - ``topgo/ensemble/<category>.topgo``
-     - downstream export
+     - optional downstream export
      - best accession–GO pair
      - Best reliability across models/layers
    * - ``sequences.fasta`` / ``query_index_mapping.csv``

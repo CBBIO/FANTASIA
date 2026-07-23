@@ -122,6 +122,10 @@ Embedding parameters
      - boolean
      - ``false``
      - Enable ProstT5
+   * - ``embedding.models.<name>.repository`` / ``revision``
+     - strings
+     - Model-specific immutable identifiers
+     - Automatically copied to ``model_provenance.yaml``
    * - ``embedding.models.<name>.batch_size``
      - integer
      - ``1`` for every model
@@ -171,8 +175,8 @@ Lookup, filtering and post-processing parameters
      - Cached model/layer reference tables
    * - ``lookup.topgo``
      - boolean
-     - ``true``
-     - Write TopGO-compatible exports
+     - ``false``
+     - Opt in to TopGO-compatible exports
    * - ``lookup.precision``
      - integer
      - ``4``

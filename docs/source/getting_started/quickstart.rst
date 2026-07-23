@@ -107,9 +107,10 @@ Each invocation creates a timestamped directory:
    lookup/experiments/first_search_<YYYYMMDDHHMMSS>/
    ├── embeddings.h5
    ├── experiment_config.yaml
+   ├── model_provenance.yaml
    ├── raw_results/prot-t5/layer_0/*.csv
    ├── summary.csv
-   └── topgo/
+   └── topgo/  (only when lookup.topgo is true)
 
 ``summary.csv``
    Consolidated accession-by-GO output after post-processing.

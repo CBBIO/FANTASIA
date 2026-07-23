@@ -223,3 +223,46 @@ def test_embedding_cli_overrides_map_to_canonical_yaml_keys(monkeypatch):
     assert resolved["embedding"]["device"] == "cpu"
     assert resolved["embedding"]["max_sequence_length"] == 0
     assert resolved["embedding"]["queue_batch_size"] == 25
+
+
+def test_setup_experiment_writes_model_provenance(monkeypatch, tmp_path):
+    main = _load_main(monkeypatch)
+    conf = {
+        "base_directory": str(tmp_path),
+        "prefix": "provenance",
+        "embedding": {
+            "models": {
+                "ESM3c": {
+                    "enabled": True,
+                    "layer_index": [0],
+                    "repository": "EvolutionaryScale/esmc-600m-2024-12",
+                    "revision": "e4d83bc7e10fd55c92e598e545f4a76bf04a6e5c",
+                }
+            }
+        },
+    }
+
+    resolved = main.setup_experiment_directories(conf, "20260723000000")
+    provenance_path = (
+        tmp_path
+        / "experiments"
+        / "provenance_20260723000000"
+        / "model_provenance.yaml"
+    )
+    provenance = __import__("yaml").safe_load(provenance_path.read_text())
+
+    assert resolved["experiment_path"] == str(provenance_path.parent)
+    assert provenance["models"]["ESM3c"]["enabled"] is True
+    assert provenance["models"]["ESM3c"]["layer_index"] == [0]
+    assert provenance["models"]["ESM3c"]["revision"] == "e4d83bc7e10fd55c92e598e545f4a76bf04a6e5c"
+    assert "protein-information-system" in provenance["software"]
+
+
+def test_all_supported_models_have_default_revision(monkeypatch):
+    main = _load_main(monkeypatch)
+    assert set(main.MODEL_PROVENANCE_DEFAULTS) == {
+        "ESM", "ESM3c", "Ankh3-Large", "Prot-T5", "Prost-T5"
+    }
+    for model in main.MODEL_PROVENANCE_DEFAULTS.values():
+        assert len(model["revision"]) == 40
+        assert model["repository"]

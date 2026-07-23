@@ -75,30 +75,40 @@ embedding:
 
   models:
     ESM: # 34 layers: 0..33
+      repository: facebook/esm2_t33_650M_UR50D
+      revision: 08e4846e537177426273712802403f7ba8261b6c
       enabled: False
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: false
 
     ESM3c: # 36 layers: 0..35
+      repository: EvolutionaryScale/esmc-600m-2024-12
+      revision: e4d83bc7e10fd55c92e598e545f4a76bf04a6e5c
       enabled: False
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: false
 
     Ankh3-Large: # 49 layers: 0..48
+      repository: ElnaggarLab/ankh3-large
+      revision: 2be091622e8a393f0ef21735070084123c874b6e
       enabled: False
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: false
 
     Prot-T5: # 25 layers: 0..24
+      repository: Rostlab/prot_t5_xl_uniref50
+      revision: 973be27c52ee6474de9c945952a8008aeb2a1a73
       enabled: True
       batch_size: 1
       layer_index: [ 0 ]
       distance_threshold: false
 
     Prost-T5: # 25 layers: 0..24 (same backbone as Prot-T5)
+      repository: Rostlab/ProstT5
+      revision: d7d097d5bf9a993ab8f68488b4681d6ca70db9e5
       enabled: False
       batch_size: 1
       layer_index: [ 0 ]
@@ -119,7 +129,7 @@ lookup:
   distance_metric: cosine     # enum{cosine,euclidean} | Distance for nearest-neighbor search
   limit_per_entry: 1          # int  | k neighbors returned per query (a.k.a. “k”)
   lookup_cache_max: 1       # int  | Max entries per (model,layer) in-memory cache (tune to RAM)
-  topgo: true                 # bool | If true, emit TopGO-compatible TSV alongside CSV outputs
+  topgo: false                 # bool | Opt in to TopGO-compatible TSV exports
 
   precision: 4               # int | Número de decimales a usar en la exportación de resultados.
 

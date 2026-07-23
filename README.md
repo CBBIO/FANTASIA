@@ -127,11 +127,12 @@ A successful run produces:
 lookup/experiments/first_search_<timestamp>/
 ├── embeddings.h5
 ├── experiment_config.yaml
+├── model_provenance.yaml
 ├── raw_results/prot-t5/layer_0/*.csv
 ├── summary.csv
 ├── sequences.fasta
 ├── query_index_mapping.csv
-└── topgo/
+└── topgo/  (only when `lookup.topgo: true`)
 ```
 
 `summary.csv` is the main consolidated accession-by-GO result. It is not one
@@ -211,7 +212,8 @@ Critical points:
 `config/prott5_full.yaml` processes all inputs (`limit_execution: 0`) using
 uncapped ProtT5 final-layer embeddings (`max_sequence_length: 0`, batch size 1)
 on CUDA. Lookup uses GPU cosine distance, batch size 516, `k=1`, one cached
-model/layer table, TopGO enabled and four-decimal output. Redundancy masking is
+model/layer table, four-decimal output, and TopGO disabled by default.
+Redundancy masking is
 disabled (`identity: 0`; coverage 0.7 and 10 threads apply only when enabled),
 and both exact taxonomy lists are empty. Sequence-aware post-processing is
 enabled; it summarizes reliability by maximum and global/local identities by
@@ -231,9 +233,11 @@ corresponding supported YAML values. See all overrides with:
 poetry run fantasia run --help
 ```
 
-Every experiment saves the resolved `experiment_config.yaml`. Keep it with the
-results so the enabled model, layer, distance, `k`, filters, and post-processing
-settings can be audited. See the complete
+Every experiment saves the resolved `experiment_config.yaml` and an automatic
+`model_provenance.yaml`. The latter records model repositories and immutable
+revision identifiers, requested layers, and relevant package versions. Keep
+both with the results. The revision is an audit record; current upstream loaders
+may not enforce it in every code path. See the complete
 [configuration reference](docs/source/reference/configuration_reference.rst).
 
 ## Execution modes

@@ -13,9 +13,14 @@ Retain for every published run:
 - output checksums and any post-processing commands;
 - random seeds used by downstream analyses.
 
-FANTASIA automatically saves the resolved run configuration and logs. It does
-not currently guarantee automatic recording of upstream model commit hashes,
-weight checksums, input checksums, reference checksums, or complete hardware
-and package manifests; record these externally. Multiple revisions and weight
-formats can coexist in a local Hugging Face cache, so the cache directory alone
-is not reliable provenance.
+FANTASIA automatically saves the resolved run configuration, logs, and
+``model_provenance.yaml``. The provenance file records the configured repository
+and immutable revision for every supported model, requested layers, enabled
+state, and relevant installed package versions. ESM3c also includes its known
+serialization filename and weight checksum.
+
+The recorded revision is an audit record. Current upstream loaders do not all
+accept or enforce a ``revision`` argument, so verify the resolved cache snapshot
+when exact byte-for-byte reproducibility is required. Input, reference-database,
+and output checksums and detailed hardware information must still be recorded
+externally.

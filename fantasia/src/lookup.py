@@ -1731,9 +1731,16 @@ class EmbeddingLookUp(GPUTaskInitializer):
 
         self.logger.info("✅ post_processing completed. Summary written to %s", summary_path)
 
-        # Trigger downstream exports
-        self.export_topgo()
-        self.export_topgo_ensemble()
+        # TopGO is opt-in because it adds post-processing time and files that
+        # many annotation workflows do not consume.
+        if self.topgo_enabled:
+            self.export_topgo()
+            self.export_topgo_ensemble()
+        else:
+            self.logger.info(
+                "TopGO export disabled (lookup.topgo=false); skipping per-model "
+                "and ensemble TopGO files."
+            )
 
         return str(summary_path)
 
@@ -2024,6 +2031,10 @@ class EmbeddingLookUp(GPUTaskInitializer):
         Columns: accession, go_term, reliability_index
         """
 
+        if not self.topgo_enabled:
+            self.logger.info("export_topgo: disabled by lookup.topgo=false")
+            return
+
         base_dir = Path(self.experiment_path) / "raw_results"
         paths = sorted(base_dir.glob("**/*.csv"))
         if not paths:
@@ -2066,6 +2077,10 @@ class EmbeddingLookUp(GPUTaskInitializer):
         Keeps the best reliability_index per (accession, go_id, category) and writes:
         topgo/ensemble/{category}.topgo
         """
+
+        if not self.topgo_enabled:
+            self.logger.info("export_topgo_ensemble: disabled by lookup.topgo=false")
+            return
 
         base_dir = Path(self.experiment_path) / "raw_results"
         paths = sorted(base_dir.glob("**/*.csv"))

@@ -33,12 +33,17 @@ warnings.filterwarnings("ignore", category=SyntaxWarning)  # noqa: E402
 warnings.filterwarnings("ignore", category=UserWarning)  # noqa: E402
 
 import os
+import platform
 import sys
 import urllib
 
 import yaml
 import logging
 from datetime import datetime
+try:
+    from importlib import metadata
+except ImportError:  # Python <3.8 test environments; production requires 3.12
+    import importlib_metadata as metadata
 
 from protein_information_system.helpers.logger.logger import setup_logger
 
@@ -50,6 +55,74 @@ import protein_information_system.sql.model.model  # noqa: F401
 from protein_information_system.helpers.services.services import check_services
 
 from fantasia.src.helpers.parser import build_parser
+
+
+MODEL_PROVENANCE_DEFAULTS = {
+    "ESM": {
+        "repository": "facebook/esm2_t33_650M_UR50D",
+        "revision": "08e4846e537177426273712802403f7ba8261b6c",
+    },
+    "ESM3c": {
+        "repository": "EvolutionaryScale/esmc-600m-2024-12",
+        "revision": "e4d83bc7e10fd55c92e598e545f4a76bf04a6e5c",
+        "serialization": "esmc_600m_2024_12_v0.pth",
+        "weights_sha256": "8ef856e1a237ee3f995442df997a962e70057faadecf38fc0c8561bd3c2f4324",
+    },
+    "Ankh3-Large": {
+        "repository": "ElnaggarLab/ankh3-large",
+        "revision": "2be091622e8a393f0ef21735070084123c874b6e",
+    },
+    "Prot-T5": {
+        "repository": "Rostlab/prot_t5_xl_uniref50",
+        "revision": "973be27c52ee6474de9c945952a8008aeb2a1a73",
+    },
+    "Prost-T5": {
+        "repository": "Rostlab/ProstT5",
+        "revision": "d7d097d5bf9a993ab8f68488b4681d6ca70db9e5",
+    },
+}
+
+
+def _package_version(name):
+    """Return an installed package version without making provenance fatal."""
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return "not installed"
+
+
+def build_run_provenance(conf):
+    """Build the model and software provenance saved with every experiment."""
+    models = {}
+    configured = conf.get("embedding", {}).get("models", {})
+    for model_name, settings in configured.items():
+        record = dict(MODEL_PROVENANCE_DEFAULTS.get(model_name, {}))
+        for key in ("repository", "revision", "serialization", "weights_sha256"):
+            if settings.get(key):
+                record[key] = settings[key]
+        record["enabled"] = bool(settings.get("enabled", False))
+        record["layer_index"] = settings.get("layer_index", [])
+        record["revision_enforcement"] = (
+            "recorded for provenance; verify the upstream loader resolves this revision"
+        )
+        models[model_name] = record
+    return {
+        "fantasia": {"version": _package_version("FANTASIA")},
+        "models": models,
+        "software": {
+            "python": platform.python_version(),
+            "protein-information-system": _package_version("protein-information-system"),
+            "torch": _package_version("torch"),
+            "transformers": _package_version("transformers"),
+            "huggingface-hub": _package_version("huggingface-hub"),
+            "esm": _package_version("esm"),
+        },
+        "note": (
+            "Repository revisions are recorded automatically. Current upstream model "
+            "loaders may resolve a local cache or branch unless they explicitly enforce "
+            "the recorded revision."
+        ),
+    }
 
 
 def _normalize_distance_threshold_value(value):
@@ -222,7 +295,7 @@ def setup_experiment_directories(conf, timestamp):
 
       1. Expands the base directory and ensures an ``experiments`` folder exists.
       2. Creates a unique experiment directory using the provided timestamp.
-      3. Stores the experiment configuration into ``experiment_config.yaml``.
+      3. Stores ``experiment_config.yaml`` and ``model_provenance.yaml``.
       4. Updates the configuration dictionary with the generated experiment path.
 
     Parameters
@@ -264,7 +337,17 @@ def setup_experiment_directories(conf, timestamp):
     with open(yaml_path, "w") as yaml_file:
         yaml.safe_dump(conf, yaml_file, default_flow_style=False)
 
+    provenance_path = os.path.join(experiment_path, "model_provenance.yaml")
+    with open(provenance_path, "w") as provenance_file:
+        yaml.safe_dump(
+            build_run_provenance(conf),
+            provenance_file,
+            default_flow_style=False,
+            sort_keys=False,
+        )
+
     logger.info(f"Experiment configuration saved at: {yaml_path}")
+    logger.info(f"Model provenance saved at: {provenance_path}")
     return conf
 
 

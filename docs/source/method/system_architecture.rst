@@ -100,4 +100,4 @@ System Workflow Overview
 
 
     ───────────────────────── POST-PROCESSING ────────────────────────────────
-    raw results ──▶ collapse, reliability index, scoring ──▶ summary.csv + topgo exports
+    raw results ──▶ collapse, reliability index, scoring ──▶ summary.csv + optional topgo exports
