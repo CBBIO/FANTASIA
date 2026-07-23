@@ -10,10 +10,12 @@ language model.
 Start here
 ----------
 
-For the shortest complete test, follow :doc:`quickstart`. It runs 20 bundled
+For the shortest complete test, follow the `quick-start guide <quickstart.rst>`_.
+It runs 20 bundled
 sequences with ProtT5, cosine distance, and ``k=1`` and shows how to locate the
-result. Before using your own proteome, read :doc:`requirements` and
-:doc:`reference_data` because model downloads and the reference database require
+result. Before using your own proteome, read `requirements <requirements.rst>`_
+and the `reference data guide <reference_data.rst>`_ because model downloads and
+the reference database require
 substantial disk, RAM, and GPU memory.
 
 The minimal workflow is:
@@ -37,16 +39,18 @@ A successful run creates a timestamped experiment directory containing:
 Choose the relevant path
 ------------------------
 
-- **New installation:** :doc:`requirements` → :doc:`installation` →
-  :doc:`reference_data` → :doc:`quickstart`.
-- **First output interpretation:** :doc:`first_results`.
+- **New installation:** `requirements <requirements.rst>`_ →
+  `installation guide <installation.rst>`_ →
+  `reference data guide <reference_data.rst>`_ → `quick-start guide <quickstart.rst>`_.
+- **First output interpretation:** `first-results guide <first_results.rst>`_.
 - **Reuse existing embeddings:** use the embedding-only and lookup-only examples
-  in :doc:`quickstart`.
+  in `quick-start guide <quickstart.rst>`_.
 - **No PostgreSQL/RabbitMQ:** consider FANTASIA-Lite after reading
-  :doc:`choosing_version`.
-- **All configuration defaults:** :doc:`../reference/configuration_reference`.
+  `version guide <choosing_version.rst>`_.
+- **All configuration defaults:**
+  `configuration defaults <../reference/configuration_reference.rst>`_.
 - **Supported model identifiers and revisions:**
-  :doc:`../reference/supported_models`.
+  `supported-model reference <../reference/supported_models.rst>`_.
 
 .. note::
 

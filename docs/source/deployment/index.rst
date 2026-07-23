@@ -9,10 +9,12 @@ setups need additional planning.
 Select a deployment
 -------------------
 
-- **Local workstation with NVIDIA GPU:** :doc:`docker` and :doc:`gpu`.
-- **Existing services:** configure :doc:`postgresql` and :doc:`rabbitmq`.
-- **CPU-only host:** :doc:`cpu`; expect substantially longer embedding times.
-- **Generic Slurm cluster:** :doc:`hpc_slurm`.
+- **Local workstation with NVIDIA GPU:** `Docker guide <docker.rst>`_ and
+  `GPU guide <gpu.rst>`_.
+- **Existing services:** configure the `PostgreSQL guide <postgresql.rst>`_
+  and `RabbitMQ guide <rabbitmq.rst>`_.
+- **CPU-only host:** `CPU guide <cpu.rst>`_; expect substantially longer embedding times.
+- **Generic Slurm cluster:** `Slurm guide <hpc_slurm.rst>`_.
 - **Test individual services:** use the PostgreSQL and RabbitMQ pages before
   diagnosing pipeline code.
 

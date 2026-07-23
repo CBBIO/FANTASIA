@@ -15,17 +15,17 @@ Fast diagnosis
    * - Symptom
      - First page to check
    * - Installation or import failure
-     - :doc:`installation`
+     - `installation troubleshooting <installation.rst>`_
    * - Database connection, pgvector, or initialization failure
-     - :doc:`postgresql`
+     - `PostgreSQL troubleshooting <postgresql.rst>`_
    * - Queue, publisher, consumer, or connection refusal
-     - :doc:`rabbitmq`
+     - `RabbitMQ troubleshooting <rabbitmq.rst>`_
    * - CUDA out of memory or device mismatch
-     - :doc:`gpu`
+     - `GPU troubleshooting <gpu.rst>`_
    * - FASTA parsing, compressed input, or identifier problem
-     - :doc:`input_files`
+     - `input-file troubleshooting <input_files.rst>`_
    * - Missing, empty, or confusing result files
-     - :doc:`results`
+     - `results troubleshooting <results.rst>`_
 
 Useful first checks
 -------------------

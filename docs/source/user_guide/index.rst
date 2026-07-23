@@ -2,18 +2,22 @@ User guide
 ==========
 
 This section covers routine use after FANTASIA and its reference database are
-installed. Begin with :doc:`running_fantasia` for a complete command, then use
+installed. Begin with `running FANTASIA <running_fantasia.rst>`_ for a
+complete command, then use
 the task-specific pages below.
 
 Choose a workflow
 -----------------
 
-- **Annotate one proteome:** :doc:`preparing_input` → :doc:`configuration` →
-  :doc:`annotation_mode`.
-- **Compare models or control reference leakage:** :doc:`benchmark_mode`.
-- **Generate embeddings without annotation:** :doc:`embedding_only`.
-- **Reuse an existing embeddings file:** :doc:`lookup_only`.
-- **Process several FASTA files:** :doc:`multiple_proteomes`.
+- **Annotate one proteome:** `input preparation <preparing_input.rst>`_ →
+  `configuration <configuration.rst>`_ →
+  `annotation mode <annotation_mode.rst>`_.
+- **Compare models or control reference leakage:**
+  `benchmark mode <benchmark_mode.rst>`_.
+- **Generate embeddings without annotation:** `embedding-only mode <embedding_only.rst>`_.
+- **Reuse an existing embeddings file:** `lookup-only mode <lookup_only.rst>`_.
+- **Process several FASTA files:**
+  `multiple-proteome guide <multiple_proteomes.rst>`_.
 
 The usual full run is:
 
