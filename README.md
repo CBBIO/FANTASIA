@@ -369,7 +369,14 @@ biology.
 
 ## Citing FANTASIA
 
-If you use **FANTASIA** in your research, please cite the following publications:
+If you use **FANTASIA** or **FANTASIA-Lite** in your research, please cite the tool paper:
+
+Pérez-Canales, F. M., Domínguez-Rodríguez, À., Carbonetto, B., Fernández, R., Cases, I., & Rojas, A. M. (2026).
+*FANTASIA suite: a reproducible and configurable framework for embedding-based functional annotation of proteins.*
+NAR Genomics and Bioinformatics, 8(3), lqag106.
+[DOI: 10.1093/nargab/lqag106](https://doi.org/10.1093/nargab/lqag106)
+
+### Related publications
 
 1. Martínez-Redondo, G. I., Barrios, I., Vázquez-Valls, M., Rojas, A. M., & Fernández, R. (2024).  
    *Illuminating the functional landscape of the dark proteome across the Animal Tree of Life.*  
