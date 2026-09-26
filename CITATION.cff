@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: "If you use FANTASIA or FANTASIA-Lite, please cite the paper in preferred-citation."
+type: software
+title: "FANTASIA"
+repository-code: "https://github.com/CBBIO/FANTASIA"
+authors:
+  - family-names: "Pérez-Canales"
+    given-names: "Francisco M"
+  - family-names: "Domínguez-Rodríguez"
+    given-names: "Àlex"
+  - family-names: "Carbonetto"
+    given-names: "Belén"
+  - family-names: "Fernández"
+    given-names: "Rosa"
+  - family-names: "Cases"
+    given-names: "Ildefonso"
+  - family-names: "Rojas"
+    given-names: "Ana M"
+preferred-citation:
+  type: article
+  title: "FANTASIA suite: a reproducible and configurable framework for embedding-based functional annotation of proteins"
+  authors:
+    - family-names: "Pérez-Canales"
+      given-names: "Francisco M"
+    - family-names: "Domínguez-Rodríguez"
+      given-names: "Àlex"
+    - family-names: "Carbonetto"
+      given-names: "Belén"
+    - family-names: "Fernández"
+      given-names: "Rosa"
+    - family-names: "Cases"
+      given-names: "Ildefonso"
+    - family-names: "Rojas"
+      given-names: "Ana M"
+  journal: "NAR Genomics and Bioinformatics"
+  year: 2026
+  volume: "8"
+  issue: "3"
+  start: "lqag106"
+  doi: "10.1093/nargab/lqag106"
+  date-published: "2026-09-11"
