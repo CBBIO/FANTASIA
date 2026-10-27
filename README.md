@@ -4,7 +4,7 @@
 
 # FANTASIA
 
-Current release: **4.1.1**
+Current release: **4.1.2**
 
 **Functional ANnoTAtion based on embedding space SImilArity**
 
@@ -37,6 +37,10 @@ cosine distance and `k=1`. Run them from the repository root.
 - Python `>=3.12,<3.13`
 - [Poetry](https://python-poetry.org/)
 - Docker with the Compose plugin
+- PostgreSQL 18 client tools (`pg_restore`), which `fantasia initialize` runs on the host:
+  `sudo apt-get install postgresql-client-18` after adding the
+  [PostgreSQL apt repository](https://wiki.postgresql.org/wiki/Apt). The reference
+  dumps cannot be restored with older clients.
 - NVIDIA GPU for the commands as written; see the [CPU guide](docs/source/deployment/cpu.rst) for CPU configuration
 - Disk space for the reference database and model cache
 

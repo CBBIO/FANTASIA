@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "FANTASIA"
-version = "4.1.1"
+version = "4.1.2"
 
 description = "Functional ANnoTAtion based on embedding space SImilArity"
 authors = ["CBBIO <a.rojas.m@csic.es>"]

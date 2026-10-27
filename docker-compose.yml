@@ -3,16 +3,18 @@ version: '3.8'
 services:
   # PostgreSQL with pgvector extension
   postgres:
-    image: pgvector/pgvector:0.7.0-pg16
+    image: pgvector/pgvector:0.8.1-pg18
     container_name: fantasia-postgres
     environment:
       POSTGRES_USER: usuario
       POSTGRES_PASSWORD: clave
       POSTGRES_DB: BioData
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # PostgreSQL 18 images keep PGDATA under /var/lib/postgresql/18/docker
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U usuario -d BioData"]
       interval: 10s

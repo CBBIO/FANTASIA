@@ -31,9 +31,9 @@ Package installation
 --------------------
 
 ``pip install fantasia`` installs the Python package, but does not remove the
-need for PostgreSQL, pgvector, RabbitMQ, a compatible reference database, and a
-configuration resolving ``constants.yaml``. New users should use the repository
-workflow above.
+need for PostgreSQL 18 client tools, PostgreSQL, pgvector, RabbitMQ and a
+compatible reference database. New users should use the repository workflow
+above.
 
 Developer installation
 ----------------------

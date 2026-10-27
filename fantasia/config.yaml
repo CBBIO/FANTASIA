@@ -38,18 +38,22 @@ rabbitmq_user: guest          # str  | Broker user
 rabbitmq_password: guest      # str  | Broker password
 
 delete_queues: true           # bool | Drop queues on boot/teardown to avoid stale messages between runs
+fail_on_task_errors: true     # bool | Exit with an error if tasks were discarded or workers crashed (protein-information-system >= 3.2)
 
 # ------------------------------------------------------------------------------
 # External data source (optional)
 # URL used by `fantasia initialize` to preload a DB dump or lookup tables
 #
 # Available options:
-# 1. Final layer only (smaller, faster to load) [default]
+# 1. Final layer only (smaller, faster to load) [recommended]
 #    https://zenodo.org/records/17795871/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup?download=1
 #
 # 2. Final + intermediate layers (larger, more detailed embeddings)
 #    https://zenodo.org/records/17793273/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layers_3Frist_3Last.backup?download=1
 #
+# A file:// URL or a local path to an already downloaded dump is used in place.
+# `fantasia initialize` RESETS the configured database before restoring, so the
+# URL is not set by default: pass --embeddings_url or uncomment one option.
 # Leave empty to skip the preload step.
 # ------------------------------------------------------------------------------
 # embeddings_url: "https://zenodo.org/records/17795871/files/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup?download=1"

@@ -19,6 +19,7 @@ rabbitmq_port: 5672
 rabbitmq_user: guest
 rabbitmq_password: guest
 delete_queues: true
+fail_on_task_errors: true
 
 embedding:
   device: cuda

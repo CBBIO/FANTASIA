@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
@@ -11,11 +12,13 @@ import parasail
 import requests
 from ete3 import NCBITaxa
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 from tqdm import tqdm
 
 __all__ = [
     "download_embeddings",
     "load_dump_to_db",
+    "reference_has_embeddings",
     "parse_unknown_args",
     "compute_metrics",
     "run_smith_waterman_from_strings",
@@ -33,6 +36,24 @@ def _get_logger(logger: Optional[logging.Logger] = None) -> logging.Logger:
     return logger if logger is not None else logging.getLogger(__name__)
 
 
+def _db_url(db_config: Mapping[str, Any]) -> URL:
+    """
+    Build the SQLAlchemy URL for the reference database.
+
+    Uses psycopg2, the driver shipped with protein-information-system: a bare
+    ``postgresql://`` URL selects psycopg (v3) since SQLAlchemy 2.1. ``URL.create``
+    also escapes credentials containing characters such as ``@`` or ``/``.
+    """
+    return URL.create(
+        drivername="postgresql+psycopg2",
+        username=str(db_config["DB_USERNAME"]),
+        password=str(db_config["DB_PASSWORD"]),
+        host=str(db_config["DB_HOST"]),
+        port=int(db_config["DB_PORT"]),
+        database=str(db_config["DB_NAME"]),
+    )
+
+
 def _coerce_bool(value: Any) -> bool:
     """Coerce common truthy / falsy CLI tokens into a boolean."""
     if isinstance(value, bool):
@@ -45,6 +66,22 @@ def _coerce_bool(value: Any) -> bool:
 # Network / IO
 # ---------------------------------------------------------------------------
 
+def local_path_from_url(url: str) -> Optional[Path]:
+    """
+    Return the local path referenced by ``url``, or None for remote URLs.
+
+    Accepts ``file://`` URLs (``file:///data/dump.backup``) and plain filesystem
+    paths, so a dump already present on shared storage is used in place instead
+    of being copied into ``base_directory``.
+    """
+    parsed = urllib.parse.urlparse(str(url))
+    if parsed.scheme == "file":
+        return Path(urllib.parse.unquote(parsed.path)).expanduser().resolve()
+    if parsed.scheme == "":
+        return Path(str(url)).expanduser().resolve()
+    return None
+
+
 def download_embeddings(
         url: str,
         tar_path: str | Path,
@@ -56,6 +93,9 @@ def download_embeddings(
 ) -> Path:
     """
     Download an embeddings TAR file from a URL with a progress bar.
+
+    ``file://`` URLs and plain local paths are not copied: the referenced file is
+    returned as is.
 
     Parameters
     ----------
@@ -85,6 +125,13 @@ def download_embeddings(
         If the file cannot be written.
     """
     log = _get_logger(logger)
+    local = local_path_from_url(url)
+    if local is not None:
+        if not local.exists():
+            raise FileNotFoundError(f"Local embeddings file not found: {local}")
+        log.info("Using local embeddings file: %s (no download).", local)
+        return local
+
     dest = Path(tar_path).expanduser().resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -94,11 +141,15 @@ def download_embeddings(
 
     log.info("Downloading embeddings from %s → %s", url, dest)
 
+    # Download to a temporary name and rename on success, so an interrupted or
+    # concurrent download never leaves a truncated file at ``dest`` that a later
+    # run would take as complete.
+    partial = dest.with_name(f"{dest.name}.{os.getpid()}.part")
     with requests.get(url, stream=True, timeout=timeout) as resp:
         resp.raise_for_status()
         total = int(resp.headers.get("content-length", 0)) or None
 
-        with open(dest, "wb") as fh, tqdm(
+        with open(partial, "wb") as fh, tqdm(
                 total=total,
                 unit="B",
                 unit_scale=True,
@@ -112,6 +163,12 @@ def download_embeddings(
                 fh.write(chunk)
                 if total:
                     bar.update(len(chunk))
+
+    size = partial.stat().st_size
+    if total is not None and size != total:
+        partial.unlink()
+        raise OSError(f"Incomplete download of {url}: {size} of {total} bytes")
+    os.replace(partial, dest)
 
     log.info("Embeddings downloaded successfully: %s", dest)
     return dest
@@ -163,10 +220,7 @@ def load_dump_to_db(
         log.error("Missing DB config keys: %s", ", ".join(sorted(missing)))
         return False
 
-    url = (
-        f"postgresql://{db_config['DB_USERNAME']}:{db_config['DB_PASSWORD']}"
-        f"@{db_config['DB_HOST']}:{db_config['DB_PORT']}/{db_config['DB_NAME']}"
-    )
+    url = _db_url(db_config)
 
     if drop_and_init:
         log.info("Resetting schema and ensuring extensions…")
@@ -201,10 +255,64 @@ def load_dump_to_db(
             log.debug(proc.stdout)
         return True
 
+    stderr = (proc.stderr or "").strip()
+    errors = _pg_restore_errors(stderr)
+    if errors and all(_is_ignorable_restore_error(e) for e in errors):
+        log.warning(
+            "pg_restore exited with %s, but only reported settings unknown to this server "
+            "(dump created by a newer PostgreSQL). The data was restored: %s",
+            proc.returncode, "; ".join(errors),
+        )
+        return True
+
     log.error("pg_restore failed (exit %s).", proc.returncode)
-    if proc.stderr:
-        log.error(proc.stderr.strip())
+    if stderr:
+        log.error(stderr)
+    if "unsupported version" in stderr:
+        log.error(
+            "The dump was created by a newer pg_dump than the pg_restore in use. "
+            "The reference dumps require PostgreSQL 18 client tools."
+        )
     return False
+
+
+# Settings emitted by newer pg_dump versions that older servers do not know.
+# Failing to SET them does not affect the restored data.
+_IGNORABLE_RESTORE_SETTINGS = ("transaction_timeout",)
+
+
+def _pg_restore_errors(stderr: str) -> List[str]:
+    """Extract the ``pg_restore: error:`` messages from pg_restore stderr."""
+    errors = []
+    for line in stderr.splitlines():
+        line = line.strip()
+        if line.startswith("pg_restore: error:"):
+            errors.append(line)
+    return errors
+
+
+def _is_ignorable_restore_error(message: str) -> bool:
+    """Return True for errors caused only by unknown session settings."""
+    return "unrecognized configuration parameter" in message and any(
+        f'"{name}"' in message for name in _IGNORABLE_RESTORE_SETTINGS
+    )
+
+
+def reference_has_embeddings(db_config: Mapping[str, Any]) -> bool:
+    """
+    Return True if the reference database holds at least one embedding.
+
+    A missing ``sequence_embeddings`` table (database never initialized) counts
+    as empty.
+    """
+    engine = create_engine(_db_url(db_config), pool_pre_ping=True)
+    try:
+        with engine.connect() as conn:
+            if conn.execute(text("SELECT to_regclass('public.sequence_embeddings')")).scalar() is None:
+                return False
+            return conn.execute(text("SELECT EXISTS (SELECT 1 FROM sequence_embeddings)")).scalar()
+    finally:
+        engine.dispose()
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +361,26 @@ def parse_unknown_args(unknown_args: Iterable[str]) -> Dict[str, Any]:
 # Alignment & metrics
 # ---------------------------------------------------------------------------
 
+def _empty_alignment_metrics(len1: int, len2: int) -> Dict[str, Optional[float]]:
+    """
+    Metrics for a pair that cannot be aligned because a sequence is empty.
+
+    Parasail rejects empty inputs, so the alignment is skipped. Metrics are
+    reported as missing (None) rather than 0.0 so that they cannot be mistaken
+    for a real alignment with no identity. Callers report the number of skipped
+    pairs once; this logs each pair at DEBUG level only.
+    """
+    logging.getLogger(__name__).debug("Empty sequence (lengths %d / %d); alignment skipped.", len1, len2)
+    return {
+        "identity_count": None,
+        "alignment_length": None,
+        "identity_percentage": None,
+        "similarity_percentage": None,
+        "gaps_percentage": None,
+        "alignment_score": None,
+    }
+
+
 def run_smith_waterman_from_strings(
         seq1: str,
         seq2: str,
@@ -283,6 +411,9 @@ def run_smith_waterman_from_strings(
           - gaps_percentage
           - alignment_score
     """
+    if not seq1 or not seq2:
+        return _empty_alignment_metrics(len(seq1 or ""), len(seq2 or ""))
+
     result = parasail.sw_trace_striped_32(seq1, seq2, gap_open, gap_extend, parasail.blosum62)
 
     aligned_q = result.traceback.query
@@ -344,6 +475,9 @@ def run_needle_from_strings(
           - gaps_percentage
           - alignment_score
     """
+    if not seq1 or not seq2:
+        return _empty_alignment_metrics(len(seq1 or ""), len(seq2 or ""))
+
     result = parasail.nw_trace_striped_32(seq1, seq2, gap_open, gap_extend, parasail.blosum62)
 
     aligned_q = result.traceback.query

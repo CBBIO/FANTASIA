@@ -76,16 +76,13 @@ STORE=$PWD
 # =======================
 PROJECT_DIR="$STORE/FANTASIA"
 EXECUTION_DIR="$STORE/fantasia"
-SHARED_MEM_DIR="/tmp/fantasia"
-POSTGRESQL_DATA="$SHARED_MEM_DIR/data"
-POSTGRESQL_SOCKET="$SHARED_MEM_DIR/socket"
-RABBITMQ_DATA_DIR="$STORE/fantasia_rabbitmq"
+RABBITMQ_DATA_DIR="$STORE/fantasia_rabbitmq_${SLURM_ARRAY_TASK_ID}"
 CONFIG_FILE="$PROJECT_DIR/fantasia/config.yaml"
 
 # Apptainer container images
-PGVECTOR_IMAGE="$PROJECT_DIR/pgvector.sif"
+PGVECTOR_IMAGE="$PROJECT_DIR/pgvector_pg18.sif"
 RABBITMQ_IMAGE="$PROJECT_DIR/rabbitmq.sif"
-FANTASIA_IMAGE="$PROJECT_DIR/fantasia.sif"
+FANTASIA_IMAGE="$PROJECT_DIR/fantasia_v4.1.2.sif"
 
 DB_NAME="BioData"
 PG_PORT=5432
@@ -110,7 +107,7 @@ cd "$PROJECT_DIR" || exit 1
 # =======================
 if [ ! -f "$PGVECTOR_IMAGE" ]; then
     echo "🔨 Building pgvector container..."
-    apptainer build "$PGVECTOR_IMAGE" docker://pgvector/pgvector:pg16
+    apptainer build "$PGVECTOR_IMAGE" docker://pgvector/pgvector:0.8.1-pg18
 fi
 
 if [ ! -f "$RABBITMQ_IMAGE" ]; then
@@ -120,16 +117,64 @@ fi
 
 if [ ! -f "$FANTASIA_IMAGE" ]; then
     echo "🔨 Building FANTASIA container..."
-    apptainer build --disable-cache "$FANTASIA_IMAGE" docker://cbbio/fantasia:v4.1.1
+    apptainer build --disable-cache "$FANTASIA_IMAGE" docker://cbbio/fantasia:v4.1.2
 fi
+
+# =======================
+# Service helpers
+# =======================
+# Wait until a TCP port on this node accepts connections, or fail after a timeout.
+wait_for_port() {  # wait_for_port <name> <port> <timeout_seconds>
+    local name=$1 port=$2 timeout=$3 waited=0
+    until (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; do
+        if (( waited >= timeout )); then
+            echo "❌ $name is not accepting connections on port $port after ${timeout}s"
+            return 1
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+    echo "✅ $name is ready (port $port)"
+}
+
+# Send SIGTERM to a background process, wait up to 30 s, then SIGKILL it.
+stop_process() {  # stop_process <name> <pid>
+    local name=$1 pid=$2
+    if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
+        return 0
+    fi
+    echo "🛑 Stopping $name..."
+    kill "$pid"
+    for _ in $(seq 30); do
+        kill -0 "$pid" 2>/dev/null || return 0
+        sleep 1
+    done
+    kill -9 "$pid" 2>/dev/null
+}
+
+# Registered before starting services so they are stopped on any exit,
+# including an early exit when fantasia initialize fails.
+# =======================
+# Cleanup services on exit
+# =======================
+cleanup() {
+    echo "🧹 Cleaning up background services..."
+    stop_process PostgreSQL "$PG_PID"
+    stop_process RabbitMQ "$RABBITMQ_PID"
+    # Per-task service data is recreated on every run.
+    rm -rf "$PGDATA_HOST" "$PG_RUN" "$RABBITMQ_DATA_DIR"
+}
+
+trap cleanup EXIT
 
 # =======================
 # Launch PostgreSQL (pgvector)
 # =======================
 echo "🚀 Starting PostgreSQL (pgvector)..."
 
-PGDATA_HOST="$STORE/pgdata_pgvector"
-PG_RUN="$STORE/pg_run"
+# One data directory per array task: tasks must not delete each other's database.
+PGDATA_HOST="$STORE/pgdata_pgvector_${SLURM_ARRAY_TASK_ID}"
+PG_RUN="$STORE/pg_run_${SLURM_ARRAY_TASK_ID}"
 
 rm -rf "$PGDATA_HOST"
 mkdir -p "$PGDATA_HOST" "$PG_RUN"
@@ -138,9 +183,12 @@ nohup apptainer run \
   --env POSTGRES_USER=usuario \
   --env POSTGRES_PASSWORD=clave \
   --env POSTGRES_DB="$DB_NAME" \
+  --env PGDATA=/var/lib/postgresql/data \
+  --env POSTGRES_INITDB_ARGS="--encoding=UTF8 --locale=C.UTF-8" \
   --bind "$PGDATA_HOST:/var/lib/postgresql/data" \
   --bind "$PG_RUN:/var/run/postgresql" \
   "$PGVECTOR_IMAGE" > postgres.log 2>&1 &
+PG_PID=$!
 
 # =======================
 # Launch RabbitMQ
@@ -153,12 +201,14 @@ mkdir -p "$RABBITMQ_DATA_DIR"
 nohup apptainer run \
   --bind "$RABBITMQ_DATA_DIR:/var/lib/rabbitmq" \
   "$RABBITMQ_IMAGE" > rabbitmq.log 2>&1 &
+RABBITMQ_PID=$!
 
 # =======================
 # Wait for services to become available
 # =======================
 echo "⏳ Waiting for services to initialize..."
-sleep 30
+wait_for_port PostgreSQL "$PG_PORT" 600 || exit 1
+wait_for_port RabbitMQ 5672 300 || exit 1
 
 # =======================
 # Run FANTASIA pipeline
@@ -175,31 +225,9 @@ echo "📂 Listing FANTASIA contents:"
 ls -l "$PROJECT_DIR/fantasia/"
 
 apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
-    fantasia initialize --config "$CONFIG_FILE" --base_directory /fantasia
+    fantasia initialize --config "$CONFIG_FILE" --base_directory /fantasia \
+    || { echo "❌ fantasia initialize failed"; exit 1; }
 
 apptainer exec --nv --bind "$EXECUTION_DIR:/fantasia" "$FANTASIA_IMAGE" \
     fantasia run --config "$CONFIG_FILE" --input "$INPUT" --prefix "$OUTPUT" $EXTRA --base_directory /fantasia
 
-# =======================
-# Cleanup services on exit
-# =======================
-cleanup() {
-    echo "🧹 Cleaning up background services..."
-
-    if pgrep -f "$POSTGRESQL_DATA" > /dev/null; then
-        echo "🛑 Stopping PostgreSQL..."
-        pkill -f "$POSTGRESQL_DATA"
-    fi
-
-    if pgrep -f "rabbitmq-server" > /dev/null; then
-        echo "🛑 Stopping RabbitMQ..."
-        pkill -f "rabbitmq-server"
-    fi
-
-    if [[ -d "$SHARED_MEM_DIR" ]]; then
-        echo "🗑️ Removing shared memory directory: $SHARED_MEM_DIR"
-        rm -rf "$SHARED_MEM_DIR"
-    fi
-}
-
-trap cleanup EXIT

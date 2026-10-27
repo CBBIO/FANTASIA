@@ -98,6 +98,22 @@ from protein_information_system.sql.model.entities.protein.protein import Protei
 from protein_information_system.sql.model.entities.sequence.sequence import Sequence
 from protein_information_system.tasks.gpu import GPUTaskInitializer
 
+# go-basic.obo shipped at the repository root, next to the ``fantasia`` package.
+BUNDLED_GO_OBO = Path(__file__).resolve().parents[2] / "go-basic.obo"
+
+
+def _resolve_go_obo_path(conf: dict) -> str:
+    """Return the GO OBO file to load without depending on the working directory.
+
+    Prefers the copy bundled with FANTASIA. Otherwise falls back to
+    ``<base_directory>/go-basic.obo``, where goatools downloads it if missing.
+    """
+    if BUNDLED_GO_OBO.exists():
+        return str(BUNDLED_GO_OBO)
+    base_directory = os.path.expanduser(conf.get("base_directory", "~/fantasia/"))
+    os.makedirs(base_directory, exist_ok=True)
+    return os.path.join(base_directory, "go-basic.obo")
+
 
 class EmbeddingLookUp(GPUTaskInitializer):
     """
@@ -248,8 +264,8 @@ class EmbeddingLookUp(GPUTaskInitializer):
             self.logger.info("Redundancy filter disabled.")
 
         # ---- GO ontology ------------------------------------------------------
-        self.go = get_godag("go-basic.obo", optional_attrs="relationship")
-        self.logger.info("GO DAG loaded successfully from go-basic.obo.")
+        self.go = get_godag(_resolve_go_obo_path(self.conf), optional_attrs="relationship")
+        self.logger.info("GO DAG loaded successfully.")
 
         # ---- Distance metric --------------------------------------------------
         self.distance_metric = self.conf.get("embedding", {}).get("distance_metric", "cosine")
@@ -1001,6 +1017,12 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 if pairs:
                     with ProcessPoolExecutor(max_workers=store_workers) as ex:
                         metrics_list = list(ex.map(compute_metrics, pairs))
+                skipped = sum(1 for m in metrics_list if m.get("identity") is None)
+                if skipped:
+                    self.logger.warning(
+                        "Alignment metrics skipped for %d pair(s) with an empty sequence; "
+                        "their identity/similarity columns are left empty.", skipped
+                    )
                 if metrics_list:
                     met = pl.DataFrame(metrics_list)
                     merge_cols = ["sequence_query", "sequence_reference"]
@@ -1609,6 +1631,12 @@ class EmbeddingLookUp(GPUTaskInitializer):
             dfs = [pl.read_csv(f, ignore_errors=True) for f in flist]
             df = pl.concat(dfs, how="vertical_relaxed")
 
+            # A metric column with no values (e.g. alignments skipped for an empty
+            # sequence) is read as text; cast so aggregation treats it as missing.
+            df = df.with_columns([
+                pl.col(c).cast(pl.Float64, strict=False) for c in metrics if c in df.columns
+            ])
+
             if df.is_empty():
                 self.logger.debug("post_processing: accession %s has empty data, skipping", accession)
                 continue
@@ -1618,7 +1646,7 @@ class EmbeddingLookUp(GPUTaskInitializer):
                 df.group_by(["accession", "go_id"])
                 .agg([
                     pl.len().alias("term_count"),
-                    pl.col("protein_id").cast(pl.Utf8, strict=False).unique().alias("proteins_list"),
+                    pl.col("protein_id").cast(pl.Utf8, strict=False).unique(maintain_order=True).alias("proteins_list"),
                 ])
             )
 

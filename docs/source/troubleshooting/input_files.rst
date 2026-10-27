@@ -8,6 +8,12 @@ Compressed input fails
    Ensure the file is valid gzip (``gzip -t FILE``), not merely renamed with a
    ``.gz`` suffix.
 
+Empty sequences
+   A FASTA record without residues is still embedded and annotated, but its
+   alignment metrics (``identity``, ``similarity`` and their ``_sw`` variants)
+   are left empty and the log reports how many pairs were skipped. Remove empty
+   records from the input when they are not intended.
+
 Duplicate or unsafe identifiers
    Use unique accessions. Inspect ``query_index_mapping.csv`` and sanitized raw
    filenames when matching outputs back to inputs.

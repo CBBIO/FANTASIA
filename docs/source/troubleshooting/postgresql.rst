@@ -19,4 +19,14 @@ Schema permission denied
 
 Missing reference tables
    Confirm initialization completed and inspect its log. Do not point lookup
-   at an empty database or a benchmark-output archive.
+   at an empty database or a benchmark-output archive. ``fantasia run`` stops
+   with "The reference database contains no embeddings" in that case.
+
+``pg_restore: error: unsupported version (1.16) in file header``
+   The dump was written by PostgreSQL 18 and the ``pg_restore`` in use is
+   older. Use the FANTASIA 4.1.2 image or install ``postgresql-client-18``.
+
+``UnicodeDecodeError: 'ascii' codec can't decode byte``
+   The cluster was created with ``SQL_ASCII`` (for example under
+   ``LC_ALL=C``). FANTASIA 4.1.2 sets ``PGCLIENTENCODING=UTF8``; recreate the
+   cluster with ``--encoding=UTF8`` for a permanent fix.

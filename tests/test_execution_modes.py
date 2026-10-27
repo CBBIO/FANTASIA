@@ -42,6 +42,7 @@ def _install_import_stubs(monkeypatch):
         "fantasia.src.helpers.helpers",
         download_embeddings=lambda *args, **kwargs: None,
         load_dump_to_db=lambda *args, **kwargs: None,
+        reference_has_embeddings=lambda *args, **kwargs: True,
         parse_unknown_args=lambda *args, **kwargs: {},
     )
     module(
@@ -266,3 +267,47 @@ def test_all_supported_models_have_default_revision(monkeypatch):
     for model in main.MODEL_PROVENANCE_DEFAULTS.values():
         assert len(model["revision"]) == 40
         assert model["repository"]
+
+
+def test_run_stops_before_embedding_when_reference_is_empty(monkeypatch, tmp_path):
+    main = _load_main(monkeypatch)
+    calls = []
+
+    monkeypatch.setattr(
+        main,
+        "setup_experiment_directories",
+        lambda conf, timestamp: {**conf, "experiment_path": str(tmp_path)},
+    )
+    monkeypatch.setattr(main, "reference_has_embeddings", lambda conf: False)
+
+    class Embedder:
+        def __init__(self, conf, timestamp):
+            calls.append("embedding")
+
+    monkeypatch.setattr(main, "SequenceEmbedder", Embedder)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main.run_pipeline({"input": "query.fasta", "only_embedding": False, "only_lookup": False})
+
+    assert excinfo.value.code == 1
+    assert calls == []
+
+
+def test_embedding_only_does_not_require_reference(monkeypatch, tmp_path):
+    main = _load_main(monkeypatch)
+    monkeypatch.setattr(
+        main,
+        "setup_experiment_directories",
+        lambda conf, timestamp: {**conf, "experiment_path": str(tmp_path)},
+    )
+    monkeypatch.setattr(main, "reference_has_embeddings", lambda conf: pytest.fail("must not query DB"))
+
+    class Embedder:
+        def __init__(self, conf, timestamp):
+            pass
+
+        def start(self):
+            (tmp_path / "embeddings.h5").touch()
+
+    monkeypatch.setattr(main, "SequenceEmbedder", Embedder)
+    main.run_pipeline({"input": "query.fasta", "only_embedding": True, "only_lookup": False})

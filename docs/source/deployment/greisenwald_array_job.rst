@@ -84,17 +84,34 @@ Paths and image definitions:
 
     REPO_DIR="$HOME/FANTASIA"
     WORK_DIR="$HOME/FANTASIA"
-    SHM_DIR="/tmp/fantasia_pgvector_\${SLURM_ARRAY_TASK_ID}"
+    SHM_DIR="/tmp/fantasia_pgvector_${SLURM_ARRAY_TASK_ID}"
     DB_DIR="$SHM_DIR/data"
     DB_SOCKET="$SHM_DIR/socket"
-    RABBIT_DIR="$HOME/fantasia_rabbitmq_\${SLURM_ARRAY_TASK_ID}"
-    FANTASIA_RUN_DIR="$HOME/fantasia_\${SLURM_ARRAY_TASK_ID}"
+    RABBIT_DIR="$HOME/fantasia_rabbitmq_${SLURM_ARRAY_TASK_ID}"
+    FANTASIA_RUN_DIR="$HOME/fantasia"
 
-    PGVECTOR_SIF="$WORK_DIR/pgvector.sif"
+    PGVECTOR_SIF="$WORK_DIR/pgvector_pg18.sif"
     RABBITMQ_SIF="$WORK_DIR/rabbitmq.sif"
-    FANTASIA_SIF="$WORK_DIR/fantasia.sif"
+    FANTASIA_SIF="$WORK_DIR/fantasia_v4.1.2.sif"
 
 If missing, containers are built from Docker images.
+
+Service directories are per task, so tasks never delete each other's database;
+results of all tasks go to ``$FANTASIA_RUN_DIR``, separated by their
+``--prefix``. The services use fixed ports (``$PG_PORT`` and 5672): run at most
+one task per node, for example with ``#SBATCH --exclusive`` or an ``%1`` array
+throttle when nodes are shared.
+
+``fantasia initialize`` runs in every task and restores the reference only if
+``embeddings_url`` is set in ``$CONFIG_PATH``. Download the dump once and use a
+``file://`` URL so that tasks do not download it again.
+
+.. note::
+
+   ``pg_ctl restart`` leaves PostgreSQL running outside the ``singularity exec``
+   that started it. If the site mounts SIF images through FUSE (unprivileged
+   Apptainer/Singularity), PostgreSQL then dies with ``Bus error``. Use a
+   sandbox image (``singularity build --sandbox``) for ``PGVECTOR_SIF``.
 
 Dynamic Parameter Parsing
 -------------------------
@@ -126,12 +143,11 @@ PostgreSQL and RabbitMQ are launched with dedicated folders per job. Then:
 Cleanup
 -------
 
-The script defines a `cleanup()` function to:
-
-- Kill PostgreSQL and RabbitMQ
-- Remove temporary folders
-
-Registered using `trap EXIT`.
+The script registers ``trap cleanup EXIT`` before starting the services, so the
+cleanup runs on any exit, including a failed ``initialize``. It stops this
+task's PostgreSQL with ``pg_ctl stop`` and its RabbitMQ by process ID, and
+removes the task's service directories. Other tasks on the node are not
+affected.
 
 Launching the Job
 -----------------

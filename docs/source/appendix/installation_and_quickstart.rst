@@ -37,15 +37,15 @@ MMseqs2 (optional query-aware redundancy masking and clustering)::
    When FANTASIA is installed through its declared Python dependencies, no separate
    ``parasail`` command-line installation is required.
 
-PostgreSQL client (host-side, v16)
+PostgreSQL client (host-side, v18)
 ----------------------------------
 Needed to load dumps from the **host** into the containerized database.
 
 Ubuntu/Debian::
 
    sudo apt-get update
-   sudo apt-get install postgresql-client-16
-   psql --version  # verify major version is 16
+   sudo apt-get install postgresql-client-18
+   psql --version  # verify major version is 18
 
 Poetry (host)
 -------------
@@ -92,8 +92,9 @@ environment. You can open a Poetry shell (``poetry shell``) or prefix commands w
 
    pip3 install fantasia
 
-Then provide your own configuration so that it **resolves a correct ``constants.yaml``**.
-Use the repository as a reference for the expected configuration layout and defaults.
+Then provide your own configuration; use the repository's ``config/`` files as a
+reference for the layout and defaults. If the ``constants`` path in it does not
+exist, the ``constants.yaml`` bundled with FANTASIA is used.
 
 3) Start required services (Docker)
 ===================================
@@ -104,8 +105,9 @@ PostgreSQL with ``pgvector``::
        -e POSTGRES_USER=usuario \
        -e POSTGRES_PASSWORD=clave \
        -e POSTGRES_DB=BioData \
+       -e POSTGRES_INITDB_ARGS="--encoding=UTF8 --locale=C.UTF-8" \
        -p 5432:5432 \
-       pgvector/pgvector:pg16
+       pgvector/pgvector:0.8.1-pg18
 
 RabbitMQ (with management UI)::
 

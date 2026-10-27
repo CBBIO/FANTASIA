@@ -58,9 +58,10 @@ Use ``--embeddings_url`` to override the dataset URL from YAML.
 
    options:
      -h, --help            show this help message and exit
-     --config CONFIG       Path to the YAML configuration file. Default: './fantasia/config.yaml'.
+     --config CONFIG       Path to the YAML configuration file. Default: the config.yaml bundled with FANTASIA.
      --embeddings_url EMBEDDINGS_URL
                            Override the embeddings dump URL (otherwise taken from YAML).
+                           A file:// URL or local path is used in place.
      --base_directory BASE_DIRECTORY
                            Base directory used to place the embeddings/experiments folders.
      --log_path LOG_PATH   Path or directory for logs. If a directory, a 'Logs_<timestamp>.log' file is created inside.

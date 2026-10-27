@@ -3,7 +3,20 @@ PostgreSQL and pgvector
 
 The packaged local configuration uses host ``localhost``, port ``5432``,
 database ``BioData``, user ``usuario``, and password ``clave``. These are local
-development values. PostgreSQL 16 and the ``vector`` extension are required.
+development values. PostgreSQL 18 and the ``vector`` extension are required.
+
+Create the cluster with UTF-8 encoding. A cluster initialised under
+``LC_ALL=C`` uses ``SQL_ASCII``; FANTASIA forces a UTF-8 client encoding, but
+``initdb --encoding=UTF8 --locale=C.UTF-8`` (or ``POSTGRES_INITDB_ARGS`` for the
+official image) avoids the problem at the source. Check with
+``SHOW server_encoding;``.
+
+The ``postgres`` 18 images store data in ``/var/lib/postgresql/18/docker`` and
+declare ``/var/lib/postgresql`` as the volume. Mount ``/var/lib/postgresql``, or
+set ``PGDATA`` explicitly when binding ``/var/lib/postgresql/data`` (as the
+Apptainer/Singularity scripts in ``deployment/`` do). Data directories created
+by PostgreSQL 16 cannot be opened by 18: recreate the volume and run
+``fantasia initialize`` again.
 
 Connection checks:
 

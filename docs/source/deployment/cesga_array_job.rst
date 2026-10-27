@@ -105,9 +105,16 @@ Execution paths and services
 
 Containers used:
 
-- ``fantasia.sif`` — main pipeline
-- ``pgvector.sif`` — PostgreSQL with pgvector
+- ``fantasia_v4.1.2.sif`` — main pipeline
+- ``pgvector_pg18.sif`` — PostgreSQL 18 with pgvector
 - ``rabbitmq.sif`` — RabbitMQ broker
+
+Each array task uses its own service directories
+(``$STORE/pgdata_pgvector_<task>``, ``$STORE/pg_run_<task>``,
+``$STORE/fantasia_rabbitmq_<task>``), so tasks never delete each other's
+database. They are removed when the task ends. The services use fixed ports
+(5432 and 5672): run at most one task per node, for example with
+``#SBATCH --exclusive`` or an ``%1`` array throttle when nodes are shared.
 
 Services are launched in the background:
 
@@ -117,6 +124,8 @@ Services are launched in the background:
      --env POSTGRES_USER=usuario \
      --env POSTGRES_PASSWORD=clave \
      --env POSTGRES_DB=BioData \
+     --env PGDATA=/var/lib/postgresql/data \
+     --env POSTGRES_INITDB_ARGS="--encoding=UTF8 --locale=C.UTF-8" \
      --bind $PGDATA_HOST:/var/lib/postgresql/data \
      --bind $PG_RUN:/var/run/postgresql \
      $PGVECTOR_IMAGE
@@ -125,10 +134,26 @@ Services are launched in the background:
      --bind $RABBITMQ_DATA_DIR:/var/lib/rabbitmq \
      $RABBITMQ_IMAGE
 
+Reference dump
+--------------
+
+``fantasia initialize`` restores the reference into the job's database. The
+packaged ``config.yaml`` leaves ``embeddings_url`` unset, so either set it in
+``$CONFIG_FILE`` or skip ``initialize`` if the database is already loaded.
+Download the dump once to shared storage and point to it, instead of letting
+every job download several GB:
+
+.. code-block:: yaml
+
+   embeddings_url: "file:///path/on/lustre/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup"
+
+The dumps require PostgreSQL 18 client tools, which the FANTASIA 4.1.2 image
+provides. If ``initialize`` fails, the script stops before ``fantasia run``.
+
 Pipeline execution
 ------------------
 
-After a short delay, the pipeline is launched:
+Once PostgreSQL and RabbitMQ accept connections, the pipeline is launched:
 
 .. code-block:: bash
 
@@ -141,13 +166,9 @@ After a short delay, the pipeline is launched:
 Cleanup
 -------
 
-Upon completion, background services are stopped and temporary files are removed:
-
-.. code-block:: bash
-
-   pkill -f "$POSTGRESQL_DATA"
-   pkill -f "rabbitmq-server"
-   rm -rf "$SHARED_MEM_DIR"
+A ``cleanup`` function registered with ``trap cleanup EXIT`` before the
+services start runs on any exit. It stops PostgreSQL and RabbitMQ by process
+ID and removes the task's service directories.
 
 Logs
 ----

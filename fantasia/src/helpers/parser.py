@@ -1,5 +1,10 @@
 import argparse
+from pathlib import Path
 from typing import Optional
+
+# Bundled configuration, resolved from the package location rather than the
+# current working directory (the Docker image used to rely on WORKDIR /app).
+DEFAULT_CONFIG_PATH = str(Path(__file__).resolve().parents[2] / "config.yaml")
 
 
 # ---------------------------
@@ -85,8 +90,8 @@ def build_parser():
     init.add_argument(
         "--config",
         type=str,
-        default="./fantasia/config.yaml",
-        help="Path to the YAML configuration file. Default: './fantasia/config.yaml'.",
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to the YAML configuration file. Default: the config.yaml bundled with FANTASIA.",
     )
     init.add_argument(
         "--embeddings_url",
@@ -160,8 +165,8 @@ def build_parser():
     run.add_argument(
         "--config",
         type=str,
-        default="./fantasia/config.yaml",
-        help="Path to the YAML configuration file. Default: './fantasia/config.yaml'.",
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to the YAML configuration file. Default: the config.yaml bundled with FANTASIA.",
     )
     run.add_argument(
         "--input",

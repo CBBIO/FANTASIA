@@ -1,4 +1,4 @@
-FANTASIA 4.1.1
+FANTASIA 4.1.2
 ==============
 
 **Functional annotation through protein-language-model embedding similarity.**

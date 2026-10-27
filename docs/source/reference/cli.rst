@@ -15,11 +15,12 @@ default. Model enablement and per-model settings are YAML-only.
      - CLI default
      - Meaning
    * - ``--config PATH``
-     - ``./fantasia/config.yaml``
+     - bundled ``fantasia/config.yaml``
      - Base YAML configuration
    * - ``--embeddings_url URL``
      - YAML/unset
-     - Override reference-dump URL
+     - Override reference-dump URL; a ``file://`` URL or local path is used
+       in place
    * - ``--base_directory PATH``
      - YAML
      - Embeddings and experiment root
@@ -37,7 +38,7 @@ default. Model enablement and per-model settings are YAML-only.
      - CLI default
      - Meaning
    * - ``--config PATH``
-     - ``./fantasia/config.yaml``
+     - bundled ``fantasia/config.yaml``
      - Base YAML configuration
    * - ``--input PATH`` / ``--prefix TEXT``
      - YAML
@@ -78,6 +79,15 @@ default. Model enablement and per-model settings are YAML-only.
    * - ``--get_descendants BOOL``
      - YAML/false
      - **Deprecated and disabled**; true raises an error
+
+Exit status
+-----------
+
+``fantasia initialize`` and ``fantasia run`` exit with status 0 on success and
+1 on failure, so job scripts can stop on errors. Failures include a reference
+dump that cannot be restored, an empty reference database, and, with
+``fail_on_task_errors: true`` and protein-information-system 3.2 or later,
+tasks that failed and were discarded or worker processes that crashed.
 
 The historical aliases ``--redundancy_filter`` and ``--alignment_coverage``
 remain accepted. Consult live help for the installed version:

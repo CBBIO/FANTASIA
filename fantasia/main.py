@@ -33,6 +33,10 @@ warnings.filterwarnings("ignore", category=SyntaxWarning)  # noqa: E402
 warnings.filterwarnings("ignore", category=UserWarning)  # noqa: E402
 
 import os
+
+# Talk UTF-8 to PostgreSQL regardless of the server encoding. A cluster created
+# under LC_ALL=C is SQL_ASCII and psycopg2 would otherwise decode text as ASCII.
+os.environ.setdefault("PGCLIENTENCODING", "UTF8")  # noqa: E402
 import platform
 import sys
 import urllib
@@ -48,7 +52,12 @@ except ImportError:  # Python <3.8 test environments; production requires 3.12
 from protein_information_system.helpers.logger.logger import setup_logger
 
 from fantasia.src.embedder import SequenceEmbedder
-from fantasia.src.helpers.helpers import download_embeddings, load_dump_to_db, parse_unknown_args
+from fantasia.src.helpers.helpers import (
+    download_embeddings,
+    load_dump_to_db,
+    parse_unknown_args,
+    reference_has_embeddings,
+)
 from fantasia.src.lookup import EmbeddingLookUp
 from protein_information_system.helpers.config.yaml import read_yaml_config
 import protein_information_system.sql.model.model  # noqa: F401
@@ -169,7 +178,8 @@ def initialize(conf):
         Configuration dictionary. Must contain:
 
         - ``base_directory`` (str): Base directory where embeddings and experiments are stored.
-        - ``embeddings_url`` (str): URL of the reference embeddings archive to be downloaded.
+        - ``embeddings_url`` (str): URL of the reference embeddings archive to be downloaded,
+          or a ``file://`` URL / local path to a dump that is used in place.
 
     Returns
     -------
@@ -186,8 +196,9 @@ def initialize(conf):
     logger = logging.getLogger("FANTASIA")
     embeddings_url = conf.get("embeddings_url")
     if not embeddings_url:
-        logger.info(
-            "No embeddings_url configured; skipping reference dump download and database restore."
+        logger.warning(
+            "No embeddings_url configured; skipping reference dump download and database restore. "
+            "'fantasia run' needs a populated reference database."
         )
         return
 
@@ -198,11 +209,15 @@ def initialize(conf):
     filename = os.path.basename(urllib.parse.urlparse(embeddings_url).path)
     tar_path = os.path.join(embeddings_dir, filename)
 
-    logger.info(f"Downloading reference embeddings to {tar_path}...")
-    download_embeddings(embeddings_url, tar_path)
+    logger.info(f"Fetching reference embeddings from {embeddings_url}...")
+    dump_path = download_embeddings(embeddings_url, tar_path, logger=logger)
 
     logger.info("Loading embeddings into the database...")
-    load_dump_to_db(tar_path, conf)
+    if not load_dump_to_db(dump_path, conf, logger=logger):
+        raise RuntimeError(
+            f"Could not load the reference dump {dump_path} into the database; "
+            "see the pg_restore errors above."
+        )
 
 
 def run_pipeline(conf):
@@ -243,7 +258,7 @@ def run_pipeline(conf):
         For any other unexpected runtime errors.
     """
 
-    logger = logging.getLogger("fantasia")
+    logger = logging.getLogger("FANTASIA")
     try:
         current_date = datetime.now().strftime("%Y%m%d%H%M%S")
         conf = setup_experiment_directories(conf, current_date)
@@ -253,6 +268,14 @@ def run_pipeline(conf):
 
         if conf.get("only_lookup") and conf.get("only_embedding"):
             raise ValueError("'only_lookup' and 'only_embedding' cannot both be true.")
+
+        # Check the reference before spending hours on embeddings that cannot be used.
+        if not conf.get("only_embedding") and not reference_has_embeddings(conf):
+            raise RuntimeError(
+                "The reference database contains no embeddings. Run 'fantasia initialize' "
+                "with a valid embeddings_url and check that the dump was restored "
+                "(see the initialize log for pg_restore errors)."
+            )
 
         if conf.get("only_lookup"):
             conf["embeddings_path"] = conf["input"]
@@ -322,7 +345,7 @@ def setup_experiment_directories(conf, timestamp):
         If the experiment directory or configuration file cannot be created.
     """
 
-    logger = logging.getLogger("fantasia")
+    logger = logging.getLogger("FANTASIA")
     base_directory = os.path.expanduser(conf.get("base_directory", "~/fantasia/"))
     experiments_dir = os.path.join(base_directory, "experiments")
     os.makedirs(experiments_dir, exist_ok=True)
@@ -349,6 +372,27 @@ def setup_experiment_directories(conf, timestamp):
     logger.info(f"Experiment configuration saved at: {yaml_path}")
     logger.info(f"Model provenance saved at: {provenance_path}")
     return conf
+
+
+BUNDLED_CONSTANTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "constants.yaml")
+# Value used by the packaged configs; it only resolves from the repository root.
+PACKAGED_CONSTANTS_SETTING = os.path.normpath("./fantasia/constants.yaml")
+
+
+def resolve_constants_path(path):
+    """
+    Return the constants file to use.
+
+    ``path`` is used when it exists. Otherwise the constants.yaml bundled with
+    FANTASIA is used, with a warning unless ``path`` is the packaged default.
+    """
+    if path and os.path.isfile(os.path.expanduser(path)):
+        return os.path.expanduser(path)
+    if path and os.path.normpath(path) != PACKAGED_CONSTANTS_SETTING:
+        logging.getLogger("FANTASIA").warning(
+            "Constants file %s not found; using the bundled %s.", path, BUNDLED_CONSTANTS_PATH
+        )
+    return BUNDLED_CONSTANTS_PATH
 
 
 def load_and_merge_config(args, unknown_args):
@@ -409,6 +453,10 @@ def load_and_merge_config(args, unknown_args):
     for key, value in unknown_args_dict.items():
         if value is not None:
             conf[key] = value
+
+    # 2.1) The packaged config points to ./fantasia/constants.yaml, which only
+    # exists when running from the repository root (WORKDIR /app in Docker).
+    conf["constants"] = resolve_constants_path(conf.get("constants"))
 
     # 3) Canonical mappings (mirror legacy/top-level and CLI flags into nested structure expected downstream)
     # 3.0 Legacy YAML compatibility: accept top-level `redundancy:` / `taxonomy:` blocks
@@ -622,7 +670,11 @@ def main():
 
     if args.command == "initialize":
         logger.info("Starting initialization...")
-        initialize(conf)
+        try:
+            initialize(conf)
+        except Exception:
+            logger.error("Initialization failed.", exc_info=True)
+            sys.exit(1)
 
     elif args.command == "run":
         logger.info("Starting FANTASIA pipeline...")

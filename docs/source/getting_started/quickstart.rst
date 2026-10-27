@@ -13,6 +13,10 @@ Prerequisites
 - Linux with Python 3.12
 - Poetry
 - Docker with the Compose plugin
+- PostgreSQL 18 client tools (``pg_restore``), which ``fantasia initialize``
+  runs on the host; install ``postgresql-client-18`` from the
+  `PostgreSQL apt repository <https://wiki.postgresql.org/wiki/Apt>`_. The
+  reference dumps cannot be restored with older clients.
 - An NVIDIA GPU for the commands as written
 - Enough disk space for the selected reference database and model cache
 

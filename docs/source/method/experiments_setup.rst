@@ -18,8 +18,8 @@ Recommended defaults
 
 Quick sanity check
 ------------------
-Run the bundled sample **from the project root**, so the default relative paths
-(e.g., ``./config/experiment.yaml`` and ``./fantasia/constants.yaml``) are found:
+Run the bundled sample **from the project root**, so the relative paths in the
+commands (``./config/...``, ``./data_sample/...``, ``./lookup``) are found:
 
 .. code-block:: bash
 

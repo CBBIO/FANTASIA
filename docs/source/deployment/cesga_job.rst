@@ -66,30 +66,49 @@ Additional directories used during execution:
 
    PROJECT_DIR="$STORE/FANTASIA"
    EXECUTION_DIR="$STORE/fantasia"
-   SHARED_MEM_DIR="/tmp/fantasia"
-   POSTGRESQL_DATA="$SHARED_MEM_DIR/data"
-   POSTGRESQL_SOCKET="$SHARED_MEM_DIR/socket"
-   RABBITMQ_DATA_DIR="$STORE/fantasia_rabbitmq"
+   PGDATA_HOST="$STORE/pgdata_pgvector"
+   RABBITMQ_DATA_DIR="$HOME/fantasia_rabbitmq"
 
 Apptainer Container Setup
 -------------------------
 
 The following container images are used:
 
-- ``fantasia.sif`` — main pipeline (GPU-enabled)
-- ``pgvector.sif`` — PostgreSQL database with pgvector extension
+- ``fantasia_v4.1.2.sif`` — main pipeline (GPU-enabled)
+- ``pgvector_pg18.sif`` — PostgreSQL 18 with the pgvector extension
 - ``rabbitmq.sif`` — message broker
 
-Images are built automatically if missing:
+Images are built automatically if missing. The file names include the version,
+so images cached by earlier releases (``fantasia.sif``, ``pgvector.sif``) are
+not reused:
 
 .. code-block:: bash
 
-   apptainer build fantasia.sif docker://cbbio/fantasia:v4.1.1
+   apptainer build pgvector_pg18.sif docker://pgvector/pgvector:0.8.1-pg18
+   apptainer build --disable-cache fantasia_v4.1.2.sif docker://cbbio/fantasia:v4.1.2
+
+Reference dump
+--------------
+
+``fantasia initialize`` restores the reference into the job's database. The
+packaged ``config.yaml`` leaves ``embeddings_url`` unset, so either set it in
+``$CONFIG_FILE`` or skip ``initialize`` if the database is already loaded.
+Download the dump once to shared storage and point to it, instead of letting
+every job download several GB:
+
+.. code-block:: yaml
+
+   embeddings_url: "file:///path/on/lustre/BioData_Dec25_esm2_prott5_prostt5_ankh3_large_esm3c_Layer0.backup"
+
+The dumps require PostgreSQL 18 client tools, which the FANTASIA 4.1.2 image
+provides. If ``initialize`` fails, the script stops before ``fantasia run``.
 
 Execution Phase
 ---------------
 
-After services are launched in the background, the FANTASIA pipeline is initialized and executed:
+After services are launched in the background, the script waits until
+PostgreSQL and RabbitMQ accept connections (up to 10 and 5 minutes), then
+initializes and runs the pipeline:
 
 .. code-block:: bash
 
@@ -105,13 +124,10 @@ After services are launched in the background, the FANTASIA pipeline is initiali
 Shutdown and Cleanup
 --------------------
 
-A cleanup routine is executed at the end to terminate services and remove temporary data:
-
-.. code-block:: bash
-
-   pkill -f "rabbitmq-server"
-   pkill -f "$POSTGRESQL_DATA"
-   rm -rf "$SHARED_MEM_DIR"
+A ``cleanup`` function is registered with ``trap cleanup EXIT`` before the
+services start, so it runs on any exit, including a failed ``initialize``. It
+stops PostgreSQL and RabbitMQ by process ID (``SIGTERM``, then ``SIGKILL`` after
+30 seconds) and does not affect other jobs on the node.
 
 Launching the Job
 -----------------

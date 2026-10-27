@@ -6,13 +6,15 @@ Verified software requirements
 
 - Linux (the supported repository, Docker, and HPC workflows are Linux based).
 - Python ``>=3.12,<3.13``.
-- PostgreSQL 16 with pgvector; the Compose service uses
-  ``pgvector/pgvector:0.7.0-pg16``.
+- PostgreSQL 18 with pgvector; the Compose service uses
+  ``pgvector/pgvector:0.8.1-pg18``. The December 2025 reference dumps were
+  written by ``pg_dump`` 18 and cannot be read by older ``pg_restore``.
 - RabbitMQ; the Compose service uses ``rabbitmq:3.13-management-alpine``.
-- ``pg_restore`` from PostgreSQL client 16 for reference restoration.
+- ``pg_restore`` from PostgreSQL client 18 for reference restoration (included
+  in the FANTASIA Docker image).
 - Poetry for repository installation. A PyPI package exists, but repository
-  installation is the documented path because configs and constants are
-  required.
+  installation is the documented path: it provides the example configurations,
+  sample data and ``go-basic.obo``.
 - MMseqs2 only when redundancy masking is enabled.
 
 Hardware and storage
